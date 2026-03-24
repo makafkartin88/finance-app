@@ -123,9 +123,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .authcard{background:var(--surface);border-radius:var(--r);padding:36px;max-width:420px;width:100%;margin:20px;box-shadow:0 8px 40px rgba(0,0,0,.12);text-align:center}
 .authcard h2{font-size:22px;font-weight:700;margin-bottom:8px;letter-spacing:-.3px}
 .authcard p{font-size:14px;color:var(--text2);margin-bottom:24px;line-height:1.6}
-.google-btn{display:flex;align-items:center;justify-content:center;gap:12px;padding:13px 24px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);cursor:pointer;font-size:15px;font-weight:500;color:var(--text);transition:all .15s;width:100%;margin-bottom:12px}
-.google-btn:hover{background:var(--surface2);border-color:var(--blue)}
-.google-btn svg{width:22px;height:22px;flex-shrink:0}
 .skip-btn{font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;padding:6px;text-decoration:underline}
 .skip-btn:hover{color:var(--text2)}
 .sheetinfo{background:var(--surface2);border-radius:var(--rsm);padding:12px;margin-bottom:24px;font-size:12px;color:var(--text2);word-break:break-all;text-align:left}
@@ -145,26 +142,14 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 </head>
 <body>
 
-<!-- AUTH SCREEN -->
-<div id="authScreen" class="authscreen">
+<div id="authScreen" class="authscreen" style="display:none">
   <div class="authcard">
     <div style="font-size:40px;margin-bottom:14px">💰</div>
     <h2>Finance App</h2>
-    <p>Osobní finance pro Martina & Šárku.<br>Připoj Google účet pro přístup ke sdílenému spreadsheetu.</p>
-    <div class="sheetinfo">
-      <strong>Spreadsheet ID</strong>
-      19Hv33cfj2omCgIQ2WMjSviWEeK9DQSJTmbRMblisNz4
-    </div>
-    <button class="google-btn" onclick="startOAuth()">
-      <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.33 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.67 14.62 48 24 48z"/></svg>
-      Přihlásit se přes Google
-    </button>
-    <button class="skip-btn" onclick="loadDemo()">Pokračovat s demo daty (bez přihlášení)</button>
-    <div id="authErr" style="display:none;margin-top:12px;padding:10px;background:var(--red-bg);color:var(--red-text);border-radius:var(--rsm);font-size:12px;text-align:left"></div>
+    <p>Načítání aplikace...</p>
   </div>
 </div>
 
-<!-- ADD TX MODAL -->
 <div class="overlay" id="txModal" style="display:none">
   <div class="modal">
     <h2 id="txTitle">Přidat transakci</h2>
@@ -217,7 +202,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 
   <div class="main">
 
-    <!-- DASHBOARD -->
     <div id="p-dashboard" class="page active">
       <div class="topbar">
         <h2>Dashboard</h2>
@@ -262,7 +246,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- TRANSACTIONS -->
     <div id="p-transactions" class="page">
       <div class="topbar">
         <h2>Transakce</h2>
@@ -281,7 +264,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- BUDGETS -->
     <div id="p-budgets" class="page">
       <div class="topbar"><h2>Rozpočty</h2><div class="topbar-right"><select class="sel" id="bMonth" onchange="renderBudgets()"></select></div></div>
       <div class="content">
@@ -295,7 +277,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- CHARTS -->
     <div id="p-charts" class="page">
       <div class="topbar"><h2>Grafy</h2><div class="topbar-right"><select class="sel" id="chYear" onchange="renderCharts()"></select></div></div>
       <div class="content">
@@ -310,7 +291,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- INVESTMENTS -->
     <div id="p-investments" class="page">
       <div class="topbar"><h2>Investice — Trading 212</h2></div>
       <div class="content">
@@ -324,7 +304,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- IMPORT -->
     <div id="p-import" class="page">
       <div class="topbar"><h2>Import PDF výpisu</h2></div>
       <div class="content" style="max-width:620px">
@@ -347,18 +326,14 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
       </div>
     </div>
 
-    <!-- SETTINGS -->
     <div id="p-settings" class="page">
       <div class="topbar"><h2>Nastavení</h2></div>
       <div class="content" style="max-width:540px">
         <div class="card">
-          <div class="card-hdr"><div class="ct">Google Sheets</div></div>
-          <div class="fg" style="margin-bottom:14px"><label>Spreadsheet ID</label><input type="text" id="sSheetId" value="19Hv33cfj2omCgIQ2WMjSviWEeK9DQSJTmbRMblisNz4"/></div>
-          <div class="fg" style="margin-bottom:14px"><label>Záložka (tab name)</label><input type="text" id="sTab" value="Hárok1"/><div class="fhint">Přesný název záložky v tvém spreadsheetu</div></div>
+          <div class="card-hdr"><div class="ct">Google Sheets (Zastaralé zobrazení)</div></div>
+          <p style="font-size: 13px; color: var(--text2); margin-bottom: 14px;">Spojení s tabulkou je nyní zajištěno napřímo přes Apps Script. ID tabulky zde už není potřeba měnit.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btnp" onclick="saveSettings()">Uložit</button>
             <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data</button>
-            <button class="btn" id="signOutBtn" onclick="doSignOut()" style="display:none">Odhlásit</button>
           </div>
         </div>
         <div class="card" style="margin-top:16px">
@@ -373,103 +348,56 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 </div>
 
 <script>
-const CLIENT_ID='877073601062-mikln9f351ambgiioceleclns3etbedp.apps.googleusercontent.com';
-const SHEET_ID='19Hv33cfj2omCgIQ2WMjSviWEeK9DQSJTmbRMblisNz4';
-const SCOPES='https://www.googleapis.com/auth/spreadsheets';
+// =========================================================
+// ZDE VLOŽTE SVOJÍ URL ADRESU Z GOOGLE APPS SCRIPTU:
+// =========================================================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbz70Xp_jQHjrzCkIkkMzFqV7tbqkvbuIswEw7w2ItXKnMMfCRK61sFOj7ddr9HDGDhmzQ/exec'; 
+
+
 const C={datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14};
 
-let token=null, txs=[], person='Oba', editIdx=null;
-let cfg={sheetId:SHEET_ID,tab:'Hárok1'};
+let txs=[], person='Oba', editIdx=null;
 let limits={Bydlení:20000,Jídlo:15000,Doprava:5000,Zábava:8000,Zdraví:5000,Investice:10000,Ostatní:5000};
 let drill={month:null,cat:null};
 
 const DEMO=[
   ['1/1/2026','Soundbar','10000','CZK','mBank','Výdaj','Bydlení','Martin','Karta','Alza','','(10000)','Jan 2026','2026','20260101-001'],
-  ['1/16/2026','Televize','27990','CZK','mBank','Výdaj','Bydlení','Martin','Karta','Alza','','(27990)','Jan 2026','2026','20260116-002'],
-  ['1/20/2026','Nájem','18500','CZK','UniCredit','Výdaj','Bydlení','Šárka','Převod','Pronajímatel','','(18500)','Jan 2026','2026','20260120-003'],
-  ['1/25/2026','Výplata Martin','42000','CZK','mBank','Příjem','Příjem','Martin','Převod','Zaměstnavatel','','42000','Jan 2026','2026','20260125-004'],
-  ['1/25/2026','Výplata Šárka','38000','CZK','UniCredit','Příjem','Příjem','Šárka','Převod','Zaměstnavatel','','38000','Jan 2026','2026','20260125-005'],
-  ['1/28/2026','Albert','1240','CZK','mBank','Výdaj','Jídlo','Martin','Karta','Albert','','(1240)','Jan 2026','2026','20260128-006'],
-  ['2/1/2026','Trading 212','5000','CZK','Trading 212','Výdaj','Investice','Martin','Převod','Trading 212','','(5000)','Feb 2026','2026','20260201-007'],
-  ['2/5/2026','Billa','890','CZK','mBank','Výdaj','Jídlo','Šárka','Karta','Billa','','(890)','Feb 2026','2026','20260205-008'],
-  ['2/10/2026','Netflix','329','CZK','mBank','Výdaj','Zábava','Martin','Karta','Netflix','','(329)','Feb 2026','2026','20260210-009'],
-  ['2/15/2026','Nájem','18500','CZK','UniCredit','Výdaj','Bydlení','Šárka','Převod','Pronajímatel','','(18500)','Feb 2026','2026','20260215-010'],
-  ['2/25/2026','Výplata Martin','42000','CZK','mBank','Příjem','Příjem','Martin','Převod','Zaměstnavatel','','42000','Feb 2026','2026','20260225-011'],
-  ['2/25/2026','Výplata Šárka','38000','CZK','UniCredit','Příjem','Příjem','Šárka','Převod','Zaměstnavatel','','38000','Feb 2026','2026','20260225-012'],
-  ['2/28/2026','Bolt taxi','220','CZK','mBank','Výdaj','Doprava','Šárka','Karta','Bolt','','(220)','Feb 2026','2026','20260228-013'],
-  ['3/1/2026','Trading 212','5000','CZK','Trading 212','Výdaj','Investice','Martin','Převod','Trading 212','','(5000)','Mar 2026','2026','20260301-014'],
-  ['3/5/2026','Rohlik.cz','1430','CZK','mBank','Výdaj','Jídlo','Martin','Karta','Rohlik','','(1430)','Mar 2026','2026','20260305-015'],
-  ['3/10/2026','Dr. Max','390','CZK','UniCredit','Výdaj','Zdraví','Šárka','Karta','Dr. Max','','(390)','Mar 2026','2026','20260310-016'],
-  ['3/15/2026','Nájem','18500','CZK','UniCredit','Výdaj','Bydlení','Šárka','Převod','Pronajímatel','','(18500)','Mar 2026','2026','20260315-017'],
-  ['3/20/2026','Albert','840','CZK','mBank','Výdaj','Jídlo','Martin','Karta','Albert','','(840)','Mar 2026','2026','20260320-019'],
-  ['3/25/2026','Výplata Martin','42000','CZK','mBank','Příjem','Příjem','Martin','Převod','Zaměstnavatel','','42000','Mar 2026','2026','20260325-020'],
-  ['3/25/2026','Výplata Šárka','38000','CZK','UniCredit','Příjem','Příjem','Šárka','Převod','Zaměstnavatel','','38000','Mar 2026','2026','20260325-021'],
+  ['1/16/2026','Televize','27990','CZK','mBank','Výdaj','Bydlení','Martin','Karta','Alza','','(27990)','Jan 2026','2026','20260116-002']
 ];
-
-/* ── OAUTH (implicit flow — works from a local file) ── */
-function startOAuth(){
-  const redir="https://makafkartin88.github.io/finance-app/finance-app.html";
-  const params=new URLSearchParams({
-    client_id:CLIENT_ID, redirect_uri:redir,
-    response_type:'token', scope:SCOPES,
-    include_granted_scopes:'true', prompt:'select_account'
-  });
-  window.location.href='https://accounts.google.com/o/oauth2/auth?'+params;
-}
-
-function checkOAuthReturn(){
-  const h=window.location.hash.substring(1);
-  if(!h.includes('access_token')) return false;
-  const p=new URLSearchParams(h);
-  const t=p.get('access_token');
-  if(!t) return false;
-  window.history.replaceState({},document.title,window.location.pathname+window.location.search);
-  token=t;
-  setAuth(true);
-  document.getElementById('authScreen').style.display='none';
-  loadSheets();
-  return true;
-}
-
-function loadDemo(){
-  document.getElementById('authScreen').style.display='none';
-  txs=DEMO.map(parseRow); boot();
-  toast('Demo režim — tvoje Sheets data se nezobrazují');
-}
 
 function setAuth(ok){
   document.getElementById('adot').className='adot'+(ok?' ok':'');
   document.getElementById('atext').textContent=ok?'Připojeno':'Nepřipojeno';
-  document.getElementById('signOutBtn').style.display=ok?'':'none';
 }
 
-function doSignOut(){token=null;setAuth(false);txs=DEMO.map(parseRow);boot();toast('Odhlášeno');}
-
-/* ── SHEETS ── */
+/* ── SHEETS (APPS SCRIPT) ── */
 async function loadSheets(){
-  if(!token){txs=DEMO.map(parseRow);boot();return;}
-  toast('Načítám ze Sheets…');
-  try{
-    const tab=encodeURIComponent(cfg.tab);
-    const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${tab}`,{headers:{Authorization:'Bearer '+token}});
-    const d=await r.json();
-    if(d.error) throw new Error(d.error.message+' (zkontroluj název záložky v Nastavení)');
-    const rows=(d.values||[]).slice(1);
-    txs=rows.filter(r=>r.length>2&&r[0]).map(parseRow);
-    boot(); toast('Načteno '+txs.length+' transakcí','ok');
-  }catch(e){
-    toast('Chyba: '+e.message,'err');
-    txs=DEMO.map(parseRow); boot();
+  toast('Načítám data z Tabulky...');
+  try {
+    const r = await fetch(GAS_URL);
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    
+    // Zahození prvního řádku (hlavičky) a zpracování dat
+    const rows = (d.values || []).slice(1);
+    txs = rows.filter(r => r.length > 2 && r[0]).map(parseRow);
+    
+    boot(); 
+    toast('Načteno ' + txs.length + ' transakcí', 'ok');
+  } catch(e) {
+    toast('Chyba spojení s tabulkou: ' + e.message, 'err');
+    txs = DEMO.map(parseRow); 
+    boot();
   }
 }
 
 async function appendRow(row){
-  if(!token) return;
-  const tab=encodeURIComponent(cfg.tab);
-  const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${tab}:append?valueInputOption=USER_ENTERED`,
-    {method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({values:[row]})});
-  const d=await r.json();
-  if(d.error) throw new Error(d.error.message);
+  const r = await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ values: [row] })
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error);
 }
 
 /* ── PARSE ── */
@@ -790,7 +718,6 @@ async function confirmImp(){
 }
 
 /* ── SETTINGS ── */
-function saveSettings(){cfg.sheetId=document.getElementById('sSheetId').value;cfg.tab=document.getElementById('sTab').value;localStorage.setItem('fincfg',JSON.stringify(cfg));toast('Nastavení uloženo','ok');}
 function reloadSheets(){loadSheets();}
 function renderBudLimForm(){document.getElementById('budLimForm').innerHTML=Object.keys(limits).map(c=>`<div class="fg"><label>${c}</label><input type="number" id="bl-${c}" value="${limits[c]}"/></div>`).join('');}
 function saveLimits(){Object.keys(limits).forEach(c=>{const v=parseInt(document.getElementById('bl-'+c)?.value)||0;limits[c]=v;});localStorage.setItem('finlim',JSON.stringify(limits));renderBudgets();toast('Limity uloženy','ok');}
@@ -816,12 +743,16 @@ function toast(msg,type){const t=document.getElementById('toast');t.textContent=
 
 /* ── INIT ── */
 (function(){
-  const sc=localStorage.getItem('fincfg');if(sc)Object.assign(cfg,JSON.parse(sc));
   const sl=localStorage.getItem('finlim');if(sl)Object.assign(limits,JSON.parse(sl));
-  document.getElementById('sSheetId').value=cfg.sheetId;
-  document.getElementById('sTab').value=cfg.tab;
-  if(checkOAuthReturn()) return;
-  document.getElementById('authScreen').style.display='flex';
+  
+  // Tvrdě schováme přihlašovací obrazovku
+  document.getElementById('authScreen').style.display='none';
+  
+  // Řekneme aplikaci, že je připojená
+  setAuth(true);
+  
+  // Načteme data
+  loadSheets();
 })();
 </script>
 </body>
