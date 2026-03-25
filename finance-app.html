@@ -319,7 +319,7 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
         <div class="card" style="margin-top:20px"><div class="card-hdr"><div class="ct">Jak to funguje</div></div>
           <div class="steps">
             <div class="step"><div class="snum">1</div><div><div class="stitle">Nahraj PDF</div><div class="sdesc">Měsíční výpis z mBank nebo UniCredit</div></div></div>
-            <div class="step"><div class="snum">2</div><div><div class="stitle">Claude zpracuje transakce</div><div class="sdesc">AI extrahuje datum, popis, částku a automaticky kategorizuje</div></div></div>
+            <div class="step"><div class="snum">2</div><div><div class="stitle">Gemini AI zpracuje transakce</div><div class="sdesc">Umělá inteligence přečte PDF a automaticky kategorizuje výdaje</div></div></div>
             <div class="step"><div class="snum">3</div><div><div class="stitle">Zkontroluj a potvrď</div><div class="sdesc">Uprav kategorie, přiřaď osobě — pak ulož do Google Sheets</div></div></div>
           </div>
         </div>
@@ -329,13 +329,20 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
     <div id="p-settings" class="page">
       <div class="topbar"><h2>Nastavení</h2></div>
       <div class="content" style="max-width:540px">
+        
         <div class="card">
-          <div class="card-hdr"><div class="ct">Google Sheets (Zastaralé zobrazení)</div></div>
-          <p style="font-size: 13px; color: var(--text2); margin-bottom: 14px;">Spojení s tabulkou je nyní zajištěno napřímo přes Apps Script. ID tabulky zde už není potřeba měnit.</p>
+          <div class="card-hdr"><div class="ct">Umělá Inteligence (AI Import)</div></div>
+          <div class="fg" style="margin-bottom:14px">
+            <label>Gemini API Klíč</label>
+            <input type="password" id="sApiKey" placeholder="AIzaSy..."/>
+            <div class="fhint">Klíč získáš zcela zdarma na <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--blue-text)">Google AI Studio</a>. Slouží k chytrému čtení PDF výpisů.</div>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data</button>
+            <button class="btnp" onclick="saveSettings()">Uložit nastavení</button>
+            <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data z Tabulky</button>
           </div>
         </div>
+
         <div class="card" style="margin-top:16px">
           <div class="card-hdr"><div class="ct">Měsíční limity (Kč)</div></div>
           <div class="fgrid" id="budLimForm"></div>
@@ -357,6 +364,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbz70Xp_jQHjrzCkIkkMzFqV
 const C={datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14};
 
 let txs=[], person='Oba', editIdx=null;
+let cfg={apiKey:''};
 let limits={Bydlení:20000,Jídlo:15000,Doprava:5000,Zábava:8000,Zdraví:5000,Investice:10000,Ostatní:5000};
 let drill={month:null,cat:null};
 
@@ -378,7 +386,6 @@ async function loadSheets(){
     const d = await r.json();
     if(d.error) throw new Error(d.error);
     
-    // Zahození prvního řádku (hlavičky) a zpracování dat
     const rows = (d.values || []).slice(1);
     txs = rows.filter(r => r.length > 2 && r[0]).map(parseRow);
     
@@ -403,7 +410,6 @@ async function appendRow(row){
 /* ── PARSE ── */
 function parseRow(r){
   const raw=(r[C.castka]||'0').toString().replace(/[^\d.-]/g,'');
-  
   let d = r[C.datum];
   let dateObj = new Date(d);
   let isDate = d && !isNaN(dateObj.getTime());
@@ -411,7 +417,6 @@ function parseRow(r){
   let mStr = r[C.mesic]||'';
   let yStr = r[C.rok]||'';
 
-  // Pokud je to platné datum, vygenerujeme z něj čistý měsíc a rok pro Cashflow a filtry
   if(isDate) {
      const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
      mStr = `${mn[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
@@ -430,7 +435,7 @@ function parseRow(r){
     metoda: r[C.metoda]||'',
     protistrana: r[C.protistrana]||'',
     poznamka: r[C.poznamka]||'',
-    mesic: mStr, // Opravený měsíc pro správné spojení dat v grafech!
+    mesic: mStr, 
     rok: yStr,
     id: r[C.id]||''
   };
@@ -440,7 +445,6 @@ function fmtD(d){
   if(!d) return '';
   const date = new Date(d);
   if(!isNaN(date.getTime())){
-    // Převede strojové datum na hezké české (např. 31.01.2026)
     return `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}.${date.getFullYear()}`;
   }
   return d;
@@ -704,32 +708,54 @@ async function saveTx(){
   closeTx();boot();toast(editIdx!==null?'Transakce upravena':'Uloženo do Sheets','ok');editIdx=null;
 }
 
-/* ── IMPORT ── */
+/* ── IMPORT (GEMINI AI) ── */
 function dov(e){e.preventDefault();document.getElementById('upzone').classList.add('over');}
 function dol(){document.getElementById('upzone').classList.remove('over');}
 function dod(e){e.preventDefault();dol();const f=e.dataTransfer.files[0];if(f)procFile(f);}
 function onFile(e){const f=e.target.files[0];if(f)procFile(f);}
+
 async function procFile(file){
+  if (!cfg.apiKey) {
+    toast('Nejdřív v Nastavení zadej Gemini API klíč!', 'err');
+    nav('settings', document.querySelectorAll('.ni')[6]);
+    return;
+  }
+
   const st=document.getElementById('impStatus'),rs=document.getElementById('impResults');
   st.style.display='block';rs.style.display='none';
-  st.innerHTML=`<div class="card" style="display:flex;align-items:center;gap:10px;color:var(--text2)"><div style="width:18px;height:18px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%" class="spin"></div>Zpracovávám ${file.name}…</div>`;
+  st.innerHTML=`<div class="card" style="display:flex;align-items:center;gap:10px;color:var(--text2)"><div style="width:18px;height:18px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%" class="spin"></div>Zpracovávám ${file.name} pomocí Gemini AI…</div>`;
+  
   try{
     const b64=await toB64(file);
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    const prompt = `Extrahuj transakce z tohoto bankovního výpisu. Vrať POUZE JSON pole. Každý objekt v poli musí obsahovat: datum (ve formátu MM/DD/YYYY), popis (název obchodníka nebo účel), castka (číslo, absolutní hodnota), typ ("Výdaj" nebo "Příjem"), kategorie (Bydlení/Jídlo/Doprava/Zábava/Zdraví/Investice/Ostatní/Příjem), ucet (název banky nebo zkus odhadnout). Příklad: [{"datum":"03/15/2026","popis":"Albert","castka":840,"typ":"Výdaj","kategorie":"Jídlo","ucet":"mBank"}]`;
+
+    const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + cfg.apiKey,{
       method:'POST',
-      headers:{'Content-Type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,messages:[{role:'user',content:[
-        {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
-        {type:'text',text:`Extrahuj transakce z tohoto bankovního výpisu. Vrať POUZE JSON pole. Každý objekt: datum (M/D/YYYY), popis, castka (číslo, absolutní), typ ("Výdaj" nebo "Příjem"), kategorie (Bydlení/Jídlo/Doprava/Zábava/Zdraví/Investice/Ostatní/Příjem), ucet (název banky). Příklad: [{"datum":"3/15/2026","popis":"Albert","castka":840,"typ":"Výdaj","kategorie":"Jídlo","ucet":"mBank"}]`}
-      ]}]})
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contents:[{
+          parts:[
+            {text: prompt},
+            {inline_data: {mime_type: 'application/pdf', data: b64}}
+          ]
+        }],
+        generationConfig: { response_mime_type: "application/json" }
+      })
     });
+
     const data=await resp.json();
-    const txt=(data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('').replace(/```json|```/g,'').trim();
+    if(data.error) throw new Error(data.error.message);
+
+    const txt=data.candidates[0].content.parts[0].text;
     const parsed=JSON.parse(txt);
     showImp(parsed,file.name);st.style.display='none';
-  }catch(e){st.innerHTML=`<div class="card" style="border-color:var(--red)"><p style="color:var(--red)">Chyba: ${e.message}</p></div>`;}
+  }catch(e){
+    st.innerHTML=`<div class="card" style="border-color:var(--red)"><p style="color:var(--red)">Chyba: ${e.message}</p></div>`;
+  }
 }
+
 function toB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Chyba čtení'));r.readAsDataURL(file);});}
+
 function showImp(rows,fname){
   const rs=document.getElementById('impResults');rs.style.display='block';
   const cats=['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní','Příjem'];
@@ -737,6 +763,7 @@ function showImp(rows,fname){
   rs.innerHTML=`<div class="card" style="padding:0"><div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:600">Nalezeno ${rows.length} transakcí z ${fname}</div><div style="display:flex;gap:8px"><button class="btnp" onclick="confirmImp()">Uložit vše (${rows.length})</button><button class="btn" onclick="document.getElementById('impResults').style.display='none'">Zrušit</button></div></div><div class="tw"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Osoba</th><th>Částka</th></tr></thead><tbody>${trs}</tbody></table></div></div>`;
   window._impRows=rows;
 }
+
 async function confirmImp(){
   const rows=window._impRows||[];
   const mn=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -754,7 +781,14 @@ async function confirmImp(){
 }
 
 /* ── SETTINGS ── */
+function saveSettings(){
+  cfg.apiKey=document.getElementById('sApiKey').value;
+  localStorage.setItem('fincfg',JSON.stringify(cfg));
+  toast('Nastavení uloženo','ok');
+}
+
 function reloadSheets(){loadSheets();}
+
 function renderBudLimForm(){document.getElementById('budLimForm').innerHTML=Object.keys(limits).map(c=>`<div class="fg"><label>${c}</label><input type="number" id="bl-${c}" value="${limits[c]}"/></div>`).join('');}
 function saveLimits(){Object.keys(limits).forEach(c=>{const v=parseInt(document.getElementById('bl-'+c)?.value)||0;limits[c]=v;});localStorage.setItem('finlim',JSON.stringify(limits));renderBudgets();toast('Limity uloženy','ok');}
 
@@ -779,8 +813,12 @@ function toast(msg,type){const t=document.getElementById('toast');t.textContent=
 
 /* ── INIT ── */
 (function(){
+  const sc=localStorage.getItem('fincfg');if(sc)Object.assign(cfg,JSON.parse(sc));
   const sl=localStorage.getItem('finlim');if(sl)Object.assign(limits,JSON.parse(sl));
   
+  // Nahraje uložený API klíč do políčka
+  document.getElementById('sApiKey').value=cfg.apiKey||'';
+
   // Tvrdě schováme přihlašovací obrazovku
   document.getElementById('authScreen').style.display='none';
   
