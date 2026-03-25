@@ -78,9 +78,9 @@ select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--bord
 .ctrack{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
 .cfill{height:100%;border-radius:3px}
 .cval{font-size:12px;font-weight:600;width:80px;text-align:right;flex-shrink:0}
-.tw{overflow-x:auto}
+.tw{overflow-x:auto; max-height: 65vh; overflow-y:auto;}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+th{position:sticky; top:0; background:var(--surface); z-index:1; text-align:left; padding:8px 12px; font-size:11px; font-weight:600; color:var(--text2); border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; box-shadow: 0 1px 0 var(--border);}
 td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--surface2)}
@@ -403,13 +403,49 @@ async function appendRow(row){
 /* ── PARSE ── */
 function parseRow(r){
   const raw=(r[C.castka]||'0').toString().replace(/[^\d.-]/g,'');
-  return{datum:r[C.datum]||'',popis:r[C.popis]||'',castka:Math.abs(parseFloat(raw)||0),
-    mena:r[C.mena]||'CZK',ucet:r[C.ucet]||'',typ:r[C.typ]||'Výdaj',
-    kategorie:r[C.kategorie]||'Ostatní',osoba:r[C.osoba]||'',metoda:r[C.metoda]||'',
-    protistrana:r[C.protistrana]||'',poznamka:r[C.poznamka]||'',
-    mesic:r[C.mesic]||'',rok:r[C.rok]||'',id:r[C.id]||''};
+  
+  let d = r[C.datum];
+  let dateObj = new Date(d);
+  let isDate = d && !isNaN(dateObj.getTime());
+
+  let mStr = r[C.mesic]||'';
+  let yStr = r[C.rok]||'';
+
+  // Pokud je to platné datum, vygenerujeme z něj čistý měsíc a rok pro Cashflow a filtry
+  if(isDate) {
+     const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+     mStr = `${mn[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+     yStr = dateObj.getFullYear().toString();
+  }
+
+  return{
+    datum: d||'',
+    popis: r[C.popis]||'',
+    castka: Math.abs(parseFloat(raw)||0),
+    mena: r[C.mena]||'CZK',
+    ucet: r[C.ucet]||'',
+    typ: r[C.typ]||'Výdaj',
+    kategorie: r[C.kategorie]||'Ostatní',
+    osoba: r[C.osoba]||'',
+    metoda: r[C.metoda]||'',
+    protistrana: r[C.protistrana]||'',
+    poznamka: r[C.poznamka]||'',
+    mesic: mStr, // Opravený měsíc pro správné spojení dat v grafech!
+    rok: yStr,
+    id: r[C.id]||''
+  };
 }
-function fmtD(d){if(!d)return'';const p=d.toString().split('/');return p.length===3?`${String(p[1]).padStart(2,'0')}.${String(p[0]).padStart(2,'0')}.${p[2]}`:d;}
+
+function fmtD(d){
+  if(!d) return '';
+  const date = new Date(d);
+  if(!isNaN(date.getTime())){
+    // Převede strojové datum na hezké české (např. 31.01.2026)
+    return `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}.${date.getFullYear()}`;
+  }
+  return d;
+}
+
 function czk(n){return Math.round(n).toLocaleString('cs-CZ')+' Kč';}
 
 function getMonths(){
