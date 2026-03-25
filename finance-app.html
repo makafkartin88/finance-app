@@ -729,7 +729,7 @@ async function procFile(file){
     const b64=await toB64(file);
     const prompt = `Extrahuj transakce z tohoto bankovního výpisu. Vrať POUZE JSON pole. Každý objekt v poli musí obsahovat: datum (ve formátu MM/DD/YYYY), popis (název obchodníka nebo účel), castka (číslo, absolutní hodnota), typ ("Výdaj" nebo "Příjem"), kategorie (Bydlení/Jídlo/Doprava/Zábava/Zdraví/Investice/Ostatní/Příjem), ucet (název banky nebo zkus odhadnout). Příklad: [{"datum":"03/15/2026","popis":"Albert","castka":840,"typ":"Výdaj","kategorie":"Jídlo","ucet":"mBank"}]`;
 
-    const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + cfg.apiKey,{
+    const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + cfg.apiKey,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
