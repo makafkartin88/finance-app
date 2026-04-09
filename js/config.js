@@ -17,6 +17,6 @@ export const CATEGORY_COLORS = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Do
 
 // Firebase Auth whitelist — doplnit skutečné emaily
 export const AUTH_USERS = {
-  ' martinkafka9@gmail.com': { person: 'Martin', canSeeInvestments: true },
-  ' besarka@gmail.com':  { person: 'Šárka', canSeeInvestments: false }
+  'martinkafka9@gmail.com': { person: 'Martin', canSeeInvestments: true },
+  'besarka@gmail.com':  { person: 'Šárka', canSeeInvestments: false }
 };
