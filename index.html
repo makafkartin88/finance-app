@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance — Martin & Šárka</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="authScreen" class="authscreen" style="display:none">
+  <div class="authcard">
+    <div style="font-size:40px;margin-bottom:14px">&#128176;</div>
+    <h2>Finance App</h2>
+    <p>Načítání aplikace...</p>
+  </div>
+</div>
+
+<div class="overlay" id="txModal" style="display:none">
+  <div class="modal">
+    <h2 id="txTitle">Přidat transakci</h2>
+    <div class="fgrid">
+      <div class="fg"><label>Datum</label><input type="date" id="fDate"/></div>
+      <div class="fg"><label>Částka (Kč)</label><input type="number" id="fAmt" placeholder="0" step="1"/></div>
+      <div class="fg fgfull"><label>Popis</label><input type="text" id="fDesc" placeholder="Popis transakce"/></div>
+      <div class="fg"><label>Typ</label><select id="fTyp"><option>Výdaj</option><option>Příjem</option></select></div>
+      <div class="fg"><label>Kategorie</label><select id="fKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
+      <div class="fg"><label>Osoba</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
+      <div class="fg"><label>Účet</label><select id="fUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
+      <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
+      <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" placeholder="Obchod nebo firma"/></div>
+      <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
+    </div>
+    <div class="mactions">
+      <button class="btnp" onclick="saveTx()">Uložit do Sheets</button>
+      <button class="btn" onclick="closeTx()">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="invPosModal" style="display:none">
+  <div class="modal">
+    <h2 id="invPosTitle">Přidat investiční pozici</h2>
+    <div class="fgrid">
+      <div class="fg"><label>Název</label><input type="text" id="ipName" placeholder="Vanguard S&P 500 ETF"/></div>
+      <div class="fg"><label>Ticker</label><input type="text" id="ipTicker" placeholder="VUSA"/></div>
+      <div class="fg"><label>Typ</label><select id="ipType"><option>ETF</option><option>Akcie</option><option>Crypto</option><option>Dluhopis</option><option>Fond</option></select></div>
+      <div class="fg"><label>Broker</label><select id="ipBroker"><option>Trading 212</option><option>Degiro</option><option>XTB</option><option>Coinbase</option><option>Binance</option><option>Manual</option></select></div>
+      <div class="fg"><label>Datum nákupu</label><input type="date" id="ipDate"/></div>
+      <div class="fg"><label>Počet kusů</label><input type="number" id="ipQty" placeholder="0" step="any"/></div>
+      <div class="fg"><label>Cena za kus</label><input type="number" id="ipPrice" placeholder="0" step="any"/></div>
+      <div class="fg"><label>Měna</label><select id="ipCurrency"><option>CZK</option><option>EUR</option><option>USD</option></select></div>
+      <div class="fg"><label>Celkem v CZK</label><input type="number" id="ipTotalCzk" placeholder="0" step="1"/></div>
+      <div class="fg fgfull"><label>Poznámka</label><input type="text" id="ipNote" placeholder="Volitelná poznámka"/></div>
+    </div>
+    <div class="mactions">
+      <button class="btnp" onclick="saveInvPosition()">Uložit pozici</button>
+      <button class="btn" onclick="closeInvPosition()">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="balModal" style="display:none">
+  <div class="modal">
+    <h2>Aktualizovat zůstatky účtů</h2>
+    <div id="balForm"></div>
+    <div class="mactions">
+      <button class="btnp" onclick="saveBalances()">Uložit zůstatky</button>
+      <button class="btn" onclick="document.getElementById('balModal').style.display='none'">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="logo"><h1>Finance</h1><p>Martin & Šárka</p></div>
+    <nav class="nav">
+      <div class="nlabel">Přehled</div>
+      <div class="ni active" onclick="nav('dashboard',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>Dashboard</div>
+      <div class="ni" onclick="nav('transactions',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="11" width="14" height="2" rx="1"/></svg>Transakce</div>
+      <div class="ni" onclick="nav('budgets',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2" stroke-linecap="round"/></svg>Rozpočty</div>
+      <div class="nlabel">Analýzy</div>
+      <div class="ni" onclick="nav('charts',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="6" width="3" height="9"/></svg>Grafy</div>
+      <div class="ni" onclick="nav('investments',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 14,3"/><polyline points="11,3 14,3 14,6"/></svg>Investice</div>
+      <div class="nlabel">Data</div>
+      <div class="ni" onclick="nav('import',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M4 7l4 4 4-4" stroke-linecap="round"/><path d="M2 14h12" stroke-linecap="round"/></svg>Import PDF</div>
+      <div class="ni" onclick="nav('settings',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>Nastavení</div>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="auth-row"><div class="adot" id="adot"></div><span id="atext">Nepřipojeno</span></div>
+      <div class="auth-row" style="margin-bottom:4px"><span id="authUser" style="font-size:11px;color:var(--text2)"></span></div>
+      <button id="logoutBtn" class="btn btnsm" style="display:none;margin-bottom:8px;width:100%;font-size:10px" onclick="logout()">Odhlásit se</button>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Zobrazení</div>
+      <div class="person-row">
+        <button class="pb active" onclick="setPerson('Oba',this)">Oba</button>
+        <button class="pb" onclick="setPerson('Martin',this)">Martin</button>
+        <button class="pb" onclick="setPerson('Šárka',this)">Šárka</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <div id="p-dashboard" class="page active">
+      <div class="topbar">
+        <h2>Dashboard</h2>
+        <div class="topbar-right">
+          <div class="range-box">
+            <div class="range-field">
+              <label>Od</label>
+              <input type="date" id="dFrom" onchange="applyRangeFromInputs()"/>
+            </div>
+            <div class="range-field">
+              <label>Do</label>
+              <input type="date" id="dTo" onchange="applyRangeFromInputs()"/>
+            </div>
+            <div class="range-summary" id="dRangeTxt"></div>
+            <button class="btn" onclick="resetRange()">Celý rozsah</button>
+          </div>
+          <button class="btnp" onclick="openTx()">+ Přidat transakci</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="chip-row" style="margin-bottom:16px">
+          <div class="chip" id="dashScope">Rozsah</div>
+          <div class="chip" id="dashDrill" style="display:none"></div>
+        </div>
+        <div class="mgrid">
+          <div class="mc"><div class="ml">Příjmy</div><div class="mv green" id="m1">—</div><div class="ms" id="m1s"></div></div>
+          <div class="mc"><div class="ml">Výdaje</div><div class="mv red" id="m2">—</div><div class="ms" id="m2s"></div></div>
+          <div class="mc"><div class="ml">Čistá úspora</div><div class="mv" id="m3">—</div><div class="ms" id="m3s"></div></div>
+          <div class="mc"><div class="ml">Investice</div><div class="mv blue" id="m4">—</div><div class="ms">Trading 212</div></div>
+        </div>
+        <div class="two">
+          <div class="card">
+            <div class="card-hdr">
+              <div class="ct">Cash flow — klikni pro drill-down</div>
+              <div class="legend"><div class="li"><div class="ld" style="background:var(--green)"></div>Příjmy</div><div class="li"><div class="ld" style="background:var(--red)"></div>Výdaje</div></div>
+            </div>
+            <div class="bchart" id="cfChart"></div>
+            <div class="blrow" id="cfLabels"></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Výdaje dle kategorie — klikni pro filtrování</div></div>
+            <div id="catBars"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div class="ct" id="recentTitle">Poslední transakce</div><button class="btn btnsm" onclick="nav('transactions',document.querySelectorAll('.ni')[1])">Všechny →</button></div>
+          <div class="tw"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Osoba</th><th>Účet</th><th>Částka</th></tr></thead><tbody id="recentBody"></tbody></table></div>
+          <div id="recentEmpty" class="empty" style="display:none">Žádné transakce pro tento filtr.</div>
+          </div>
+        </div>
+      </div>
+
+    <div id="p-transactions" class="page">
+      <div class="topbar">
+        <h2>Transakce</h2>
+        <div class="topbar-right">
+          <select class="sel" id="txfMonth"><option value="">Všechny měsíce</option></select>
+          <select class="sel" id="txfCat"><option value="">Kategorie</option><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option><option>Příjem</option></select>
+          <select class="sel" id="txfAcc"><option value="">Účet</option><option>mBank</option><option>UniCredit</option><option>Trading 212</option></select>
+          <button class="btnp" onclick="openTx()">+ Přidat</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="card" style="padding:0">
+          <div class="tw"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Typ</th><th>Osoba</th><th>Účet</th><th>Metoda</th><th>Protistrana</th><th>Částka</th><th></th></tr></thead><tbody id="txBody"></tbody></table></div>
+          <div id="txEmpty" class="empty" style="display:none">Žádné transakce</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-budgets" class="page">
+      <div class="topbar"><h2>Rozpočty</h2><div class="topbar-right"><select class="sel" id="bMonth" onchange="renderBudgets()"></select></div></div>
+      <div class="content">
+        <div class="mgrid">
+          <div class="mc"><div class="ml">V pořádku</div><div class="mv green" id="b1">—</div></div>
+          <div class="mc"><div class="ml">Překročeno</div><div class="mv red" id="b2">—</div></div>
+          <div class="mc"><div class="ml">Celkový limit</div><div class="mv" id="b3">—</div></div>
+          <div class="mc"><div class="ml">Utraceno</div><div class="mv" id="b4">—</div></div>
+        </div>
+        <div class="card"><div class="card-hdr"><div class="ct">Limity</div><button class="btn btnsm" onclick="nav('settings',document.querySelectorAll('.ni')[6])">Upravit</button></div><div id="budRows"></div></div>
+      </div>
+    </div>
+
+    <div id="p-charts" class="page">
+      <div class="topbar"><h2>Grafy</h2><div class="topbar-right"><div class="range-summary" id="chRangeTxt"></div></div></div>
+      <div class="content">
+        <div class="mgrid">
+          <div class="mc"><div class="ml">Utratil Martin</div><div class="mv blue" id="ca1">—</div><div class="ms" id="ca1s"></div></div>
+          <div class="mc"><div class="ml">Utratila Šárka</div><div class="mv" id="ca2">—</div><div class="ms" id="ca2s"></div></div>
+          <div class="mc"><div class="ml">Průměr za měsíc</div><div class="mv" id="ca3">—</div><div class="ms" id="ca3s"></div></div>
+          <div class="mc"><div class="ml">Nejsilnější kategorie</div><div class="mv" id="ca4">—</div><div class="ms" id="ca4s"></div></div>
+        </div>
+        <div class="two">
+          <div class="card"><div class="card-hdr"><div class="ct">Roční přehled</div><div class="legend"><div class="li"><div class="ld" style="background:var(--green)"></div>Příjmy</div><div class="li"><div class="ld" style="background:var(--red)"></div>Výdaje</div></div></div><div class="bchart" id="yrChart"></div><div class="blrow" id="yrLabels"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Míra úspor (%)</div></div><div class="bchart" id="srChart"></div><div class="blrow" id="srLabels"></div></div>
+        </div>
+        <div class="two">
+          <div class="card"><div class="card-hdr"><div class="ct">Výdaje <span class="badge bme">Martin</span></div></div><div id="cbM"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Výdaje <span class="badge bsa">Šárka</span></div></div><div id="cbS"></div></div>
+        </div>
+        <div class="two">
+          <div class="card"><div class="card-hdr"><div class="ct">Poměr útraty Martin vs. Šárka</div></div><div class="split-card"><div class="split-track"><div id="spendMartin" class="split-m" style="width:50%"></div><div id="spendSarka" class="split-s" style="width:50%"></div></div><div class="split-legend" id="spendLegend"></div></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Průměrná měsíční útrata dle kategorií</div></div><div id="avgCats" class="metric-stack"></div></div>
+        </div>
+        <div class="two">
+          <div class="card"><div class="card-hdr"><div class="ct">Protistrany podle útraty</div></div><div id="counterpartySpend" class="metric-stack"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Kategorie podle protistran</div></div><div id="categoryCounterparty" class="insight-list"></div></div>
+        </div>
+        <div class="three">
+          <div class="card"><div class="card-hdr"><div class="ct">Měsíce s největší útratou</div></div><div id="topMonths" class="insight-list"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Nejvyšší jednotlivé výdaje</div></div><div id="topExpenses" class="insight-list"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Rychlé insighty</div></div><div id="chartInsights" class="insight-list"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-investments" class="page">
+      <div class="topbar"><h2>Investice</h2><div class="topbar-right"><button class="btnp" onclick="openInvPosition()">+ Přidat pozici</button></div></div>
+      <div class="content">
+        <div class="inv-tabs" id="invTabs">
+          <button class="inv-tab active" onclick="invTab('overview',this)">Přehled</button>
+          <button class="inv-tab" onclick="invTab('positions',this)">Pozice</button>
+          <button class="inv-tab" onclick="invTab('tax',this)">Daňový test</button>
+          <button class="inv-tab" onclick="invTab('btc',this)">Bitcoin</button>
+          <button class="inv-tab" onclick="invTab('import',this)">Import</button>
+          <button class="inv-tab" onclick="invTab('history',this)">Historie</button>
+        </div>
+
+        <!-- PŘEHLED PORTFOLIA -->
+        <div id="inv-overview" class="inv-section active">
+          <div class="mgrid">
+            <div class="mc"><div class="ml">Celkový majetek</div><div class="mv blue" id="i-total">—</div></div>
+            <div class="mc"><div class="ml">Investice</div><div class="mv" id="i-invested">—</div></div>
+            <div class="mc"><div class="ml">Výnos</div><div class="mv" id="i-return">—</div><div class="ms" id="i-return-pct"></div></div>
+            <div class="mc"><div class="ml">BTC</div><div class="mv" id="i-btc-val">—</div></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Rozložení majetku</div><button class="btn btnsm" onclick="openAccountBalances()">Aktualizovat zůstatky</button></div>
+            <div class="split-track" style="margin-bottom:14px" id="portfolioBar"></div>
+            <div id="portfolioRows"></div>
+            <div class="portfolio-total"><span>Celkem</span><span id="portfolioTotal">—</span></div>
+          </div>
+        </div>
+
+        <!-- POZICE -->
+        <div id="inv-positions" class="inv-section">
+          <div class="card" style="padding:0">
+            <div class="tw"><table><thead><tr><th>Název</th><th>Ticker</th><th>Broker</th><th>Nákup</th><th>Počet</th><th>Nák. cena</th><th>Aktuální</th><th>P&L</th><th>Daňový test</th></tr></thead><tbody id="posBody"></tbody></table></div>
+            <div id="posEmpty" class="empty" style="display:none">Žádné investiční pozice. Přidej pozici nebo importuj výpis z brokera.</div>
+          </div>
+        </div>
+
+        <!-- DAŇOVÝ TEST -->
+        <div id="inv-tax" class="inv-section">
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Daňový test — 3leté pravidlo</div></div>
+            <p style="font-size:12px;color:var(--text2);margin-bottom:16px">Kapitálové příjmy z prodeje cenných papírů držených déle než 3 roky jsou osvobozeny od daně z příjmů (15%). Pravidlo platí per pozice (dle data nákupu).</p>
+            <div class="mgrid" style="grid-template-columns:repeat(3,1fr)">
+              <div class="mc"><div class="ml">Bez daně</div><div class="mv green" id="tax-free">0</div></div>
+              <div class="mc"><div class="ml">Blíží se</div><div class="mv" style="color:var(--amber)" id="tax-soon">0</div></div>
+              <div class="mc"><div class="ml">Zamčeno</div><div class="mv red" id="tax-locked">0</div></div>
+            </div>
+            <div id="taxRows"></div>
+            <div id="taxEmpty" class="empty" style="display:none">Žádné pozice pro daňový test.</div>
+          </div>
+        </div>
+
+        <!-- BITCOIN -->
+        <div id="inv-btc" class="inv-section">
+          <div class="two">
+            <div class="card">
+              <div class="card-hdr"><div class="ct">Bitcoin — aktuální cena</div></div>
+              <div class="btc-price" id="btcPrice">Načítám...</div>
+              <div class="btc-sub" id="btcPriceUsd"></div>
+              <div class="ms" id="btcLastUpdate"></div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="ct">Tvoje BTC</div></div>
+              <div class="mgrid" style="grid-template-columns:1fr 1fr;margin-bottom:0">
+                <div><div class="ml">Celkem BTC</div><div class="mv" id="btcAmount">0</div></div>
+                <div><div class="ml">Hodnota</div><div class="mv blue" id="btcValue">—</div></div>
+                <div><div class="ml">Investováno</div><div class="mv" id="btcCost">—</div></div>
+                <div><div class="ml">P&L</div><div class="mv" id="btcPnl">—</div><div class="ms" id="btcPnlPct"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="ct">BTC pozice</div></div>
+            <div id="btcPositions"></div>
+            <div id="btcEmpty" class="empty" style="display:none">Žádné BTC pozice. Přidej pozici s typem "Crypto" a tickerem "BTC".</div>
+          </div>
+        </div>
+
+        <!-- IMPORT Z BROKERA -->
+        <div id="inv-import" class="inv-section">
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Import výpisu z brokera</div></div>
+            <div class="upzone" id="invUpzone" onclick="document.getElementById('invFileIn').click()" ondragover="invDov(event)" ondragleave="invDol()" ondrop="invDod(event)">
+              <svg style="width:40px;height:40px;margin:0 auto 12px;display:block;opacity:.35" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="4" width="24" height="32" rx="3"/><polyline points="20,12 20,26"/><polyline points="14,20 20,26 26,20"/></svg>
+              <h3>Přetáhni CSV nebo PDF výpis z brokera</h3>
+              <p>podporuje Trading 212, další brokery přes AI analýzu</p>
+              <div class="schips"><span class="schip">Trading 212 CSV</span><span class="schip">PDF výpis</span></div>
+              <input type="file" id="invFileIn" accept=".csv,.pdf" style="display:none" onchange="invOnFile(event)"/>
+            </div>
+            <div id="invImpStatus" style="margin-top:16px;display:none"></div>
+            <div id="invImpResults" style="margin-top:16px;display:none"></div>
+          </div>
+        </div>
+
+        <!-- HISTORIE -->
+        <div id="inv-history" class="inv-section">
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Prodané pozice a dividendy</div></div>
+            <div class="tw"><table><thead><tr><th>Datum</th><th>Název</th><th>Typ</th><th>Částka</th><th>Poznámka</th></tr></thead><tbody id="histBody"></tbody></table></div>
+            <div id="histEmpty" class="empty" style="display:none">Žádná historie.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-import" class="page">
+      <div class="topbar"><h2>AI import dokladů a výpisů</h2></div>
+      <div class="content">
+        <div class="narrow">
+        <div class="upzone" id="upzone" onclick="document.getElementById('pdfIn').click()" ondragover="dov(event)" ondragleave="dol()" ondrop="dod(event)">
+          <svg style="width:40px;height:40px;margin:0 auto 12px;display:block;opacity:.35" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="4" width="24" height="32" rx="3"/><polyline points="20,12 20,26"/><polyline points="14,20 20,26 26,20"/></svg>
+          <h3>Přetáhni PDF nebo fotku účtenky sem</h3>
+          <p>funguje pro bankovní výpisy, účtenky a screeny plateb</p>
+          <div class="schips"><span class="schip">PDF výpis</span><span class="schip">JPG / PNG / HEIC</span><span class="schip">Účtenka</span></div>
+          <input type="file" id="pdfIn" accept=".pdf,image/*,.heic,.heif" style="display:none" onchange="onFile(event)"/>
+        </div>
+        <div id="impStatus" style="margin-top:16px;display:none"></div>
+        <div id="impResults" style="margin-top:16px;display:none"></div>
+        <div class="card" style="margin-top:20px"><div class="card-hdr"><div class="ct">Jak to funguje</div></div>
+          <div class="steps">
+            <div class="step"><div class="snum">1</div><div><div class="stitle">Nahraj PDF nebo fotku</div><div class="sdesc">Měsíční výpis z banky, účtenku nebo screenshot platby</div></div></div>
+            <div class="step"><div class="snum">2</div><div><div class="stitle">AI vytáhne návrh transakcí</div><div class="sdesc">Rozpozná datum, částku, popis, typ a navrhne kategorii i účet</div></div></div>
+            <div class="step"><div class="snum">3</div><div><div class="stitle">Zkontroluj a potvrď</div><div class="sdesc">Můžeš upravit každý řádek a až pak vše uložit do Google Sheets</div></div></div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-settings" class="page">
+      <div class="topbar"><h2>Nastavení</h2></div>
+      <div class="content">
+        <div class="narrow">
+
+        <div class="card">
+          <div class="card-hdr"><div class="ct">Umělá Inteligence (AI Import)</div></div>
+          <div class="fg" style="margin-bottom:14px">
+            <label>Gemini API Klíč</label>
+            <input type="password" id="sApiKey" placeholder="AIzaSy..."/>
+            <div class="fhint">Klíč získáš zcela zdarma na <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--blue-text)">Google AI Studio</a>. Slouží k chytrému čtení PDF výpisů.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btnp" onclick="saveSettings()">Uložit nastavení</button>
+            <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data z Tabulky</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-hdr"><div class="ct">Měsíční limity (Kč)</div></div>
+          <div class="fgrid" id="budLimForm"></div>
+          <button class="btnp" style="margin-top:14px" onclick="saveLimits()">Uložit limity</button>
+        </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
