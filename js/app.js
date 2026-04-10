@@ -6,8 +6,7 @@ import { renderTx, openTx, openEdit, closeTx, saveTx } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
-import { dov, dol, dod, onFile, confirmImp } from './import.js';
-import { saveSettings, reloadSheets } from './settings.js';
+import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
 
 /* ── TOAST ── */
@@ -29,7 +28,7 @@ function setAuth(ok) {
 export async function loadSheets() {
   toast('Načítám data z Tabulky...');
   try {
-    const r = await fetch(GAS_URL);
+    const r = await fetch(GAS_URL + '?sheet=Transakce');
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     const rows = (d.values || []).slice(1);
@@ -112,8 +111,8 @@ function applyRangeFromInputs() {
 }
 
 function resetRange() {
-  const { min, max } = getBounds();
-  state._range = { from: isoDate(min), to: isoDate(max) };
+  const { min } = getBounds();
+  state._range = { from: isoDate(min), to: isoDate(new Date()) };
   state.drill = { month: null, cat: null };
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
 }
@@ -121,10 +120,10 @@ function resetRange() {
 /* ── HASH ROUTING ── */
 function handleHash() {
   const hash = location.hash.slice(1) || 'dashboard';
-  const validPages = ['dashboard','transactions','budgets','charts','investments','import','settings'];
+  const validPages = ['dashboard','transactions','budgets','charts','investments','settings'];
   const page = validPages.includes(hash) ? hash : 'dashboard';
   const navItems = document.querySelectorAll('.ni');
-  const pageMap = { dashboard: 0, transactions: 1, budgets: 2, charts: 3, investments: 4, import: 5, settings: 6 };
+  const pageMap = { dashboard: 0, transactions: 1, budgets: 2, charts: 3, investments: 4, settings: 5 };
   nav(page, navItems[pageMap[page]]);
 }
 
@@ -140,14 +139,8 @@ window.drillC = drillC;
 window.clearDrill = clearDrill;
 window.applyRangeFromInputs = applyRangeFromInputs;
 window.resetRange = resetRange;
-window.saveSettings = saveSettings;
 window.reloadSheets = () => loadSheets();
 window.saveLimits = saveLimits;
-window.dov = dov;
-window.dol = dol;
-window.dod = dod;
-window.onFile = onFile;
-window.confirmImp = confirmImp;
 window.renderBudgets = renderBudgets;
 window.logout = logout;
 window.invTab = invTab;
@@ -164,10 +157,7 @@ window.confirmInvImport = confirmInvImport;
 
 /* ── INIT ── */
 (function init() {
-  const sc = localStorage.getItem('fincfg'); if (sc) Object.assign(state.cfg, JSON.parse(sc));
   const sl = localStorage.getItem('finlim'); if (sl) Object.assign(state.limits, JSON.parse(sl));
-
-  document.getElementById('sApiKey').value = state.cfg.apiKey || '';
   applyPersonTheme();
 
   initAuth(() => {

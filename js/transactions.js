@@ -71,7 +71,7 @@ export async function saveTx() {
   if (state.editIdx !== null) { state.txs[state.editIdx] = tx; } else {
     state.txs.push(tx);
     try {
-      const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ values: [row] }) });
+      const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: [row] }) });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
     } catch(e) { toast('Chyba zápisu: '+e.message,'err'); }

@@ -62,11 +62,12 @@ export function getBounds(list) {
 }
 
 export function ensureRange() {
-  const { min, max } = getBounds();
+  const { min } = getBounds();
+  const today = new Date();
   if (!state._range) state._range = { from: '', to: '' };
   if (!state._range.from) state._range.from = isoDate(min);
-  if (!state._range.to) state._range.to = isoDate(max);
-  if (state._range.from > state._range.to) state._range = { from: isoDate(min), to: isoDate(max) };
+  if (!state._range.to) state._range.to = isoDate(today);
+  if (state._range.from > state._range.to) state._range = { from: isoDate(min), to: isoDate(today) };
 }
 
 export function rangeLabel(from, to) {

@@ -18,6 +18,7 @@
 
 <div class="overlay" id="txModal" style="display:none">
   <div class="modal">
+    <form autocomplete="off" onsubmit="event.preventDefault();saveTx()">
     <h2 id="txTitle">Přidat transakci</h2>
     <div class="fgrid">
       <div class="fg"><label>Datum</label><input type="date" id="fDate"/></div>
@@ -32,9 +33,10 @@
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
     </div>
     <div class="mactions">
-      <button class="btnp" onclick="saveTx()">Uložit do Sheets</button>
-      <button class="btn" onclick="closeTx()">Zrušit</button>
+      <button type="submit" class="btnp">Uložit do Sheets</button>
+      <button type="button" class="btn" onclick="closeTx()">Zrušit</button>
     </div>
+    </form>
   </div>
 </div>
 
@@ -85,7 +87,6 @@
       <div class="ni" onclick="nav('charts',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="6" width="3" height="9"/></svg>Grafy</div>
       <div class="ni" onclick="nav('investments',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 14,3"/><polyline points="11,3 14,3 14,6"/></svg>Investice</div>
       <div class="nlabel">Data</div>
-      <div class="ni" onclick="nav('import',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M4 7l4 4 4-4" stroke-linecap="round"/><path d="M2 14h12" stroke-linecap="round"/></svg>Import PDF</div>
       <div class="ni" onclick="nav('settings',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>Nastavení</div>
     </nav>
     <div class="sidebar-bottom">
@@ -182,7 +183,7 @@
           <div class="mc"><div class="ml">Celkový limit</div><div class="mv" id="b3">—</div></div>
           <div class="mc"><div class="ml">Utraceno</div><div class="mv" id="b4">—</div></div>
         </div>
-        <div class="card"><div class="card-hdr"><div class="ct">Limity</div><button class="btn btnsm" onclick="nav('settings',document.querySelectorAll('.ni')[6])">Upravit</button></div><div id="budRows"></div></div>
+        <div class="card"><div class="card-hdr"><div class="ct">Limity</div><button class="btn btnsm" onclick="nav('settings',document.querySelectorAll('.ni')[5])">Upravit</button></div><div id="budRows"></div></div>
       </div>
     </div>
 
@@ -323,44 +324,14 @@
       </div>
     </div>
 
-    <div id="p-import" class="page">
-      <div class="topbar"><h2>AI import dokladů a výpisů</h2></div>
-      <div class="content">
-        <div class="narrow">
-        <div class="upzone" id="upzone" onclick="document.getElementById('pdfIn').click()" ondragover="dov(event)" ondragleave="dol()" ondrop="dod(event)">
-          <svg style="width:40px;height:40px;margin:0 auto 12px;display:block;opacity:.35" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="4" width="24" height="32" rx="3"/><polyline points="20,12 20,26"/><polyline points="14,20 20,26 26,20"/></svg>
-          <h3>Přetáhni PDF nebo fotku účtenky sem</h3>
-          <p>funguje pro bankovní výpisy, účtenky a screeny plateb</p>
-          <div class="schips"><span class="schip">PDF výpis</span><span class="schip">JPG / PNG / HEIC</span><span class="schip">Účtenka</span></div>
-          <input type="file" id="pdfIn" accept=".pdf,image/*,.heic,.heif" style="display:none" onchange="onFile(event)"/>
-        </div>
-        <div id="impStatus" style="margin-top:16px;display:none"></div>
-        <div id="impResults" style="margin-top:16px;display:none"></div>
-        <div class="card" style="margin-top:20px"><div class="card-hdr"><div class="ct">Jak to funguje</div></div>
-          <div class="steps">
-            <div class="step"><div class="snum">1</div><div><div class="stitle">Nahraj PDF nebo fotku</div><div class="sdesc">Měsíční výpis z banky, účtenku nebo screenshot platby</div></div></div>
-            <div class="step"><div class="snum">2</div><div><div class="stitle">AI vytáhne návrh transakcí</div><div class="sdesc">Rozpozná datum, částku, popis, typ a navrhne kategorii i účet</div></div></div>
-            <div class="step"><div class="snum">3</div><div><div class="stitle">Zkontroluj a potvrď</div><div class="sdesc">Můžeš upravit každý řádek a až pak vše uložit do Google Sheets</div></div></div>
-          </div>
-        </div>
-        </div>
-      </div>
-    </div>
-
     <div id="p-settings" class="page">
       <div class="topbar"><h2>Nastavení</h2></div>
       <div class="content">
         <div class="narrow">
 
         <div class="card">
-          <div class="card-hdr"><div class="ct">Umělá Inteligence (AI Import)</div></div>
-          <div class="fg" style="margin-bottom:14px">
-            <label>Gemini API Klíč</label>
-            <input type="password" id="sApiKey" placeholder="AIzaSy..."/>
-            <div class="fhint">Klíč získáš zcela zdarma na <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--blue-text)">Google AI Studio</a>. Slouží k chytrému čtení PDF výpisů.</div>
-          </div>
+          <div class="card-hdr"><div class="ct">Data</div></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btnp" onclick="saveSettings()">Uložit nastavení</button>
             <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data z Tabulky</button>
           </div>
         </div>
