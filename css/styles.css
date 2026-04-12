@@ -180,6 +180,24 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .empty{text-align:center;padding:48px 24px;color:var(--text3);font-size:13px;line-height:1.6}
 .empty svg{display:block;margin:0 auto 12px;opacity:.3}
 .pb-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block}
+.search-wrap{position:relative;display:flex;align-items:center}
+.search-icon{position:absolute;left:9px;width:14px;height:14px;color:var(--text3);pointer-events:none}
+.search-input{padding:7px 11px 7px 28px;border-radius:var(--rsm);border:1px solid var(--border2);background:var(--surface);font-size:12px;color:var(--text);font-family:inherit;width:160px;transition:border .1s,width .2s}
+.search-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(55,138,221,.12);width:200px}
+.search-input::placeholder{color:var(--text3)}
+.rcpt-link{text-decoration:none;font-size:16px;cursor:pointer;transition:transform .1s}
+.rcpt-link:hover{transform:scale(1.2)}
+.rcpt-add{font-size:13px;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:var(--text3)}
+.rcpt-add:hover{color:var(--text);background:var(--surface2)}
+.rec-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.rec-row:last-child{border-bottom:none}
+.rec-info{flex:1;min-width:0}
+.rec-name{font-size:13px;font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rec-detail{font-size:11px;color:var(--text2)}
+.rec-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.rec-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px}
+.rec-on{background:var(--green-bg);color:var(--green-text)}
+.rec-off{background:var(--surface2);color:var(--text3)}
 .bar-income{background:linear-gradient(180deg,#2cc991,var(--green))}
 .bar-expense{background:linear-gradient(180deg,#e87a5a,var(--red))}
 .bar-savings-good{background:linear-gradient(180deg,#2cc991,var(--green))}

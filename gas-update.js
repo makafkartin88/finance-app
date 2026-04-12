@@ -42,6 +42,12 @@ function doGet(e) {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
+
+    // ── RECEIPT UPLOAD ──
+    if (body.action === 'uploadReceipt') {
+      return handleReceiptUpload(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -65,6 +71,49 @@ function doPost(e) {
     }
 
     return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── RECEIPT UPLOAD TO GOOGLE DRIVE ──
+function handleReceiptUpload(body) {
+  try {
+    var txId = body.txId;
+    var fileName = body.fileName || 'uctenka';
+    var mimeType = body.mimeType || 'image/jpeg';
+    var data = body.data; // base64
+
+    // Najdi nebo vytvoř složku Finance-Uctenky
+    var folders = DriveApp.getFoldersByName('Finance-Uctenky');
+    var folder;
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder('Finance-Uctenky');
+    }
+
+    // Dekóduj base64 a ulož soubor
+    var blob = Utilities.newBlob(Utilities.base64Decode(data), mimeType, txId + '_' + fileName);
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var url = file.getUrl();
+
+    // Zapsat URL do sloupce P (index 15, 1-based = 16) v listu Transakce
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Transakce') || ss.getSheets()[0];
+    var dataRange = sheet.getDataRange().getValues();
+    for (var i = 1; i < dataRange.length; i++) {
+      if (dataRange[i][14] === txId) { // sloupec O (index 14) = ID
+        sheet.getRange(i + 1, 16).setValue(url); // sloupec P = uctenka URL
+        break;
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ success: true, url: url }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))

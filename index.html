@@ -31,6 +31,7 @@
       <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
       <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" placeholder="Obchod nebo firma"/></div>
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
+      <div class="fg fgfull" id="fReceiptWrap" style="display:none"><label>Účtenka</label><div id="fReceiptInfo" style="font-size:12px;color:var(--text2)"></div></div>
     </div>
     <div class="mactions">
       <button type="submit" class="btnp">Uložit do Sheets</button>
@@ -69,6 +70,36 @@
     <div class="mactions">
       <button class="btnp" onclick="saveBalances()">Uložit zůstatky</button>
       <button class="btn" onclick="document.getElementById('balModal').style.display='none'">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="recModal" style="display:none">
+  <div class="modal" style="max-width:560px">
+    <h2>Opakující se transakce</h2>
+    <div id="recList"></div>
+    <div id="recFormWrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">Nová šablona</h3>
+      <div class="fgrid">
+        <div class="fg"><label>Popis</label><input type="text" id="rfDesc" placeholder="Nájem, Netflix..."/></div>
+        <div class="fg"><label>Částka (Kč)</label><input type="number" id="rfAmt" placeholder="0" step="1"/></div>
+        <div class="fg"><label>Typ</label><select id="rfTyp"><option>Výdaj</option><option>Příjem</option></select></div>
+        <div class="fg"><label>Kategorie</label><select id="rfKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
+        <div class="fg"><label>Osoba</label><select id="rfOsoba"><option>Martin</option><option>Šárka</option></select></div>
+        <div class="fg"><label>Účet</label><select id="rfUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
+        <div class="fg"><label>Metoda</label><select id="rfMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
+        <div class="fg"><label>Protistrana</label><input type="text" id="rfProti" placeholder="Firma"/></div>
+        <div class="fg"><label>Den v měsíci</label><input type="number" id="rfDay" value="1" min="1" max="28"/></div>
+      </div>
+      <div class="mactions" style="margin-top:14px">
+        <button class="btnp" onclick="saveRecTemplate()">Uložit šablonu</button>
+        <button class="btn" onclick="closeRecForm()">Zrušit</button>
+      </div>
+    </div>
+    <div class="mactions" style="margin-top:16px">
+      <button class="btnp" onclick="generateRecurring()">Generovat za tento měsíc</button>
+      <button class="btn" onclick="openRecForm()">+ Přidat šablonu</button>
+      <button class="btn" onclick="closeRecurring()">Zavřít</button>
     </div>
   </div>
 </div>
@@ -160,15 +191,18 @@
       <div class="topbar">
         <h2>Transakce</h2>
         <div class="topbar-right">
+          <div class="search-wrap"><svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10" y1="10" x2="14" y2="14" stroke-linecap="round"/></svg><input type="search" id="txSearch" class="search-input" placeholder="Hledat..." oninput="searchTx()"/></div>
           <select class="sel" id="txfMonth"><option value="">Všechny měsíce</option></select>
           <select class="sel" id="txfCat"><option value="">Kategorie</option><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option><option>Příjem</option></select>
           <select class="sel" id="txfAcc"><option value="">Účet</option><option>mBank</option><option>UniCredit</option><option>Trading 212</option></select>
+          <button class="btn" onclick="openRecurring()">⟳ Opakující se</button>
           <button class="btnp" onclick="openTx()">+ Přidat</button>
         </div>
       </div>
       <div class="content">
         <div class="card" style="padding:0">
-          <div class="tw"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Typ</th><th>Osoba</th><th>Účet</th><th>Metoda</th><th>Protistrana</th><th>Částka</th><th></th></tr></thead><tbody id="txBody"></tbody></table></div>
+          <div class="tw"><table><thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Typ</th><th>Osoba</th><th>Účet</th><th>Metoda</th><th>Protistrana</th><th>Účtenka</th><th>Částka</th><th></th></tr></thead><tbody id="txBody"></tbody></table></div>
+          <input type="file" id="receiptFileIn" accept="image/*,.pdf" style="display:none" onchange="onReceiptFile(event)"/>
           <div id="txEmpty" class="empty" style="display:none">Žádné transakce</div>
         </div>
       </div>

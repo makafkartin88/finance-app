@@ -27,7 +27,8 @@ export function parseRow(r) {
     poznamka: r[C.poznamka]||'',
     mesic: mStr,
     rok: yStr,
-    id: r[C.id]||''
+    id: r[C.id]||'',
+    uctenka: r[C.uctenka]||''
   };
 }
 

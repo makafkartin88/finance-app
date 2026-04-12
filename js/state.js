@@ -8,6 +8,7 @@ export const state = {
   limits: { ...DEFAULT_LIMITS },
   drill: { month: null, cat: null },
   _range: null,
+  recurring: [],
   _importBusy: false,
   _impRows: [],
   _tt: null

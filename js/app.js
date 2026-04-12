@@ -2,12 +2,13 @@ import { GAS_URL, DEMO } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
-import { renderTx, openTx, openEdit, closeTx, saveTx } from './transactions.js';
+import { renderTx, openTx, openEdit, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
 import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
+import { loadRecurring, openRecurring, closeRecurring, openRecForm, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 
 /* ── TOAST ── */
 export function toast(msg, type) {
@@ -36,12 +37,14 @@ export async function loadSheets() {
     boot(); toast('Načteno ' + state.txs.length + ' transakcí', 'ok');
     setAuth(true);
     loadInvestmentData();
+    loadRecurring();
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');
     state.txs = DEMO.map(parseRow);
     boot();
     setAuth(false);
     loadInvestmentData();
+    loadRecurring();
   }
 }
 
@@ -134,6 +137,9 @@ window.openTx = openTx;
 window.openEdit = openEdit;
 window.closeTx = closeTx;
 window.saveTx = saveTx;
+window.searchTx = searchTx;
+window.triggerReceiptUpload = triggerReceiptUpload;
+window.onReceiptFile = onReceiptFile;
 window.drillM = drillM;
 window.drillC = drillC;
 window.clearDrill = clearDrill;
@@ -154,6 +160,14 @@ window.invDol = invDol;
 window.invDod = invDod;
 window.invOnFile = invOnFile;
 window.confirmInvImport = confirmInvImport;
+window.openRecurring = openRecurring;
+window.closeRecurring = closeRecurring;
+window.openRecForm = openRecForm;
+window.closeRecForm = closeRecForm;
+window.saveRecTemplate = saveRecTemplate;
+window.generateRecurring = generateRecurring;
+window.toggleRec = toggleRec;
+window.deleteRec = deleteRec;
 
 /* ── INIT ── */
 (function init() {
