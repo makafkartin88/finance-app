@@ -108,7 +108,7 @@ function handleReceiptUpload(body) {
     var dataRange = sheet.getDataRange().getValues();
     for (var i = 1; i < dataRange.length; i++) {
       if (dataRange[i][14] === txId) { // sloupec O (index 14) = ID
-        sheet.getRange(i + 1, 16).setValue(url); // sloupec P = uctenka URL
+        sheet.getRange(i + 1, 19).setValue(url); // sloupec S = uctenka URL
         break;
       }
     }

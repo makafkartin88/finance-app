@@ -90,7 +90,7 @@ export async function saveTx() {
   const sign = typ === 'Příjem' ? castka : -castka;
   const newId = `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
   const uctenka = state.editIdx !== null ? (state.txs[state.editIdx].uctenka || '') : '';
-  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,uctenka,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign];
+  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka];
   const tx = parseRow(row);
   if (state.editIdx !== null) { state.txs[state.editIdx] = tx; } else {
     state.txs.push(tx);
