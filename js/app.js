@@ -2,7 +2,7 @@ import { GAS_URL, DEMO } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
-import { renderTx, openTx, openEdit, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick } from './transactions.js';
+import { renderTx, openTx, openEdit, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
@@ -168,6 +168,7 @@ window.saveRecTemplate = saveRecTemplate;
 window.generateRecurring = generateRecurring;
 window.toggleRec = toggleRec;
 window.deleteRec = deleteRec;
+window.deleteTx = deleteTx;
 
 /* ── INIT ── */
 (function init() {

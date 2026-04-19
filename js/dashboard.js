@@ -58,7 +58,9 @@ export function renderDash() {
   const list = [...shown].sort((a,b) => new Date(b.datum)-new Date(a.datum)).slice(0, 20);
   document.getElementById('recentBody').innerHTML = list.map(t => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.kategorie === 'Investice' ? 'ai' : 'an';
-    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td>${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
+    const txIdx = state.txs.indexOf(t);
+    const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
+    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td>${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
   }).join('');
   document.getElementById('recentEmpty').style.display = list.length ? 'none' : 'block';
 }

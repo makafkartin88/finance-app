@@ -25,7 +25,7 @@ body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 .ni:hover{background:var(--surface2);color:var(--text);transform:translateX(2px)}
 .ni.active{background:var(--text);color:#fff;box-shadow:0 2px 8px rgba(26,26,24,0.15);font-weight:600}
 .ni svg{width:15px;height:15px;flex-shrink:0}
-.sidebar-bottom{padding:12px;border-top:1px solid var(--border)}
+.sidebar-bottom{padding:12px;border-top:1px solid var(--border);margin-top:auto}
 .person-row{display:flex;background:var(--surface2);border-radius:var(--rsm);padding:3px;gap:2px}
 .pb{flex:1;padding:5px 4px;border:none;border-radius:4px;background:transparent;font-size:11px;cursor:pointer;color:var(--text2);font-weight:500;transition:all .1s}
 .pb.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -199,6 +199,8 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .rec-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px}
 .rec-on{background:var(--green-bg);color:var(--green-text)}
 .rec-off{background:var(--surface2);color:var(--text3)}
+.del-btn{color:var(--red)!important;border-color:transparent!important;background:transparent!important;font-size:14px!important;padding:2px 6px!important}
+.del-btn:hover{background:var(--red-bg)!important;border-color:var(--red)!important}
 .bar-income{background:linear-gradient(180deg,#2cc991,var(--green))}
 .bar-expense{background:linear-gradient(180deg,#e87a5a,var(--red))}
 .bar-savings-good{background:linear-gradient(180deg,#2cc991,var(--green))}

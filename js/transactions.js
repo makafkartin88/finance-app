@@ -27,7 +27,7 @@ export function renderTx() {
     const cls = t.typ === 'Příjem' ? 'ap' : t.kategorie === 'Investice' ? 'ai' : 'an';
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
-    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td>${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td style="color:var(--text2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td><td><button class="btn btnsm" onclick="openEdit(${txIdx})">Upravit</button></td></tr>`;
+    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td>${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td style="color:var(--text2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td><td><button class="btn btnsm" onclick="openEdit(${txIdx})">Upravit</button></td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
   }).join('');
   document.getElementById('txEmpty').style.display = list.length ? 'none' : 'block';
 }
@@ -68,6 +68,18 @@ export function openTx(idx) {
 }
 
 export function openEdit(i) { openTx(i); }
+
+export async function deleteTx(idx) {
+  const t = state.txs[idx];
+  if (!t) return;
+  if (!confirm(`Opravdu chceš smazat transakci "${t.popis}" (${t.castka} Kč)?`)) return;
+  state.txs.splice(idx, 1);
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Transakce', txId: t.id }) });
+    toast('Transakce smazána', 'ok');
+  } catch(e) { toast('Lokálně smazáno, chyba sync: ' + e.message, 'err'); }
+  boot();
+}
 export function closeTx() { document.getElementById('txModal').style.display = 'none'; }
 
 export async function saveTx() {
