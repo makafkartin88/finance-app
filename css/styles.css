@@ -19,7 +19,7 @@ body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 .logo{padding:18px 16px 12px;border-bottom:1px solid var(--border)}
 .logo h1{font-size:15px;font-weight:700;letter-spacing:-.3px}
 .logo p{font-size:11px;color:var(--text3);margin-top:2px}
-.nav{padding:10px 8px;flex:1;overflow-y:auto}
+.nav{padding:10px 8px;overflow-y:auto}
 .nlabel{font-size:10px;color:var(--text3);padding:8px 8px 3px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--rsm);cursor:pointer;color:var(--text2);font-size:13px;transition:all .15s ease;margin-bottom:1px}
 .ni:hover{background:var(--surface2);color:var(--text);transform:translateX(2px)}
@@ -70,7 +70,7 @@ select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--bord
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .three{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
 .bchart{display:flex;align-items:flex-end;gap:4px;height:110px}
-.bg{flex:1;display:flex;gap:2px;align-items:flex-end;border-radius:3px;padding:0 1px;transition:opacity .15s;cursor:pointer}
+.bg{flex:1;display:flex;gap:2px;align-items:flex-end;border-radius:3px;padding:0 1px;transition:opacity .15s;cursor:pointer;height:100%}
 .bg:hover{opacity:.72}
 .bg.sel{outline:2px solid var(--blue);border-radius:3px;outline-offset:2px}
 .bar{flex:1;border-radius:3px 3px 0 0;min-height:3px}

@@ -68,9 +68,8 @@ function populateSels() {
   const from = document.getElementById('dFrom'), to = document.getElementById('dTo');
   if (from) from.value = state._range.from;
   if (to) to.value = state._range.to;
-  const summary = `<strong>${rangeLabel(state._range.from, state._range.to)}</strong><span>${scoped.length} transakcí</span>`;
-  const dTxt = document.getElementById('dRangeTxt'); if (dTxt) dTxt.innerHTML = summary;
-  const cTxt = document.getElementById('chRangeTxt'); if (cTxt) cTxt.innerHTML = summary;
+  const dTxt = document.getElementById('dRangeTxt'); if (dTxt) dTxt.innerHTML = `<strong>${scoped.length} transakcí</strong>`;
+  const cTxt = document.getElementById('chRangeTxt'); if (cTxt) cTxt.innerHTML = `<strong>${rangeLabel(state._range.from, state._range.to)}</strong><span>${scoped.length} transakcí</span>`;
   const scope = document.getElementById('dashScope'); if (scope) scope.textContent = `Rozsah: ${rangeLabel(state._range.from, state._range.to)}`;
 }
 
