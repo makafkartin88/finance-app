@@ -49,7 +49,7 @@ export function openTx(idx) {
     document.getElementById('fProti').value = t.protistrana;
     document.getElementById('fNotes').value = t.poznamka;
     if (t.uctenka) {
-      document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a>`;
+      document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
     } else {
       document.getElementById('fReceiptInfo').innerHTML = '';
     }
@@ -134,6 +134,20 @@ export async function saveTx() {
     } catch(err) { toast('Chyba uploadu účtenky: ' + err.message, 'err'); }
     _modalReceiptFile = null;
   }
+}
+
+export async function removeReceipt() {
+  if (state.editIdx === null) return;
+  if (!confirm('Opravdu chceš odebrat účtenku?')) return;
+  const t = state.txs[state.editIdx];
+  if (!t) return;
+  t.uctenka = '';
+  document.getElementById('fReceiptInfo').innerHTML = '';
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'removeReceipt', txId: t.id }) });
+    toast('Účtenka odebrána', 'ok');
+  } catch(e) { toast('Chyba: ' + e.message, 'err'); }
+  boot();
 }
 
 /* ── RECEIPT UPLOAD ── */

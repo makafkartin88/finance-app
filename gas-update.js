@@ -53,6 +53,11 @@ function doPost(e) {
       return handleDeleteRow(body);
     }
 
+    // ── REMOVE RECEIPT ──
+    if (body.action === 'removeReceipt') {
+      return handleRemoveReceipt(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -76,6 +81,28 @@ function doPost(e) {
     }
 
     return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── REMOVE RECEIPT URL FROM TRANSACTION ──
+function handleRemoveReceipt(body) {
+  try {
+    var txId = body.txId;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Transakce') || ss.getSheets()[0];
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][14] === txId) {
+        sheet.getRange(i + 1, 19).setValue(''); // sloupec S = uctenka URL
+        return ContentService.createTextOutput(JSON.stringify({ success: true }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ error: 'Transakce nenalezena' }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
