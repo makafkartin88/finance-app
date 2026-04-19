@@ -189,6 +189,7 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .rcpt-link:hover{transform:scale(1.2)}
 .rcpt-add{font-size:13px;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:var(--text3)}
 .rcpt-add:hover{color:var(--text);background:var(--surface2)}
+.rcpt-modal-row{display:flex;align-items:center;gap:8px}
 .rec-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
 .rec-row:last-child{border-bottom:none}
 .rec-info{flex:1;min-width:0}

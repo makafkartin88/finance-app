@@ -48,12 +48,10 @@ export function openTx(idx) {
     document.getElementById('fMetoda').value = t.metoda;
     document.getElementById('fProti').value = t.protistrana;
     document.getElementById('fNotes').value = t.poznamka;
-    const rw = document.getElementById('fReceiptWrap');
     if (t.uctenka) {
-      rw.style.display = 'flex';
-      document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit účtenku</a>`;
+      document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a>`;
     } else {
-      rw.style.display = 'none';
+      document.getElementById('fReceiptInfo').innerHTML = '';
     }
   } else {
     document.getElementById('fDate').value = today;
@@ -61,8 +59,11 @@ export function openTx(idx) {
     document.getElementById('fTyp').value = 'Výdaj'; document.getElementById('fKat').value = 'Jídlo';
     document.getElementById('fOsoba').value = 'Martin'; document.getElementById('fUcet').value = 'mBank';
     document.getElementById('fMetoda').value = 'Karta';
-    document.getElementById('fReceiptWrap').style.display = 'none';
+    document.getElementById('fReceiptInfo').innerHTML = '';
   }
+  _modalReceiptFile = null;
+  document.getElementById('fReceiptName').textContent = 'Žádný soubor';
+  document.getElementById('fReceiptFile').value = '';
   document.getElementById('txModal').style.display = 'flex';
 }
 
@@ -100,11 +101,38 @@ export async function saveTx() {
       if (d.error) throw new Error(d.error);
     } catch(e) { toast('Chyba zápisu: '+e.message,'err'); }
   }
+  const txId = newId;
   closeTx(); boot(); toast(state.editIdx !== null ? 'Transakce upravena' : 'Uloženo do Sheets','ok'); state.editIdx = null;
+
+  // Upload receipt if file was selected in modal
+  if (_modalReceiptFile) {
+    toast('Nahrávám účtenku...');
+    try {
+      const base64 = await fileToBase64(_modalReceiptFile);
+      const rr = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'uploadReceipt', txId, fileName: _modalReceiptFile.name, mimeType: _modalReceiptFile.type, data: base64 })
+      });
+      const rd = await rr.json();
+      if (rd.error) throw new Error(rd.error);
+      const t = state.txs.find(t => t.id === txId);
+      if (t) t.uctenka = rd.url || '';
+      boot();
+      toast('Účtenka nahrána','ok');
+    } catch(err) { toast('Chyba uploadu účtenky: ' + err.message, 'err'); }
+    _modalReceiptFile = null;
+  }
 }
 
 /* ── RECEIPT UPLOAD ── */
 let _receiptTxIdx = null;
+let _modalReceiptFile = null;
+
+export function onModalReceiptPick(e) {
+  const file = e.target.files[0];
+  _modalReceiptFile = file || null;
+  document.getElementById('fReceiptName').textContent = file ? file.name : 'Žádný soubor';
+}
 
 export function triggerReceiptUpload(txIdx) {
   _receiptTxIdx = txIdx;

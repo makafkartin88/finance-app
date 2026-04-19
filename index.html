@@ -31,7 +31,15 @@
       <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
       <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" placeholder="Obchod nebo firma"/></div>
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
-      <div class="fg fgfull" id="fReceiptWrap" style="display:none"><label>Účtenka</label><div id="fReceiptInfo" style="font-size:12px;color:var(--text2)"></div></div>
+      <div class="fg fgfull">
+        <label>Účtenka</label>
+        <div class="rcpt-modal-row">
+          <button type="button" class="btn btnsm" onclick="document.getElementById('fReceiptFile').click()">Nahrát foto/PDF</button>
+          <span id="fReceiptName" style="font-size:12px;color:var(--text2)">Žádný soubor</span>
+          <input type="file" id="fReceiptFile" accept="image/*,.pdf,.heic,.heif" style="display:none" onchange="onModalReceiptPick(event)"/>
+        </div>
+        <div id="fReceiptInfo" style="font-size:12px;margin-top:4px"></div>
+      </div>
     </div>
     <div class="mactions">
       <button type="submit" class="btnp">Uložit do Sheets</button>
