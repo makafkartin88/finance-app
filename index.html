@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Finance — Martin & Šárka</title>
 <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -153,7 +153,10 @@
 
     <div id="p-dashboard" class="page active">
       <div class="topbar">
-        <h2>Dashboard</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%">
+          <h2>Dashboard</h2>
+          <button class="btnp" onclick="openTx()" style="white-space:nowrap;flex-shrink:0">+ Přidat</button>
+        </div>
         <div class="topbar-right">
           <div class="range-box">
             <div class="range-field">
@@ -167,7 +170,6 @@
             <div class="range-summary" id="dRangeTxt"></div>
             <button class="btn" onclick="resetRange()">Celý rozsah</button>
           </div>
-          <button class="btnp" onclick="openTx()">+ Přidat transakci</button>
         </div>
       </div>
       <div class="content">
