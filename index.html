@@ -153,10 +153,7 @@
 
     <div id="p-dashboard" class="page active">
       <div class="topbar">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%">
-          <h2>Dashboard</h2>
-          <button class="btnp" onclick="openTx()" style="white-space:nowrap;flex-shrink:0">+ Přidat</button>
-        </div>
+        <h2 class="dash-title">Dashboard</h2>
         <div class="topbar-right">
           <div class="range-box">
             <div class="range-field">
@@ -168,8 +165,9 @@
               <input type="date" id="dTo" onchange="applyRangeFromInputs()"/>
             </div>
             <div class="range-summary" id="dRangeTxt"></div>
-            <button class="btn" onclick="resetRange()">Celý rozsah</button>
+            <button class="btn range-reset" onclick="resetRange()">Celý rozsah</button>
           </div>
+          <button class="btnp dash-add" onclick="openTx()">+ Přidat transakci</button>
         </div>
       </div>
       <div class="content">
