@@ -15,7 +15,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 body.theme-martin{--bg:#eef5ff;--surface2:#e8eff9}
 body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 .app{display:flex;min-height:100vh;min-height:100dvh}
-.sidebar{width:210px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;height:100dvh;overflow:hidden}
+.sidebar{width:210px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .logo{padding:18px 16px 12px;border-bottom:1px solid var(--border)}
 .logo h1{font-size:15px;font-weight:700;letter-spacing:-.3px}
 .logo p{font-size:11px;color:var(--text3);margin-top:2px}
@@ -209,6 +209,11 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .bar-savings-low{background:linear-gradient(180deg,#e87a5a,var(--red))}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin .8s linear infinite}
+/* ── DESKTOP: sticky sidebar ── */
+@media (min-width: 641px){
+  .sidebar{position:sticky;top:0;height:100vh;height:100dvh;overflow:hidden}
+  .mobile-person-bar{display:none!important}
+}
 /* ── TABLET ── */
 @media (max-width: 900px) and (min-width: 641px){
   .two,.three{grid-template-columns:1fr}
@@ -223,63 +228,64 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 /* ── MOBILE ── */
 @media (max-width: 640px){
   body{font-size:13px}
-  /* sidebar stane spodní lišta */
-  .app{flex-direction:column;min-height:100dvh}
+  .app{flex-direction:column}
+  /* sidebar = spodní fixní lišta */
   .sidebar{
     position:fixed;bottom:0;left:0;right:0;
     width:100%;height:auto;
-    flex-direction:row;align-items:stretch;
+    flex-direction:row;
     border-right:none;border-top:2px solid var(--border);
-    z-index:200;
-    top:auto;overflow:visible;
+    z-index:500;
     background:var(--surface);
-    box-shadow:0 -4px 20px rgba(0,0,0,0.08);
+    box-shadow:0 -2px 12px rgba(0,0,0,0.1);
   }
   .logo{display:none}
+  .sidebar-bottom{display:none}
   .nav{
     display:flex;flex-direction:row;
-    padding:4px 0 env(safe-area-inset-bottom,4px);
-    overflow-x:auto;flex:1;gap:0;
+    padding:6px 0 env(safe-area-inset-bottom,6px);
+    overflow:visible;flex:1;gap:0;
   }
   .nlabel{display:none}
   .ni{
     flex-direction:column;align-items:center;justify-content:center;
-    gap:2px;padding:6px 4px;
-    font-size:10px;font-weight:500;
-    flex:1;min-width:44px;border-radius:0;
-    transform:none!important;white-space:nowrap;
+    gap:2px;padding:6px 2px;
+    font-size:9px;font-weight:500;
+    flex:1;min-width:0;border-radius:0;
     margin-bottom:0;color:var(--text3);
+    white-space:nowrap;overflow:hidden;
   }
-  .ni:hover{background:transparent;color:var(--text2);transform:none!important}
-  .ni.active{background:transparent;color:var(--blue);box-shadow:none;font-weight:600}
-  .ni.active svg{color:var(--blue)}
-  .ni svg{width:20px;height:20px}
-  .sidebar-bottom{display:none}
-  /* mobile person bar zobrazena v topbaru */
-  .mobile-person-bar{display:flex}
+  .ni:hover{background:transparent;transform:none!important}
+  .ni.active{background:transparent;color:var(--blue);box-shadow:none;font-weight:700}
+  .ni svg{width:22px;height:22px;flex-shrink:0}
   /* hlavní obsah */
-  .main{min-width:100%;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
-  .topbar{padding:12px 14px;align-items:flex-start;flex-direction:column;gap:8px}
+  .main{
+    min-width:100%;width:100%;
+    min-height:100dvh;
+    padding-bottom:calc(62px + env(safe-area-inset-bottom,0px));
+  }
+  .mobile-person-bar{display:flex}
+  .topbar{padding:12px 14px;flex-direction:column;align-items:flex-start;gap:8px}
   .topbar h2{font-size:17px}
   .topbar-right{width:100%;flex-wrap:wrap;gap:6px}
-  .topbar-right > *{flex:1 1 auto}
   .content{padding:12px 14px}
   .mgrid{grid-template-columns:repeat(2,1fr)}
   .two,.three,.fgrid{grid-template-columns:1fr}
   .budrow{align-items:flex-start;flex-wrap:wrap}
   .budtrack,.budpct,.cname,.cval{width:auto}
-  .modal{padding:18px;margin:10px}
+  .modal{padding:18px;margin:8px}
   .mactions{flex-direction:column}
   .pload-top{flex-direction:column}
   th,td{padding:7px 8px;font-size:12px}
   .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .card{padding:14px}
-  .mc{padding:12px 14px}
+  .card{padding:12px}
+  .mc{padding:12px}
   .mv{font-size:22px}
   .range-box{flex-direction:column;align-items:flex-start}
   .search-input{width:100%!important}
   .search-wrap{width:100%}
   select.sel{flex:1}
+  .del-btn{width:auto!important}
 }
 /* ── INVESTMENT TABS ── */
 .inv-tabs{display:flex;gap:2px;background:var(--surface2);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;border:1px solid var(--border)}
