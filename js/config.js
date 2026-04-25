@@ -1,7 +1,7 @@
 // =========================================================
 // ZDE VLOŽTE SVOJÍ URL ADRESU Z GOOGLE APPS SCRIPTU:
 // =========================================================
-export const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKEWMOd9umzQJvKAua3jlhN33sph28wGIQOUhWGStUHO_iPxrg9EfCvIcF9FZ-gK5A-g/exec';
+export const GAS_URL = 'https://script.google.com/macros/s/AKfycby4IvlUFfSTXOnnZV-N_mQx3aEZa5Mzqj88fc9B4ypdyIcwLYVrXsP8xK5ez3U7GkyqYw/exec';
 
 export const C = {datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14,uctenka:18};
 
