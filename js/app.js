@@ -9,6 +9,7 @@ import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, 
 import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, openRecurring, closeRecurring, openRecForm, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
+import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner } from './mbank-import.js';
 
 /* ── TOAST ── */
 export function toast(msg, type) {
@@ -38,6 +39,7 @@ export async function loadSheets() {
     setAuth(true);
     loadInvestmentData();
     loadRecurring();
+    loadMbankNotification();
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');
     state.txs = DEMO.map(parseRow);
@@ -170,6 +172,14 @@ window.toggleRec = toggleRec;
 window.deleteRec = deleteRec;
 window.deleteTx = deleteTx;
 window.removeReceipt = removeReceipt;
+window.openMbankImport = openMbankImport;
+window.closeMbankImport = closeMbankImport;
+window.mbankDov = mbankDov;
+window.mbankDol = mbankDol;
+window.mbankDod = mbankDod;
+window.onMbankFile = onMbankFile;
+window.confirmMbankImport = confirmMbankImport;
+window.hideMbankBanner = hideMbankBanner;
 
 /* ── INIT ── */
 (function init() {

@@ -58,6 +58,11 @@ function doPost(e) {
       return handleRemoveReceipt(body);
     }
 
+    // ── MARK MBANK IMPORTED ──
+    if (body.action === 'markMbankImported') {
+      return handleMarkMbankImported(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -174,4 +179,74 @@ function handleReceiptUpload(body) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ── MARK MBANK IMPORT AS DONE ──
+function handleMarkMbankImported(body) {
+  try {
+    var filename = body.filename;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('MbankImport');
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][1] === filename && data[i][4] === 'new') {
+        sheet.getRange(i + 1, 5).setValue('imported');
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── GMAIL → DRIVE → SHEET NOTIFICATION ──
+// Spusť ručně nebo nastav time-trigger: Triggers → checkMbankEmail → Time-driven → Month timer
+function checkMbankEmail() {
+  var threads = GmailApp.search('from:wyciag@mbank.pl OR from:noreply@mbank.cz subject:výpis newer_than:35d', 0, 10);
+  if (!threads.length) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('MbankImport');
+  if (!sheet) {
+    sheet = ss.insertSheet('MbankImport');
+    sheet.appendRow(['datum_detekce', 'soubor', 'drive_url', 'datum_emailu', 'status']);
+  }
+
+  // Získej existující soubory (aby se nepřidávaly duplicity)
+  var existing = {};
+  var rows = sheet.getDataRange().getValues();
+  for (var r = 1; r < rows.length; r++) {
+    existing[rows[r][1]] = true;
+  }
+
+  // Najdi nebo vytvoř složku Finance-Vypisy
+  var folders = DriveApp.getFoldersByName('Finance-Vypisy');
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy');
+
+  threads.forEach(function(thread) {
+    var messages = thread.getMessages();
+    messages.forEach(function(msg) {
+      var attachments = msg.getAttachments();
+      attachments.forEach(function(att) {
+        if (att.getContentType() !== 'application/pdf') return;
+        var name = att.getName();
+        if (existing[name]) return; // už bylo zpracováno
+
+        var file = folder.createFile(att);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        sheet.appendRow([
+          new Date(),      // datum_detekce
+          name,            // soubor
+          file.getUrl(),   // drive_url
+          msg.getDate(),   // datum_emailu
+          'new'            // status
+        ]);
+        existing[name] = true;
+      });
+    });
+  });
 }

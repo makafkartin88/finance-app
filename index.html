@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Finance — Martin & Šárka</title>
 <link rel="stylesheet" href="css/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -112,6 +113,31 @@
   </div>
 </div>
 
+<!-- mBank Import Modal -->
+<div class="overlay" id="mbankModal" style="display:none">
+  <div class="modal" style="max-width:600px">
+    <h2>📥 Import výpisu z mBank</h2>
+    <div class="fgrid" style="margin-bottom:12px">
+      <div class="fg"><label>Heslo k PDF (pokud je)</label><input type="password" id="mbankPassword" placeholder="Volitelné heslo"/></div>
+      <div class="fg"><label>Osoba</label><select id="mbankOsoba"><option>Martin</option><option>Šárka</option></select></div>
+    </div>
+    <div id="mbankZone" class="upzone" style="margin-bottom:12px"
+      ondragover="mbankDov(event)" ondragleave="mbankDol()" ondrop="mbankDod(event)">
+      <div style="font-size:28px;margin-bottom:8px">📄</div>
+      <div style="font-weight:600;margin-bottom:4px">Přetáhni PDF výpis sem</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">nebo</div>
+      <label class="btnp btnsm" style="cursor:pointer">Vybrat soubor
+        <input type="file" accept=".pdf,application/pdf" style="display:none" onchange="onMbankFile(event)"/>
+      </label>
+    </div>
+    <div id="mbankStatus" style="display:none"></div>
+    <div id="mbankResults" style="display:none"></div>
+    <div class="mactions" style="margin-top:12px">
+      <button class="btn" onclick="closeMbankImport()">Zavřít</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="app">
@@ -170,6 +196,7 @@
           <button class="btnp dash-add" onclick="openTx()">+ Přidat transakci</button>
         </div>
       </div>
+      <div id="mbankBanner" style="display:none;background:var(--surface);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin:12px 16px 0;align-items:center;gap:10px;flex-wrap:wrap"></div>
       <div class="content">
         <div class="chip-row" style="margin-bottom:16px">
           <div class="chip" id="dashScope">Rozsah</div>
@@ -212,6 +239,7 @@
           <select class="sel" id="txfCat"><option value="">Kategorie</option><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option><option>Příjem</option></select>
           <select class="sel" id="txfAcc"><option value="">Účet</option><option>mBank</option><option>UniCredit</option><option>Trading 212</option></select>
           <button class="btn" onclick="openRecurring()">⟳ Opakující se</button>
+          <button class="btn" onclick="openMbankImport()">📥 mBank PDF</button>
           <button class="btnp" onclick="openTx()">+ Přidat</button>
         </div>
       </div>
