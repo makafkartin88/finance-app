@@ -158,9 +158,17 @@ export async function toggleRec(i) {
 }
 
 export async function deleteRec(i) {
+  const rec = state.recurring[i];
+  if (!rec) return;
+  if (!confirm(`Smazat šablonu „${rec.popis}"?`)) return;
   state.recurring.splice(i, 1);
   renderRecList();
-  toast('Šablona smazána', 'ok');
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Recurring', txId: rec.id }) });
+    toast('Šablona smazána', 'ok');
+  } catch(e) {
+    toast('Lokálně smazáno, chyba sync se Sheets', 'err');
+  }
 }
 
 /* ── GENERATE TRANSACTIONS FOR CURRENT MONTH ── */
