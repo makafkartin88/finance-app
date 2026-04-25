@@ -285,9 +285,13 @@ function showMbankPreview(rows, fname) {
 
 /* ── CONFIRM & SAVE ── */
 export async function confirmMbankImport() {
+  // Prevent double-click: disable button immediately
+  const btn = document.querySelector('#mbankResults .btnp');
+  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+
   const rows = state._mbankRows || [];
   const mn   = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  let saved  = 0;
+  const allRows = [];
 
   for (let i = 0; i < rows.length; i++) {
     if (!document.getElementById('mbc-'+i)?.checked) continue;
@@ -298,6 +302,7 @@ export async function confirmMbankImport() {
     const typ     = document.getElementById('mbt-'+i)?.value || rows[i].typ;
     const kat     = document.getElementById('mbk-'+i)?.value || rows[i].kategorie;
     const osoba   = document.getElementById('mbp-'+i)?.value || rows[i].osoba || 'Martin';
+    const metoda  = rows[i].metoda || 'Převod';
     const castka  = Math.abs(parseFloat(document.getElementById('mbm-'+i)?.value || rows[i].castka) || 0);
 
     if (!isoDate || !popis || !castka) continue;
@@ -306,20 +311,26 @@ export async function confirmMbankImport() {
     const sheetDate = `${parseInt(mp)}/${parseInt(dp)}/${yp}`;
     const mesic     = `${mn[parseInt(mp)]} ${yp}`;
     const sign      = typ === 'Příjem' ? castka : -castka;
-    const id        = `${yp}${mp}${dp}-mb${String(state.txs.length + 1).padStart(3,'0')}`;
+    const id        = `${yp}${mp}${dp}-mb${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
 
-    const row = [sheetDate, popis, castka, 'CZK', 'mBank', typ, kat, osoba, 'Převod',
+    const row = [sheetDate, popis, castka, 'CZK', 'mBank', typ, kat, osoba, metoda,
                  proti, rows[i].poznamka || '', sign, mesic, yp, id,
                  typ==='Výdaj'?castka:0, typ==='Příjem'?castka:0, sign, ''];
+    allRows.push(row);
+  }
 
-    state.txs.push(parseRow(row));
-    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ values: [row] }) }); } catch(e) {}
-    saved++;
+  // Add to local state immediately
+  allRows.forEach(row => state.txs.push(parseRow(row)));
+
+  // Send all rows in a single batch POST
+  if (allRows.length) {
+    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ values: allRows }) }); } catch(e) {}
   }
 
   document.getElementById('mbankResults').style.display = 'none';
+  state._mbankRows = null;
   boot();
-  toast(`${saved} transakcí importováno z mBank`, 'ok');
+  toast(`${allRows.length} transakcí importováno z mBank`, 'ok');
 
   // Mark notification as imported
   const fname = state._mbankImportFile;
