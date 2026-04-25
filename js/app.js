@@ -8,7 +8,7 @@ import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
 import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
-import { loadRecurring, openRecurring, closeRecurring, openRecForm, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
+import { loadRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner } from './mbank-import.js';
 
 /* ── TOAST ── */
@@ -163,6 +163,7 @@ window.invDod = invDod;
 window.invOnFile = invOnFile;
 window.confirmInvImport = confirmInvImport;
 window.openRecurring = openRecurring;
+window.openRecEdit = openRecEdit;
 window.closeRecurring = closeRecurring;
 window.openRecForm = openRecForm;
 window.closeRecForm = closeRecForm;

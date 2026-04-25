@@ -54,11 +54,12 @@ function renderRecList() {
   el.innerHTML = list.map((r, i) => `
     <div class="rec-row">
       <div class="rec-info">
-        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span></div>
+        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':'var(--red)'}">${r.typ}</span></div>
         <div class="rec-detail">${czk(r.castka)} · ${r.osoba} · ${r.ucet} · den ${r.den}</div>
       </div>
       <div class="rec-actions">
         <span class="rec-status ${r.aktivni ? 'rec-on' : 'rec-off'}">${r.aktivni ? 'Aktivní' : 'Neaktivní'}</span>
+        <button class="btn btnsm" onclick="openRecEdit(${i})">Upravit</button>
         <button class="btn btnsm" onclick="toggleRec(${i})">${r.aktivni ? 'Vypnout' : 'Zapnout'}</button>
         <button class="btn btnsm" onclick="deleteRec(${i})">Smazat</button>
       </div>
@@ -66,8 +67,11 @@ function renderRecList() {
   `).join('');
 }
 
-/* ── ADD TEMPLATE ── */
+/* ── ADD / EDIT TEMPLATE ── */
 export function openRecForm() {
+  state._recEditIdx = null;
+  const hdr = document.querySelector('#recFormWrap h3');
+  if (hdr) hdr.textContent = 'Nová šablona';
   document.getElementById('recFormWrap').style.display = 'block';
   document.getElementById('rfDesc').value = '';
   document.getElementById('rfAmt').value = '';
@@ -80,7 +84,26 @@ export function openRecForm() {
   document.getElementById('rfDay').value = '1';
 }
 
+export function openRecEdit(i) {
+  const r = state.recurring[i];
+  if (!r) return;
+  state._recEditIdx = i;
+  const hdr = document.querySelector('#recFormWrap h3');
+  if (hdr) hdr.textContent = 'Upravit šablonu';
+  document.getElementById('recFormWrap').style.display = 'block';
+  document.getElementById('rfDesc').value = r.popis;
+  document.getElementById('rfAmt').value = r.castka;
+  document.getElementById('rfTyp').value = r.typ;
+  document.getElementById('rfKat').value = r.kategorie;
+  document.getElementById('rfOsoba').value = r.osoba;
+  document.getElementById('rfUcet').value = r.ucet;
+  document.getElementById('rfMetoda').value = r.metoda;
+  document.getElementById('rfProti').value = r.protistrana;
+  document.getElementById('rfDay').value = r.den;
+}
+
 export function closeRecForm() {
+  state._recEditIdx = null;
   document.getElementById('recFormWrap').style.display = 'none';
 }
 
@@ -96,20 +119,33 @@ export async function saveRecTemplate() {
   const metoda = document.getElementById('rfMetoda').value;
   const proti = document.getElementById('rfProti').value;
   const den = parseInt(document.getElementById('rfDay').value)||1;
-  const id = 'REC-' + String(state.recurring.length+1).padStart(3,'0');
 
-  const row = [id, popis, castka, typ, kat, osoba, ucet, metoda, proti, 'monthly', den, 'TRUE', ''];
+  const editIdx = state._recEditIdx;
+  const isEdit = editIdx !== null && editIdx !== undefined;
+  const old = isEdit ? state.recurring[editIdx] : null;
+  const id = isEdit ? old.id : 'REC-' + String(state.recurring.length+1).padStart(3,'0');
+  const aktivni = isEdit ? (old.aktivni ? 'TRUE' : 'FALSE') : 'TRUE';
+  const posledniGen = isEdit ? (old.posledniGen || '') : '';
+
+  const row = [id, popis, castka, typ, kat, osoba, ucet, metoda, proti, 'monthly', den, aktivni, posledniGen];
 
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Recurring', values: [row] }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    if (isEdit) {
+      // Delete old row then append updated row
+      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Recurring', txId: old.id }) });
+    }
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Recurring', values: [row] }) });
   } catch(e) { toast('Chyba zápisu: '+e.message,'err'); }
 
-  state.recurring.push(parseRecRow(row));
+  if (isEdit) {
+    state.recurring[editIdx] = parseRecRow(row);
+    toast('Šablona aktualizována','ok');
+  } else {
+    state.recurring.push(parseRecRow(row));
+    toast('Šablona uložena','ok');
+  }
   closeRecForm();
   renderRecList();
-  toast('Šablona uložena','ok');
 }
 
 /* ── TOGGLE / DELETE ── */
@@ -149,7 +185,7 @@ export async function generateRecurring() {
     const sign = rec.typ === 'Příjem' ? rec.castka : -rec.castka;
     const newId = `${y}${m}${d}-R${String(state.txs.length+1).padStart(3,'0')}`;
 
-    const row = [datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie, rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId, rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign];
+    const row = [datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie, rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId, rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, ''];
 
     state.txs.push(parseRow(row));
 

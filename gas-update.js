@@ -123,14 +123,16 @@ function handleDeleteRow(body) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(sheetName) || ss.getSheets()[0];
     var data = sheet.getDataRange().getValues();
+    // Transakce: ID at column O (index 14); Recurring: ID at column A (index 0)
+    var idCol = (sheetName === 'Recurring') ? 0 : 14;
     for (var i = 1; i < data.length; i++) {
-      if (data[i][14] === txId) { // sloupec O (index 14) = ID
+      if (data[i][idCol] === txId) {
         sheet.deleteRow(i + 1);
         return ContentService.createTextOutput(JSON.stringify({ success: true }))
           .setMimeType(ContentService.MimeType.JSON);
       }
     }
-    return ContentService.createTextOutput(JSON.stringify({ error: 'Transakce nenalezena' }))
+    return ContentService.createTextOutput(JSON.stringify({ error: 'Řádek nenalezen' }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
