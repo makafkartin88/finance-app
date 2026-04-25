@@ -322,9 +322,9 @@ export async function confirmMbankImport() {
   // Add to local state immediately
   allRows.forEach(row => state.txs.push(parseRow(row)));
 
-  // Send all rows in a single batch POST
+  // Send all rows in a single batch POST to Transakce sheet
   if (allRows.length) {
-    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ values: allRows }) }); } catch(e) {}
+    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: allRows }) }); } catch(e) {}
   }
 
   document.getElementById('mbankResults').style.display = 'none';
