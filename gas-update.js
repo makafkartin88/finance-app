@@ -205,7 +205,7 @@ function handleMarkMbankImported(body) {
 // ── GMAIL → DRIVE → SHEET NOTIFICATION ──
 // Spusť ručně nebo nastav time-trigger: Triggers → checkMbankEmail → Time-driven → Month timer
 function checkMbankEmail() {
-  var threads = GmailApp.search('from:wyciag@mbank.pl OR from:noreply@mbank.cz subject:výpis newer_than:35d', 0, 10);
+  var threads = GmailApp.search('from:wyciag@mbank.pl OR from:kontakt@mbank.cz newer_than:35d has:attachment', 0, 10);
   if (!threads.length) return;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
