@@ -61,7 +61,7 @@ export function renderDash() {
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
+    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
   }).join('');
   document.getElementById('recentEmpty').style.display = list.length ? 'none' : 'block';
 }
