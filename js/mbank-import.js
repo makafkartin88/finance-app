@@ -103,9 +103,12 @@ function parseMbankItems(items, osoba) {
 
   // Czech currency: 1-3 digits, optional (space + exactly 3 digits), comma, 2 decimals
   const AMT   = '(-?\\d{1,3}(?:\\s\\d{3})*,\\d{2})';
-  const txRe  = new RegExp(`^(\\d{1,3})\\s+(\\d{2}\\.\\d{2}\\.\\d{4})\\s+\\d{2}\\.\\d{2}\\.\\d{4}\\s+(.+?)\\s+${AMT}\\s+${AMT}\\s*$`);
-  const headRe = /^\d{1,3}\s+\d{2}\.\d{2}\.\d{4}/;
-  const stopRe = /^(Konečný|Počáteční|Strana\s+\d|Přehled|mBank\s+S\.|Prosíme|Č\.\s+Datum)/i;
+  // Support both formats:
+  //   Monthly:       "11 01.03.2026 01.03.2026 POPIS -502,89 880,67"  (with leading row number)
+  //   Custom period: "01.03.2026 01.03.2026 POPIS -502,89 880,67"     (without row number)
+  const txRe  = new RegExp(`^(?:\\d{1,3}\\s+)?(\\d{2}\\.\\d{2}\\.\\d{4})\\s+\\d{2}\\.\\d{2}\\.\\d{4}\\s+(.+?)\\s+${AMT}\\s+${AMT}\\s*$`);
+  const headRe = /^(?:\d{1,3}\s+)?\d{2}\.\d{2}\.\d{4}/;
+  const stopRe = /^(Konečný|Počáteční|Strana|Přehled|mBank\s+S\.|Prosíme|Č\.\s+Datum|Datum\s+za)/i;
 
   const transactions = [];
   let i = 0;
@@ -115,9 +118,9 @@ function parseMbankItems(items, osoba) {
     const m    = line.match(txRe);
 
     if (m) {
-      const dateStr  = m[2];
-      const mainDesc = m[3].trim();
-      const amtStr   = m[4];
+      const dateStr  = m[1];
+      const mainDesc = m[2].trim();
+      const amtStr   = m[3];
 
       // Collect continuation lines (sub-rows of the description cell)
       const cont = [];
@@ -178,13 +181,21 @@ function parseMbankItems(items, osoba) {
 }
 
 function splitDesc(mainDesc, cont) {
-  // PLATBA KARTOU has a different continuation structure:
-  // cont[0] = "DATUM PROVEDENÍ TRANSAKCE: YYYY-MM-DD"
-  // cont[1] = "Merchant Name CZ -xxx,xx CZK ..."
-  // cont[2] = "-xxx,xx CZK4461 XXXX XXXX 7755"
+  // PLATBA KARTOU — two possible formats:
+  // Monthly:       cont[0]="DATUM PROVEDENÍ TRANSAKCE: YYYY-MM-DD"
+  //                cont[1]="Merchant CZ -xxx,xx CZK -xxx CZK4461 XXXX XXXX 7755"
+  // Custom period: cont[0]="Merchant Name DATUM PROVEDENÍ TRANSAKCE:"
+  //                cont[1]="YYYY-MM-DD"
   if (mainDesc.toUpperCase().startsWith('PLATBA KARTOU')) {
-    const raw = cont[1] || cont[0] || '';
-    // Strip country code + amount suffix: " CZ -1 234,56 CZK ..." or " CZ -1234,56 CZK..."
+    let raw = '';
+    if (cont[0] && /^DATUM PROVEDENÍ/i.test(cont[0])) {
+      // Monthly format — merchant in cont[1]
+      raw = cont[1] || '';
+    } else {
+      // Custom period format — merchant in cont[0], strip trailing "DATUM PROVEDENÍ..."
+      raw = (cont[0] || '').replace(/\s*DATUM PROVEDENÍ.*$/i, '').trim();
+    }
+    // Strip country code + amount suffix (monthly format): " CZ -1 234,56 CZK ..."
     const merchant = raw.replace(/\s+[A-Z]{2}\s+-[\d\s,]+CZK.*$/i, '').trim();
     return { popis: 'Platba kartou', protistrana: merchant, metoda: 'Karta' };
   }
