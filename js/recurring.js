@@ -175,28 +175,33 @@ export async function generateRecurring() {
     return;
   }
 
-  let count = 0;
+  const y = String(now.getFullYear());
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const allRows = [];
+
+  // Build all rows first
   for (const rec of active) {
-    const y = String(now.getFullYear());
-    const m = String(now.getMonth()+1).padStart(2,'0');
     const d = String(Math.min(rec.den, 28)).padStart(2,'0');
     const datum = `${parseInt(m)}/${parseInt(d)}/${y}`;
     const mesic = `${mn[parseInt(m)]} ${y}`;
     const sign = rec.typ === 'Příjem' ? rec.castka : -rec.castka;
-    const newId = `${y}${m}${d}-R${String(state.txs.length+1).padStart(3,'0')}`;
-
-    const row = [datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie, rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId, rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, ''];
-
-    state.txs.push(parseRow(row));
-
-    try {
-      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: [row] }) });
-    } catch(e) { /* continue */ }
-
-    rec.posledniGen = curMonth;
-    count++;
+    const newId = `${y}${m}${d}-R${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
+    allRows.push([datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie,
+                  rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId,
+                  rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '']);
   }
 
+  // Add all to local state at once
+  allRows.forEach(row => { try { state.txs.push(parseRow(row)); } catch(e) {} });
+
+  // Single batch POST to GAS
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: allRows }) });
+  } catch(e) {}
+
+  // Mark all as generated this month
+  active.forEach(rec => { rec.posledniGen = curMonth; });
+
   boot();
-  toast(`Vygenerováno ${count} opakujících se transakcí`, 'ok');
+  toast(`Vygenerováno ${allRows.length} opakujících se transakcí`, 'ok');
 }
