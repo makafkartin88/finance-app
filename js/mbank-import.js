@@ -137,9 +137,24 @@ function parseMbankItems(items, osoba) {
       const full = (mainDesc + ' ' + cont.join(' ')).toUpperCase();
       if (full.includes('PŘIPSÁNÍ ÚROKŮ') || full.includes('DAŇ Z PŘIPSÁNÍ')) continue;
 
-      const { popis, protistrana } = splitDesc(mainDesc, cont);
-      // cont[0] = name, cont[1] = account number, cont[2+] = note
-      const poznamka = cont.slice(2).join(' ').replace(/\b[A-Z]{2}:\d+\b/g, '').trim();
+      // Skip internal own-account transfers:
+      // 1) VLASTNÍ PŘEVOD — always between own mBank accounts
+      // 2) Any incoming transfer where counterparty account is own mBank account (670100-xxxxxxxx/6210)
+      const mainUp = mainDesc.toUpperCase();
+      const contAccount = cont[1] || '';
+      const isOwnAccount = /^670100-\d+\/6210/.test(contAccount);
+      if (mainUp.startsWith('VLASTNÍ PŘEVOD')) { i = j; continue; }
+      if (isOwnAccount && (
+        mainUp.startsWith('PŘÍCHOZÍ PLATBA Z MBANK') ||
+        mainUp.startsWith('PŘÍCHOZÍ OKAMŽITÁ PLATBA') ||
+        mainUp.startsWith('PŘÍCHOZÍ PLATBA')
+      )) { i = j; continue; }
+
+      const { popis, protistrana, metoda } = splitDesc(mainDesc, cont);
+      // For PLATBA KARTOU cont structure differs — poznamka not applicable
+      const poznamka = mainUp.startsWith('PLATBA KARTOU')
+        ? ''
+        : cont.slice(2).join(' ').replace(/\b[A-Z]{2}:\d+\b/g, '').trim();
 
       transactions.push({
         datum:       mbankDateToIso(dateStr),
@@ -148,7 +163,7 @@ function parseMbankItems(items, osoba) {
         typ:         amt < 0 ? 'Výdaj' : 'Příjem',
         kategorie:   guessCategory(popis, protistrana),
         ucet:        'mBank',
-        metoda:      'Převod',
+        metoda:      metoda || 'Převod',
         protistrana,
         poznamka,
         osoba,
@@ -163,17 +178,27 @@ function parseMbankItems(items, osoba) {
 }
 
 function splitDesc(mainDesc, cont) {
+  // PLATBA KARTOU has a different continuation structure:
+  // cont[0] = "DATUM PROVEDENÍ TRANSAKCE: YYYY-MM-DD"
+  // cont[1] = "Merchant Name CZ -xxx,xx CZK ..."
+  // cont[2] = "-xxx,xx CZK4461 XXXX XXXX 7755"
+  if (mainDesc.toUpperCase().startsWith('PLATBA KARTOU')) {
+    const raw = cont[1] || cont[0] || '';
+    // Strip country code + amount suffix: " CZ -1 234,56 CZK ..." or " CZ -1234,56 CZK..."
+    const merchant = raw.replace(/\s+[A-Z]{2}\s+-[\d\s,]+CZK.*$/i, '').trim();
+    return { popis: 'Platba kartou', protistrana: merchant, metoda: 'Karta' };
+  }
+
   const known = [
-    'VLASTNÍ PŘEVOD', 'PŘÍCHOZÍ OKAMŽITÁ PLATBA', 'PŘÍCHOZÍ PLATBA Z MBANK',
-    'PŘÍCHOZÍ PLATBA', 'ODCHOZÍ PLATBA', 'KARETNÍ TRANSAKCE', 'INKASO', 'VKLAD',
-    'PLATBA KARTOU'
+    'PŘÍCHOZÍ OKAMŽITÁ PLATBA', 'PŘÍCHOZÍ PLATBA Z MBANK',
+    'PŘÍCHOZÍ PLATBA', 'ODCHOZÍ PLATBA', 'KARETNÍ TRANSAKCE', 'INKASO', 'VKLAD'
   ];
   for (const k of known) {
     if (mainDesc.toUpperCase().startsWith(k)) {
-      return { popis: k.charAt(0) + k.slice(1).toLowerCase(), protistrana: cont[0] || '' };
+      return { popis: k.charAt(0) + k.slice(1).toLowerCase(), protistrana: cont[0] || '', metoda: 'Převod' };
     }
   }
-  return { popis: mainDesc, protistrana: cont[0] || '' };
+  return { popis: mainDesc, protistrana: cont[0] || '', metoda: 'Převod' };
 }
 
 function mbankDateToIso(czDate) {
@@ -195,13 +220,14 @@ function isDuplicate(czDate, amt) {
 
 function guessCategory(popis, protistrana) {
   const text = (popis + ' ' + protistrana).toLowerCase();
-  if (/nájem|nájemné|hypotéka|elektřina|plyn|voda|internet/.test(text)) return 'Bydlení';
-  if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny/.test(text)) return 'Jídlo';
+  if (/nájem|nájemné|hypotéka|elektřina|plyn|voda|internet|ikea|obi|hornbach|sconto|action b/.test(text)) return 'Bydlení';
+  if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny|rossmann/.test(text)) return 'Jídlo';
   if (/shell|benzín|čerpací|parkoviště|parking|dpp|pid|lítačka|vlak|bus/.test(text)) return 'Doprava';
-  if (/kino|cinema|spotify|netflix|steam|xbox|restaurace|hospoda|kavárna/.test(text)) return 'Zábava';
+  if (/kino|cinema|spotify|netflix|steam|xbox|restaurace|hospoda|kavárna|pho |sushi|pizz/.test(text)) return 'Zábava';
   if (/lékárna|doktor|nemocnice|pojišt|zdraví/.test(text)) return 'Zdraví';
   if (/trading 212|degiro|fond|etf|akcie|investic/.test(text)) return 'Investice';
   if (/příchozí|mzda|výplata|plat/.test(text)) return 'Příjem';
+  if (/sinsay|h&m|zara|reserved|m&s|marks|primark|pepco/.test(text)) return 'Ostatní';
   return 'Ostatní';
 }
 
