@@ -10,6 +10,7 @@ import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner } from './mbank-import.js';
+import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 
 /* ── TOAST ── */
 export function toast(msg, type) {
@@ -174,6 +175,12 @@ window.deleteRec = deleteRec;
 window.deleteTx = deleteTx;
 window.removeReceipt = removeReceipt;
 window.openMbankImport = openMbankImport;
+window.openColPopover = openColPopover;
+window.toggleAmountSort = toggleAmountSort;
+window.cpSelectAll = cpSelectAll;
+window.cpClearFilter = cpClearFilter;
+window.cpApplyMulti = cpApplyMulti;
+window.cpApplyRange = cpApplyRange;
 window.closeMbankImport = closeMbankImport;
 window.mbankDov = mbankDov;
 window.mbankDol = mbankDol;

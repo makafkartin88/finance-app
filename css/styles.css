@@ -105,6 +105,28 @@ select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--bord
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 .td-trunc{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+
+/* Clickable rows (dblclick + long-press) */
+tr[data-idx]{cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+tr[data-idx]:hover td{background:var(--blue-bg)}
+
+/* Sortable / filterable column headers */
+.th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.th-sort:hover{color:var(--blue-text)}
+.th-caret{opacity:.45;font-size:.85em;margin-left:2px}
+.th-caret.asc,.th-caret.desc{opacity:1;color:var(--blue)}
+.th-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--blue);margin-left:4px;vertical-align:middle}
+
+/* Column filter popover */
+.col-popover{position:absolute;z-index:1000;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:200px;max-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.col-popover .cp-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);margin-bottom:8px}
+.col-popover .cp-list{display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto;margin-bottom:10px}
+.col-popover .cp-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:3px 0}
+.col-popover .cp-row input[type=checkbox]{margin:0}
+.col-popover .cp-fields{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.col-popover .cp-fields label{display:flex;flex-direction:column;font-size:11px;color:var(--text2);gap:3px}
+.col-popover .cp-fields input{padding:5px 8px;border:1px solid var(--border);border-radius:var(--rsm);font-size:13px;width:100%;box-sizing:border-box}
+.col-popover .cp-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 th{position:sticky; top:0; background:var(--surface); z-index:1; text-align:left; padding:8px 12px; font-size:11px; font-weight:600; color:var(--text2); border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; box-shadow: 0 1px 0 var(--border);}
 td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
 tr:last-child td{border-bottom:none}

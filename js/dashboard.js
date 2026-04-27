@@ -1,7 +1,9 @@
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
+import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
 
 export function renderDash() {
+  closePopover();
   const month = state.drill.month;
   const cat = state.drill.cat;
   const b = base(month, null);
@@ -55,15 +57,38 @@ export function renderDash() {
 
   // Table
   document.getElementById('recentTitle').textContent = cat ? `Transakce — ${cat}${state.drill.month ? ' ('+state.drill.month+')' : ''}` : state.drill.month ? 'Transakce — '+state.drill.month : `Poslední transakce (${rangeLabel(state._range.from, state._range.to)})`;
-  const list = [...shown].sort((a,b) => new Date(b.datum)-new Date(a.datum)).slice(0, 20);
+
+  // Render dynamic header (with filter indicators)
+  const head = document.getElementById('recentHead');
+  if (head) {
+    head.innerHTML = `<tr>
+      <th>Datum</th>
+      <th>Popis</th>
+      ${thFilter('dash','kategorie','Kategorie')}
+      ${thFilter('dash','osoba','Osoba')}
+      <th style="text-align:center">Účtenka</th>
+      ${thAmount('dash','Částka')}
+    </tr>`;
+  }
+
+  // Apply column filters and sort
+  let list = applyColumnFilters([...shown], 'dash');
+  if (state.tableFilters.dash.castkaSort) {
+    list = applySort(list, 'dash');
+  } else {
+    list = list.sort((a,b) => new Date(b.datum)-new Date(a.datum));
+  }
+  list = list.slice(0, 20);
+
   document.getElementById('recentBody').innerHTML = list.map(t => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.kategorie === 'Investice' ? 'ai' : 'an';
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}${t.protistrana ? ' · '+t.protistrana : ''}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}${t.protistrana ? ' · '+t.protistrana : ''}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td></tr>`;
   }).join('');
   document.getElementById('recentEmpty').style.display = list.length ? 'none' : 'block';
+  attachRowInteractions(document.getElementById('recentBody'));
 }
 
 export function drillM(m) {

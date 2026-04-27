@@ -11,5 +11,9 @@ export const state = {
   recurring: [],
   _importBusy: false,
   _impRows: [],
-  _tt: null
+  _tt: null,
+  tableFilters: {
+    dash: { kategorie: new Set(), osoba: new Set(), castkaSort: null, castkaRange: { min: null, max: null } },
+    tx:   { kategorie: new Set(), osoba: new Set(), castkaSort: null, castkaRange: { min: null, max: null } }
+  }
 };

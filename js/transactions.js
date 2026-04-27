@@ -2,6 +2,7 @@ import { GAS_URL } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, parseRow, base } from './utils.js';
 import { toast, boot } from './app.js';
+import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
 
 let _searchTimer = null;
 export function searchTx() {
@@ -10,6 +11,7 @@ export function searchTx() {
 }
 
 export function renderTx() {
+  closePopover();
   const m = document.getElementById('txfMonth')?.value || '';
   const c = document.getElementById('txfCat')?.value || '';
   const a = document.getElementById('txfAcc')?.value || '';
@@ -22,15 +24,42 @@ export function renderTx() {
     (t.poznamka||'').toLowerCase().includes(q) ||
     (t.kategorie||'').toLowerCase().includes(q)
   );
-  list.sort((a,b) => new Date(b.datum)-new Date(a.datum));
+
+  // Render dynamic header
+  const head = document.getElementById('txHead');
+  if (head) {
+    head.innerHTML = `<tr>
+      <th>Datum</th>
+      <th>Popis</th>
+      ${thFilter('tx','kategorie','Kategorie')}
+      <th>Typ</th>
+      ${thFilter('tx','osoba','Osoba')}
+      <th>Účet</th>
+      <th>Metoda</th>
+      <th>Protistrana</th>
+      <th style="text-align:center">Účtenka</th>
+      ${thAmount('tx','Částka')}
+      <th></th>
+    </tr>`;
+  }
+
+  // Apply column filters and sort
+  list = applyColumnFilters(list, 'tx');
+  if (state.tableFilters.tx.castkaSort) {
+    list = applySort(list, 'tx');
+  } else {
+    list = list.sort((a,b) => new Date(b.datum)-new Date(a.datum));
+  }
+
   document.getElementById('txBody').innerHTML = list.map((t,i) => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.kategorie === 'Investice' ? 'ai' : 'an';
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td><td><button class="btn btnsm" onclick="openEdit(${txIdx})">Upravit</button></td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}</td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
   }).join('');
   document.getElementById('txEmpty').style.display = list.length ? 'none' : 'block';
+  attachRowInteractions(document.getElementById('txBody'));
 }
 
 export function openTx(idx) {
