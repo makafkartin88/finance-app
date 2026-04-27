@@ -64,8 +64,8 @@ export function applyColumnFilters(list, tableKey) {
   if (f.kategorie.size > 0) out = out.filter(t => f.kategorie.has(t.kategorie));
   if (f.osoba.size > 0) out = out.filter(t => f.osoba.has(t.osoba));
   const min = f.castkaRange.min, max = f.castkaRange.max;
-  if (isFinite(min)) out = out.filter(t => t.castka >= min);
-  if (isFinite(max)) out = out.filter(t => t.castka <= max);
+  if (min !== null && isFinite(min)) out = out.filter(t => t.castka >= min);
+  if (max !== null && isFinite(max)) out = out.filter(t => t.castka <= max);
   return out;
 }
 
@@ -126,16 +126,23 @@ function renderMultiSelectPopover(tableKey, col) {
 
 function renderRangePopover(tableKey) {
   const f = getTableState(tableKey);
-  const minVal = isFinite(f.castkaRange.min) ? f.castkaRange.min : '';
-  const maxVal = isFinite(f.castkaRange.max) ? f.castkaRange.max : '';
+  // Compute actual data bounds from all transactions
+  const amounts = state.txs.map(t => t.castka).filter(v => v !== undefined && isFinite(v));
+  const dataMin = amounts.length ? Math.min(...amounts) : 0;
+  const dataMax = amounts.length ? Math.max(...amounts) : 0;
+  // Use stored filter value if set, otherwise fall back to data bounds as placeholder
+  const minVal = f.castkaRange.min !== null ? f.castkaRange.min : dataMin;
+  const maxVal = f.castkaRange.max !== null ? f.castkaRange.max : dataMax;
+  const isActive = f.castkaRange.min !== null || f.castkaRange.max !== null;
   popoverEl.innerHTML = `
     <div class="cp-title">Částka — rozpětí</div>
     <div class="cp-fields">
-      <label>Od (Kč)<input type="number" id="cpMin" value="${minVal}" step="any"/></label>
-      <label>Do (Kč)<input type="number" id="cpMax" value="${maxVal}" step="any"/></label>
+      <label>Od (Kč)<input type="number" id="cpMin" value="${minVal}" step="1" min="0"/></label>
+      <label>Do (Kč)<input type="number" id="cpMax" value="${maxVal}" step="1" min="0"/></label>
     </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Rozsah dat: ${dataMin} – ${dataMax} Kč</div>
     <div class="cp-actions">
-      <button class="btn btnsm" onclick="cpClearFilter('${tableKey}','castka')">Vyčistit</button>
+      ${isActive ? `<button class="btn btnsm" onclick="cpClearFilter('${tableKey}','castka')">Vyčistit</button>` : ''}
       <button class="btnp btnsm" onclick="cpApplyRange('${tableKey}')">Použít</button>
     </div>`;
 }
@@ -173,8 +180,8 @@ export function cpApplyRange(tableKey) {
   const min = minRaw === '' ? null : Number(minRaw);
   const max = maxRaw === '' ? null : Number(maxRaw);
   f.castkaRange = {
-    min: isFinite(min) ? min : null,
-    max: isFinite(max) ? max : null
+    min: (min !== null && isFinite(min)) ? min : null,
+    max: (max !== null && isFinite(max)) ? max : null
   };
   closePopover();
   rerender(tableKey);
