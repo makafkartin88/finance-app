@@ -31,14 +31,18 @@ export function renderCharts() {
     return { month: m, income, expense, rate: income > 0 ? Math.max(0, Math.round(((income-expense)/income)*100)) : 0 };
   });
   const maxV = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
+
+  // Roční přehled — gradienty místo inline barev
   document.getElementById('yrChart').innerHTML = monthStats.map(m =>
-    `<div class="bg"><div class="bar" style="height:${Math.round((m.income/maxV)*100)}px;background:var(--green)"></div><div class="bar" style="height:${Math.round((m.expense/maxV)*100)}px;background:var(--red)"></div></div>`
+    `<div class="bg"><div class="bar bar-income" style="height:${Math.round((m.income/maxV)*100)}px"></div><div class="bar bar-expense" style="height:${Math.round((m.expense/maxV)*100)}px"></div></div>`
   ).join('');
   document.getElementById('yrLabels').innerHTML = monthStats.map(m => `<div class="bl">${m.month.split(' ')[0]}</div>`).join('');
+
+  // Míra úspor — gradient třídy dle výše úspor
   const maxR = Math.max(...monthStats.map(m => m.rate), 1);
   document.getElementById('srChart').innerHTML = monthStats.map(m => {
-    const col = m.rate > 30 ? 'var(--green)' : m.rate > 15 ? 'var(--amber)' : 'var(--red)';
-    return `<div class="bg"><div class="bar" style="height:${Math.round((m.rate/maxR)*100)}px;background:${col};flex:1" title="${m.month}: ${m.rate}%"></div></div>`;
+    const barClass = m.rate > 30 ? 'bar-savings-good' : m.rate > 15 ? 'bar-savings-mid' : 'bar-savings-low';
+    return `<div class="bg"><div class="bar ${barClass}" style="height:${Math.round((m.rate/maxR)*100)}px;flex:1" title="${m.month}: ${m.rate}%"></div></div>`;
   }).join('');
   document.getElementById('srLabels').innerHTML = monthStats.map(m => `<div class="bl">${m.month.split(' ')[0]}<br><b>${m.rate}%</b></div>`).join('');
 
@@ -58,16 +62,34 @@ export function renderCharts() {
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 
+  // Donut chart — Martin vs. Šárka
   const splitBase = Math.max(totalExpense, 1);
-  document.getElementById('spendMartin').style.width = `${Math.round((martin/splitBase)*100)}%`;
-  document.getElementById('spendSarka').style.width = `${Math.round((sarka/splitBase)*100)}%`;
-  document.getElementById('spendLegend').innerHTML = [
-    `<div class="split-line"><span>Martin</span><strong>${czk(martin)} · ${Math.round((martin/splitBase)*100)} %</strong></div>`,
-    `<div class="split-line"><span>Šárka</span><strong>${czk(sarka)} · ${Math.round((sarka/splitBase)*100)} %</strong></div>`
-  ].join('');
+  const mPct = martin / splitBase, sPct = sarka / splitBase;
+  const r = 54, circ = 2 * Math.PI * r;
+  const mDash = mPct * circ, sDash = sPct * circ;
+  const mOffset = circ / 4;        // začít nahoře (12 hodin)
+  const sOffset = mOffset - mDash; // Šárka navazuje za Martinem
+  document.getElementById('donutChart').innerHTML = `<svg viewBox="0 0 160 160" width="140" height="140">
+    <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="22"/>
+    <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--blue)" stroke-width="22"
+      stroke-dasharray="${mDash.toFixed(1)} ${(circ-mDash).toFixed(1)}"
+      stroke-dashoffset="${mOffset.toFixed(1)}"/>
+    <circle cx="80" cy="80" r="${r}" fill="none" stroke="#d76593" stroke-width="22"
+      stroke-dasharray="${sDash.toFixed(1)} ${(circ-sDash).toFixed(1)}"
+      stroke-dashoffset="${sOffset.toFixed(1)}"/>
+    <text x="80" y="75" text-anchor="middle" font-size="24" font-weight="800" fill="var(--text)" font-family="-apple-system,sans-serif">${Math.round(mPct*100)}%</text>
+    <text x="80" y="93" text-anchor="middle" font-size="11" fill="var(--text2)" font-family="-apple-system,sans-serif">Martin</text>
+  </svg>`;
+  document.getElementById('spendLegend').innerHTML = `
+    <div class="split-line"><span><span class="split-dot split-dot-m"></span>Martin</span><strong>${czk(martin)} · ${Math.round(mPct*100)} %</strong></div>
+    <div class="split-line"><span><span class="split-dot split-dot-s"></span>Šárka</span><strong>${czk(sarka)} · ${Math.round(sPct*100)} %</strong></div>`;
 
-  const avgCats = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]).slice(0,6).map(([cat,val]) => ({label: cat, sub: `Průměrně ${czk(Math.round(val/activeMonths))} za měsíc`, value: czk(val)}));
-  renderMetricRows('avgCats', avgCats, 'Žádné kategorie v rozsahu');
+  // Průměrná měsíční útrata — jen kategorie + průměr/měsíc
+  const avgEl = document.getElementById('avgCats');
+  avgEl.innerHTML = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]).slice(0,6).map(([cat,val]) => {
+    const color = CATEGORY_COLORS[cat] || 'var(--text3)';
+    return `<div class="avg-cat-row"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${cat}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
+  }).join('') || '<div class="empty">Žádné kategorie</div>';
 
   const cpTotals = {};
   expenses.forEach(t => { const key = t.protistrana || t.popis || 'Neznámá'; cpTotals[key] = (cpTotals[key]||0)+t.castka; });
