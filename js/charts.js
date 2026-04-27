@@ -27,7 +27,7 @@ export function renderCB(id, list) {
 
 // Horizontální barplot protistran pro vybranou kategorii
 function renderCatBars(cat) {
-  const el = document.getElementById('catBars');
+  const el = document.getElementById('chartCatBars');
   if (!el || !cat || !_catExpenses) return;
   const subset = _catExpenses.filter(t => t.kategorie === cat);
   const cpTotals = {};
