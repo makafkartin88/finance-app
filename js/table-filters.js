@@ -111,7 +111,7 @@ function renderMultiSelectPopover(tableKey, col) {
   const selected = f[col];
   const items = values.map(v => `
     <label class="cp-row">
-      <input type="checkbox" data-value="${v.replace(/"/g,'&quot;')}" ${selected.has(v) ? 'checked' : ''}/>
+      <input type="checkbox" data-value="${v.replace(/"/g,'&quot;')}" ${(selected.size === 0 || selected.has(v)) ? 'checked' : ''}/>
       <span>${v}</span>
     </label>`).join('');
   popoverEl.innerHTML = `
@@ -199,7 +199,7 @@ export function toggleAmountSort(tableKey, ev) {
 /* ── HEADER HTML BUILDER ── */
 export function thFilter(tableKey, col, label) {
   const active = isFilterActive(tableKey, col);
-  return `<th class="th-sort" data-col="${col}" onclick="openColPopover(this,'${tableKey}','${col}')">${label} <span class="th-caret">▾</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
+  return `<th class="th-sort${active ? ' th-filtered' : ''}" data-col="${col}" onclick="openColPopover(this,'${tableKey}','${col}')">${label} <span class="th-caret">▾</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
 }
 
 export function thAmount(tableKey, label) {
@@ -207,7 +207,7 @@ export function thAmount(tableKey, label) {
   const active = isFilterActive(tableKey, 'castka');
   const caretClass = dir ? `th-caret ${dir}` : 'th-caret';
   const caretChar = dir === 'asc' ? '▴' : dir === 'desc' ? '▾' : '▾';
-  return `<th class="th-sort th-amt" data-col="castka" onclick="toggleAmountSort('${tableKey}',event)" ondblclick="openColPopover(this,'${tableKey}','castka')">${label} <span class="${caretClass}">${caretChar}</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
+  return `<th class="th-sort th-amt${active ? ' th-filtered' : ''}" data-col="castka" onclick="toggleAmountSort('${tableKey}',event)" ondblclick="openColPopover(this,'${tableKey}','castka')">${label} <span class="${caretClass}">${caretChar}</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
 }
 
 /* ── ROW INTERACTIONS (dblclick + long-press) ── */

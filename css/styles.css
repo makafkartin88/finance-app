@@ -45,6 +45,9 @@ body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 .filter-bar-left{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--blue-text);font-weight:500;flex-wrap:wrap}
 .filter-clear{padding:4px 10px;border-radius:var(--rsm);border:1px solid rgba(55,138,221,.4);background:transparent;color:var(--blue-text);font-size:11px;cursor:pointer;font-weight:600}
 .range-box{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.dash-meta-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mobile-person-bar{display:none}
+.mobile-person-bar .person-row{flex:1}
 .range-field{display:flex;flex-direction:column;gap:4px}
 .range-field label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)}
 .range-summary{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);white-space:nowrap}
@@ -116,6 +119,7 @@ tr[data-idx]:hover td{background:var(--blue-bg)}
 .th-caret{opacity:.45;font-size:.85em;margin-left:2px}
 .th-caret.asc,.th-caret.desc{opacity:1;color:var(--blue)}
 .th-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--blue);margin-left:4px;vertical-align:middle}
+.th-sort.th-filtered{background:var(--blue-bg);color:var(--blue-text)}
 
 /* Column filter popover */
 .col-popover{position:absolute;z-index:1000;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:200px;max-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
@@ -290,19 +294,23 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
     padding-left:env(safe-area-inset-left,0px);
     padding-right:env(safe-area-inset-right,0px);
   }
-  .mobile-person-bar{display:flex}
+  .mobile-person-bar{display:flex!important;padding:6px 16px 0;gap:6px;align-items:center}
+  .mobile-person-bar .person-row{flex:1}
   /* dashboard topbar na mobilu */
-  .topbar{padding:14px 16px;flex-direction:column;align-items:stretch;gap:10px}
-  .dash-title{font-size:20px;font-weight:800;text-align:center;width:100%}
+  .topbar{padding:12px 16px;flex-direction:column;align-items:stretch;gap:8px}
+  .dash-title{font-size:18px;font-weight:800;text-align:center;width:100%}
   .topbar-right{width:100%;flex-direction:column;gap:8px}
-  /* datum row: Od + Do vedle sebe */
+  /* Row 1: Od + Do vedle sebe */
   .range-box{flex-direction:row;flex-wrap:nowrap;gap:8px;align-items:flex-end}
   .range-field{flex:1;min-width:0}
   .range-field input{width:100%}
-  .range-summary{display:none}
-  /* celý rozsah a přidat — vlastní řádky */
-  .dash-add{width:100%;margin-top:2px}
-  .btn.range-reset{width:100%}
+  /* Row 2: Rozsah chip + mBank PDF vedle sebe */
+  .dash-meta-row{width:100%;flex-wrap:nowrap;justify-content:space-between}
+  .range-summary{display:inline-flex!important}
+  .btn.range-reset{display:none}
+  .btn.dash-mbank{flex-shrink:0;font-size:12px;padding:6px 10px}
+  /* Row 4: přidat transakci — celá šířka */
+  .dash-add{width:100%}
   .content{padding:12px 16px}
   .mgrid{grid-template-columns:repeat(2,1fr)}
   .two,.three,.fgrid{grid-template-columns:1fr}
@@ -316,7 +324,6 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
   .card{padding:12px}
   .mc{padding:12px}
   .mv{font-size:22px}
-  .range-box{flex-direction:column;align-items:flex-start}
   .search-input{width:100%!important}
   .search-wrap{width:100%}
   select.sel{flex:1}

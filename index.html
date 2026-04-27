@@ -168,9 +168,8 @@
   </div>
 
   <div class="main">
-    <div class="mobile-person-bar" style="display:none;padding:8px 14px 0;gap:6px;align-items:center;justify-content:flex-end">
-      <span style="font-size:11px;color:var(--text3);margin-right:4px">Zobrazení:</span>
-      <div class="person-row" style="flex:none">
+    <div class="mobile-person-bar">
+      <div class="person-row">
         <button class="pb active" onclick="setPerson('Oba',this)">Oba</button>
         <button class="pb" onclick="setPerson('Martin',this)">Martin</button>
         <button class="pb" onclick="setPerson('Šárka',this)">Šárka</button>
@@ -190,10 +189,12 @@
               <label>Do</label>
               <input type="date" id="dTo" onchange="applyRangeFromInputs()"/>
             </div>
+          </div>
+          <div class="dash-meta-row">
             <div class="range-summary" id="dRangeTxt"></div>
             <button class="btn range-reset" onclick="resetRange()">Celý rozsah</button>
+            <button class="btn dash-mbank" onclick="openMbankImport()">📥 mBank PDF</button>
           </div>
-          <button class="btn" onclick="openMbankImport()">📥 mBank PDF</button>
           <button class="btnp dash-add" onclick="openTx()">+ Přidat transakci</button>
         </div>
       </div>
