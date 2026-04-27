@@ -37,15 +37,15 @@ measurementId: "G-BD3K8RTMZB"
           showAuthError('Přístup odmítnut. Tato aplikace je pouze pro Martin & Šárka.');
           return;
         }
-        // Přihlášení úspěšné
-        state.person = allowed.person;
+        // Přihlášení úspěšné — výchozí pohled je vždy "Oba" (uživatel může přepnout)
+        state.person = 'Oba';
         document.getElementById('authScreen').style.display = 'none';
         document.getElementById('authUser').textContent = user.displayName || email;
         document.getElementById('logoutBtn').style.display = 'block';
 
-        // Nastavit person switcher
+        // Nastavit person switcher na "Oba"
         document.querySelectorAll('.pb').forEach(b => {
-          b.classList.toggle('active', b.textContent === allowed.person);
+          b.classList.toggle('active', b.textContent === 'Oba');
         });
 
         // Skrýt/zobrazit investice
