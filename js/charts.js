@@ -1,6 +1,10 @@
 import { CATEGORY_COLORS } from './config.js';
 import { fmtD, czk, getMonths, base } from './utils.js';
 
+// Interní stav pro výběr kategorie v protistrany-grafu
+let _catFilter = null;
+let _catExpenses = null;
+
 export function renderMetricRows(id, rows, empty = 'Žádná data') {
   const el = document.getElementById(id); if (!el) return;
   el.innerHTML = rows.map(r => `<div class="metric-row"><div><strong>${r.label}</strong><span>${r.sub||''}</span></div><strong>${r.value}</strong></div>`).join('') || `<div class="empty">${empty}</div>`;
@@ -20,6 +24,33 @@ export function renderCB(id, list) {
     `<div class="crow"><div class="cname">${c}</div><div class="ctrack"><div class="cfill" style="width:${Math.round((v/maxV)*100)}%;background:${colors[c]||'var(--text3)'}"></div></div><div class="cval">${czk(v)}</div></div>`
   ).join('') || '<div class="empty">Žádné výdaje</div>';
 }
+
+// Horizontální barplot protistran pro vybranou kategorii
+function renderCatBars(cat) {
+  const el = document.getElementById('catBars');
+  if (!el || !cat || !_catExpenses) return;
+  const subset = _catExpenses.filter(t => t.kategorie === cat);
+  const cpTotals = {};
+  subset.forEach(t => { const key = t.protistrana || t.popis || 'Neznámá'; cpTotals[key] = (cpTotals[key]||0)+t.castka; });
+  const sorted = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,10);
+  const maxV = sorted[0]?.[1] || 1;
+  const color = CATEGORY_COLORS[cat] || 'var(--text3)';
+  el.innerHTML = sorted.map(([name, val]) => {
+    const pct = Math.round((val/maxV)*100);
+    return `<div class="hbar-row">
+      <div class="hbar-name" title="${name}">${name}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="hbar-val">${czk(val)}</div>
+    </div>`;
+  }).join('') || '<div class="empty" style="padding:24px 0">Žádné transakce</div>';
+}
+
+// Voláno z onclick chipu v HTML — přepne kategorii
+window.selectCatFilter = function(cat) {
+  _catFilter = cat;
+  document.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('active', c.textContent === cat));
+  renderCatBars(cat);
+};
 
 export function renderCharts() {
   const all = base(null, null);
@@ -67,8 +98,8 @@ export function renderCharts() {
   const mPct = martin / splitBase, sPct = sarka / splitBase;
   const r = 54, circ = 2 * Math.PI * r;
   const mDash = mPct * circ, sDash = sPct * circ;
-  const mOffset = circ / 4;        // začít nahoře (12 hodin)
-  const sOffset = mOffset - mDash; // Šárka navazuje za Martinem
+  const mOffset = circ / 4;
+  const sOffset = mOffset - mDash;
   document.getElementById('donutChart').innerHTML = `<svg viewBox="0 0 160 160" width="140" height="140">
     <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="22"/>
     <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--blue)" stroke-width="22"
@@ -91,17 +122,18 @@ export function renderCharts() {
     return `<div class="avg-cat-row"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${cat}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
   }).join('') || '<div class="empty">Žádné kategorie</div>';
 
-  const cpTotals = {};
-  expenses.forEach(t => { const key = t.protistrana || t.popis || 'Neznámá'; cpTotals[key] = (cpTotals[key]||0)+t.castka; });
-  const cpRows = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,6).map(([label,val]) => ({label, sub: `${expenses.filter(t => (t.protistrana || t.popis || 'Neznámá') === label).length} transakcí`, value: czk(val)}));
-  renderMetricRows('counterpartySpend', cpRows, 'Žádné protistrany v rozsahu');
-
-  const catCounterparty = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]).slice(0,5).map(([cat]) => {
-    const subset = expenses.filter(t => t.kategorie === cat);
-    const top = Object.entries(subset.reduce((acc,t) => { const key = t.protistrana || t.popis || 'Neznámá'; acc[key] = (acc[key]||0)+t.castka; return acc; }, {})).sort((a,b) => b[1]-a[1])[0];
-    return { title: cat, body: top ? `Nejvíc padá u ${top[0]}: ${czk(top[1])}.` : 'Bez jasné protistrany.' };
-  });
-  renderInsightRows('categoryCounterparty', catCounterparty, 'Žádné kategorie v rozsahu');
+  // Protistrany dle kategorie — interaktivní kombinovaná karta
+  _catExpenses = expenses;
+  const catsSorted = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]);
+  // Pokud je uložená kategorie stále v datech, zachovat výběr; jinak přepnout na top
+  if (!_catFilter || !categoryTotals[_catFilter]) _catFilter = catsSorted[0]?.[0] || null;
+  const chipsEl = document.getElementById('catChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = catsSorted.map(([cat]) =>
+      `<button class="cat-chip${cat === _catFilter ? ' active' : ''}" onclick="selectCatFilter('${cat.replace(/'/g,'\\\'')}')">${cat}</button>`
+    ).join('');
+  }
+  renderCatBars(_catFilter);
 
   renderInsightRows('topMonths', monthStats.slice().sort((a,b) => b.expense-a.expense).slice(0,3).map(m => ({title: m.month, body: `Výdaje ${czk(m.expense)}, příjmy ${czk(m.income)} a míra úspor ${m.rate} %.`})), 'Žádné měsíce v rozsahu');
   renderInsightRows('topExpenses', expenses.slice().sort((a,b) => b.castka-a.castka).slice(0,3).map(t => ({title: `${t.popis} · ${czk(t.castka)}`, body: `${fmtD(t.datum)} · ${t.kategorie} · ${t.osoba}`})), 'Žádné výdaje v rozsahu');

@@ -272,7 +272,7 @@
       <div class="content">
         <div class="mgrid">
           <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Utratil Martin</div><div class="mv blue" id="ca1">—</div><div class="ms" id="ca1s"></div></div>
-          <div class="mc" style="border-left-color:#d76593"><div class="ml">Utratila Šárka</div><div class="mv" id="ca2">—</div><div class="ms" id="ca2s"></div></div>
+          <div class="mc" style="border-left-color:#d76593"><div class="ml">Utratila Šárka</div><div class="mv pink" id="ca2">—</div><div class="ms" id="ca2s"></div></div>
           <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Průměr za měsíc</div><div class="mv" id="ca3">—</div><div class="ms" id="ca3s"></div></div>
           <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Nejsilnější kategorie</div><div class="mv" id="ca4">—</div><div class="ms" id="ca4s"></div></div>
         </div>
@@ -288,9 +288,10 @@
           <div class="card"><div class="card-hdr"><div class="ct">Poměr útraty Martin vs. Šárka</div></div><div class="split-card"><div id="donutChart" class="donut-wrap"></div><div class="split-legend" id="spendLegend"></div></div></div>
           <div class="card"><div class="card-hdr"><div class="ct">Průměrná měsíční útrata dle kategorií</div></div><div id="avgCats" class="metric-stack"></div></div>
         </div>
-        <div class="two">
-          <div class="card"><div class="card-hdr"><div class="ct">Protistrany podle útraty</div></div><div id="counterpartySpend" class="metric-stack"></div></div>
-          <div class="card"><div class="card-hdr"><div class="ct">Kategorie podle protistran</div></div><div id="categoryCounterparty" class="insight-list"></div></div>
+        <div class="card">
+          <div class="card-hdr"><div class="ct">Protistrany dle kategorie</div></div>
+          <div id="catChips" class="cat-chip-row"></div>
+          <div id="catBars"></div>
         </div>
         <div class="three">
           <div class="card"><div class="card-hdr"><div class="ct">Měsíce s největší útratou</div></div><div id="topMonths" class="insight-list"></div></div>
