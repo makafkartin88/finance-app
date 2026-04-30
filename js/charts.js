@@ -30,12 +30,22 @@ function renderCatBars(cat) {
   const el = document.getElementById('chartCatBars');
   if (!el || !cat || !_catExpenses) return;
   const subset = _catExpenses.filter(t => t.kategorie === cat);
-  const cpTotals = {};
-  subset.forEach(t => { const key = t.protistrana || t.popis || 'Neznámá'; cpTotals[key] = (cpTotals[key]||0)+t.castka; });
+  const cpTotals = {};  // normKey → total
+  const cpDisplay = {}; // normKey → best display name
+  subset.forEach(t => {
+    const raw = (t.protistrana || t.popis || 'Neznámá').trim();
+    const norm = raw.toLowerCase();
+    cpTotals[norm] = (cpTotals[norm]||0) + t.castka;
+    // Preferovat variantu začínající velkým písmenem
+    if (!cpDisplay[norm] || (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase())) {
+      cpDisplay[norm] = raw;
+    }
+  });
   const sorted = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,10);
   const maxV = sorted[0]?.[1] || 1;
   const color = CATEGORY_COLORS[cat] || 'var(--text3)';
-  el.innerHTML = sorted.map(([name, val]) => {
+  el.innerHTML = sorted.map(([norm, val]) => {
+    const name = cpDisplay[norm] || norm;
     const pct = Math.round((val/maxV)*100);
     return `<div class="hbar-row">
       <div class="hbar-name" title="${name}">${name}</div>

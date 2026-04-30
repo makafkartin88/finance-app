@@ -30,7 +30,7 @@
       <div class="fg"><label>Osoba</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
       <div class="fg"><label>Účet</label><select id="fUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
       <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
-      <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" placeholder="Obchod nebo firma"/></div>
+      <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" list="protrList" autocomplete="off" placeholder="Obchod nebo firma"/><datalist id="protrList"></datalist></div>
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
       <div class="fg fgfull">
         <label>Účtenka</label>
@@ -97,7 +97,7 @@
         <div class="fg"><label>Osoba</label><select id="rfOsoba"><option>Martin</option><option>Šárka</option></select></div>
         <div class="fg"><label>Účet</label><select id="rfUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
         <div class="fg"><label>Metoda</label><select id="rfMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
-        <div class="fg"><label>Protistrana</label><input type="text" id="rfProti" placeholder="Firma"/></div>
+        <div class="fg"><label>Protistrana</label><input type="text" id="rfProti" list="protrList" autocomplete="off" placeholder="Firma"/></div>
         <div class="fg"><label>Den v měsíci</label><input type="number" id="rfDay" value="1" min="1" max="28"/></div>
       </div>
       <div class="mactions" style="margin-top:14px">

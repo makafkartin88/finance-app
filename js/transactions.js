@@ -62,7 +62,19 @@ export function renderTx() {
   attachRowInteractions(document.getElementById('txBody'));
 }
 
+function populateProtrList() {
+  const dl = document.getElementById('protrList');
+  if (!dl) return;
+  const freq = {};
+  state.txs.forEach(t => { if (t.protistrana) freq[t.protistrana] = (freq[t.protistrana]||0) + 1; });
+  dl.innerHTML = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => `<option value="${name.replace(/"/g, '&quot;')}"/>`)
+    .join('');
+}
+
 export function openTx(idx) {
+  populateProtrList();
   state.editIdx = idx !== undefined ? idx : null;
   document.getElementById('txTitle').textContent = state.editIdx !== null ? 'Upravit transakci' : 'Přidat transakci';
   const today = new Date().toISOString().split('T')[0];
