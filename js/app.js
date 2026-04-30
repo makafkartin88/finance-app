@@ -115,20 +115,6 @@ function applyRangeFromInputs() {
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
 }
 
-function chartSetMonth(monthStr) {
-  const ord = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
-  const [mn, yr] = monthStr.split(' ');
-  const m = ord[mn]; if (!m || !yr) return;
-  const y = parseInt(yr);
-  const from = `${y}-${String(m).padStart(2,'0')}-01`;
-  const to = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
-  state._range = { from, to };
-  state.drill = { month: null, cat: null };
-  const dFrom = document.getElementById('dFrom'); if (dFrom) dFrom.value = from;
-  const dTo = document.getElementById('dTo'); if (dTo) dTo.value = to;
-  populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
-  nav('dashboard', document.querySelectorAll('.ni')[0]);
-}
 
 function resetRange() {
   const { min } = getBounds();
@@ -203,7 +189,7 @@ window.mbankDod = mbankDod;
 window.onMbankFile = onMbankFile;
 window.confirmMbankImport = confirmMbankImport;
 window.hideMbankBanner = hideMbankBanner;
-window.chartSetMonth = chartSetMonth;
+
 
 /* ── INIT ── */
 (function init() {
