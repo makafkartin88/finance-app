@@ -24,7 +24,7 @@
     <div class="fgrid">
       <div class="fg"><label>Datum</label><input type="date" id="fDate"/></div>
       <div class="fg"><label>Částka (Kč)</label><input type="number" id="fAmt" placeholder="0" step="1"/></div>
-      <div class="fg fgfull"><label>Popis</label><input type="text" id="fDesc" placeholder="Popis transakce"/></div>
+      <div class="fg fgfull"><label>Popis</label><input type="text" id="fDesc" list="opisList" autocomplete="off" placeholder="Popis transakce"/><datalist id="opisList"></datalist></div>
       <div class="fg"><label>Typ</label><select id="fTyp"><option>Výdaj</option><option>Příjem</option></select></div>
       <div class="fg"><label>Kategorie</label><select id="fKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
       <div class="fg"><label>Osoba</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
@@ -90,7 +90,7 @@
     <div id="recFormWrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">Nová šablona</h3>
       <div class="fgrid">
-        <div class="fg"><label>Popis</label><input type="text" id="rfDesc" placeholder="Nájem, Netflix..."/></div>
+        <div class="fg"><label>Popis</label><input type="text" id="rfDesc" list="opisList" autocomplete="off" placeholder="Nájem, Netflix..."/></div>
         <div class="fg"><label>Částka (Kč)</label><input type="number" id="rfAmt" placeholder="0" step="1"/></div>
         <div class="fg"><label>Typ</label><select id="rfTyp"><option>Výdaj</option><option>Příjem</option></select></div>
         <div class="fg"><label>Kategorie</label><select id="rfKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
@@ -278,7 +278,7 @@
         </div>
         <div class="two">
           <div class="card"><div class="card-hdr"><div class="ct">Roční přehled</div><div class="legend"><div class="li"><div class="ld" style="background:var(--green)"></div>Příjmy</div><div class="li"><div class="ld" style="background:var(--red)"></div>Výdaje</div></div></div><div class="bchart" id="yrChart"></div><div class="blrow" id="yrLabels"></div></div>
-          <div class="card"><div class="card-hdr"><div class="ct">Míra úspor (%)</div></div><div class="bchart" id="srChart"></div><div class="blrow" id="srLabels"></div></div>
+          <div class="card"><div class="card-hdr"><div class="ct">Saldo měsíce</div></div><div class="bchart" id="srChart"></div><div class="blrow" id="srLabels"></div></div>
         </div>
         <div class="two">
           <div class="card"><div class="card-hdr"><div class="ct">Výdaje <span class="badge bme">Martin</span></div></div><div id="cbM"></div></div>

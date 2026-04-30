@@ -62,19 +62,26 @@ export function renderTx() {
   attachRowInteractions(document.getElementById('txBody'));
 }
 
-function populateProtrList() {
-  const dl = document.getElementById('protrList');
+function makeDatalist(id, values) {
+  const dl = document.getElementById(id);
   if (!dl) return;
-  const freq = {};
-  state.txs.forEach(t => { if (t.protistrana) freq[t.protistrana] = (freq[t.protistrana]||0) + 1; });
-  dl.innerHTML = Object.entries(freq)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name]) => `<option value="${name.replace(/"/g, '&quot;')}"/>`)
+  dl.innerHTML = [...new Set(values.filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'cs'))
+    .map(v => `<option value="${v.replace(/"/g, '&quot;')}"/>`)
     .join('');
+}
+
+function populateProtrList() {
+  makeDatalist('protrList', state.txs.map(t => t.protistrana));
+}
+
+function populateOpisList() {
+  makeDatalist('opisList', state.txs.map(t => t.popis));
 }
 
 export function openTx(idx) {
   populateProtrList();
+  populateOpisList();
   state.editIdx = idx !== undefined ? idx : null;
   document.getElementById('txTitle').textContent = state.editIdx !== null ? 'Upravit transakci' : 'Přidat transakci';
   const today = new Date().toISOString().split('T')[0];

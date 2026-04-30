@@ -72,20 +72,33 @@ export function renderCharts() {
     return { month: m, income, expense, rate: income > 0 ? Math.max(0, Math.round(((income-expense)/income)*100)) : 0 };
   });
   const maxV = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
+  const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
-  // Roční přehled — gradienty místo inline barev
+  // Roční přehled — bar labels + click na měsíc
   document.getElementById('yrChart').innerHTML = monthStats.map(m =>
-    `<div class="bg"><div class="bar bar-income" style="height:${Math.round((m.income/maxV)*100)}px"></div><div class="bar bar-expense" style="height:${Math.round((m.expense/maxV)*100)}px"></div></div>`
+    `<div class="bg" onclick="chartSetMonth('${m.month}')" title="${m.month}">
+      <div class="bar-lbl"><span class="bv-i">${kFmt(m.income)}</span><span class="bv-e">${kFmt(m.expense)}</span></div>
+      <div class="bar bar-income" style="height:${Math.round((m.income/maxV)*100)}px"></div>
+      <div class="bar bar-expense" style="height:${Math.round((m.expense/maxV)*100)}px"></div>
+    </div>`
   ).join('');
   document.getElementById('yrLabels').innerHTML = monthStats.map(m => `<div class="bl">${m.month.split(' ')[0]}</div>`).join('');
 
-  // Míra úspor — gradient třídy dle výše úspor
-  const maxR = Math.max(...monthStats.map(m => m.rate), 1);
+  // Saldo měsíce — diverging bar chart (nahoře = kladné, dole = záporné)
+  const maxAbs = Math.max(...monthStats.map(m => Math.abs(m.income - m.expense)), 1);
   document.getElementById('srChart').innerHTML = monthStats.map(m => {
-    const barClass = m.rate > 30 ? 'bar-savings-good' : m.rate > 15 ? 'bar-savings-mid' : 'bar-savings-low';
-    return `<div class="bg"><div class="bar ${barClass}" style="height:${Math.round((m.rate/maxR)*100)}px;flex:1" title="${m.month}: ${m.rate}%"></div></div>`;
+    const net = m.income - m.expense;
+    const h = Math.round((Math.abs(net) / maxAbs) * 50);
+    return `<div class="bg net-bg" onclick="chartSetMonth('${m.month}')" title="${m.month}: ${czk(net)}">
+      <div class="net-pos">${net >= 0 ? `<div class="bar bar-income net-bar" style="height:${h}px"></div>` : ''}</div>
+      <div class="net-neg">${net < 0 ? `<div class="bar bar-expense net-bar" style="height:${h}px"></div>` : ''}</div>
+    </div>`;
   }).join('');
-  document.getElementById('srLabels').innerHTML = monthStats.map(m => `<div class="bl">${m.month.split(' ')[0]}<br><b>${m.rate}%</b></div>`).join('');
+  const netFmt = n => (n >= 0 ? '+' : '') + (Math.abs(n) >= 1000 ? Math.round(n/1000)+'k' : Math.round(n).toString());
+  document.getElementById('srLabels').innerHTML = monthStats.map(m => {
+    const net = m.income - m.expense;
+    return `<div class="bl">${m.month.split(' ')[0]}<br><b style="color:${net>=0?'var(--green)':'var(--red)'}">${netFmt(net)}</b></div>`;
+  }).join('');
 
   const expenses = all.filter(t => t.typ === 'Výdaj');
   const totalExpense = expenses.reduce((s,t) => s+t.castka, 0);
