@@ -34,12 +34,12 @@ function renderCatBars(cat) {
   const cpDisplay = {}; // normKey → best display name
   subset.forEach(t => {
     const raw = (t.protistrana || t.popis || 'Neznámá').trim();
-    const norm = raw.toLowerCase();
+    // Normalizace na první slovo = název značky (odstraní adresu pobočky a pokladní suffisy)
+    const firstWord = raw.split(/[\s,/]+/)[0];
+    const norm = firstWord.toLowerCase();
     cpTotals[norm] = (cpTotals[norm]||0) + t.castka;
-    // Preferovat variantu začínající velkým písmenem
-    if (!cpDisplay[norm] || (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase())) {
-      cpDisplay[norm] = raw;
-    }
+    // Title-case první slovo jako display name (Billa, Lidl, Rossmann…)
+    cpDisplay[norm] = firstWord.charAt(0).toUpperCase() + firstWord.slice(1).toLowerCase();
   });
   const sorted = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,10);
   const maxV = sorted[0]?.[1] || 1;
