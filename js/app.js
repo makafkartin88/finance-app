@@ -1,4 +1,4 @@
-import { GAS_URL, DEMO } from './config.js';
+import { GAS_URL, DEMO, VERSION } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
@@ -196,6 +196,8 @@ window.toggleMbankDupDetail = toggleMbankDupDetail;
 (function init() {
   const sl = localStorage.getItem('finlim'); if (sl) Object.assign(state.limits, JSON.parse(sl));
   applyPersonTheme();
+  const vEl = document.getElementById('appVersion');
+  if (vEl) vEl.textContent = `v${VERSION}`;
 
   initAuth(() => {
     loadSheets();
