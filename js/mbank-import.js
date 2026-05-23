@@ -218,19 +218,15 @@ function mbankDateToIso(czDate) {
   return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
 }
 
-function daysDiff(isoA, isoB) {
-  return Math.abs(Date.parse(isoA) - Date.parse(isoB)) / 86400000;
-}
-
 function findDuplicate(czDate, amt, typ) {
-  const iso = mbankDateToIso(czDate);
+  const isoMs = Date.parse(mbankDateToIso(czDate));
+  if (isNaN(isoMs)) return null;
   return state.txs.find(t => {
-    const p = (t.datum || '').split('/');
-    const tIso = p.length === 3
-      ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}`
-      : '';
-    if (!tIso || t.typ !== typ) return false;
-    return daysDiff(tIso, iso) <= 2 && Math.abs(t.castka - amt) / Math.max(amt, 0.01) <= 0.10;
+    if (t.typ !== typ) return false;
+    const tMs = new Date(t.datum).getTime();
+    if (isNaN(tMs)) return false;
+    return Math.abs(tMs - isoMs) <= 2 * 86400000
+      && Math.abs(t.castka - amt) / Math.max(amt, 0.01) <= 0.10;
   }) || null;
 }
 
