@@ -9,7 +9,7 @@ import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, 
 import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
-import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner } from './mbank-import.js';
+import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 
 /* ── TOAST ── */
@@ -189,6 +189,7 @@ window.mbankDod = mbankDod;
 window.onMbankFile = onMbankFile;
 window.confirmMbankImport = confirmMbankImport;
 window.hideMbankBanner = hideMbankBanner;
+window.toggleMbankDupDetail = toggleMbankDupDetail;
 
 
 /* ── INIT ── */

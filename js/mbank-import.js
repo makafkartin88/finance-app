@@ -159,18 +159,19 @@ function parseMbankItems(items, osoba) {
         ? ''
         : cont.slice(2).join(' ').replace(/\b[A-Z]{2}:\d+\b/g, '').trim();
 
+      const txTyp = amt < 0 ? 'Výdaj' : 'Příjem';
       transactions.push({
         datum:       mbankDateToIso(dateStr),
         popis,
         castka:      Math.abs(amt),
-        typ:         amt < 0 ? 'Výdaj' : 'Příjem',
+        typ:         txTyp,
         kategorie:   guessCategory(popis, protistrana),
         ucet:        'mBank',
         metoda:      metoda || 'Převod',
         protistrana,
         poznamka,
         osoba,
-        _dup: isDuplicate(dateStr, Math.abs(amt))
+        _dupTx: findDuplicate(dateStr, Math.abs(amt), txTyp)
       });
     } else {
       i++;
@@ -217,16 +218,15 @@ function mbankDateToIso(czDate) {
   return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
 }
 
-function isDuplicate(czDate, amt) {
+function findDuplicate(czDate, amt, typ) {
   const iso = mbankDateToIso(czDate);
-  return state.txs.some(t => {
-    // Convert stored datum (M/D/YYYY) back to ISO for comparison
+  return state.txs.find(t => {
     const p = (t.datum || '').split('/');
     const tIso = p.length === 3
       ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}`
       : '';
-    return tIso === iso && Math.abs(t.castka - amt) < 0.01 && t.ucet === 'mBank';
-  });
+    return tIso === iso && Math.abs(t.castka - amt) < 0.01 && t.typ === typ;
+  }) || null;
 }
 
 function guessCategory(popis, protistrana) {
@@ -247,14 +247,36 @@ function showMbankPreview(rows, fname) {
   const results = document.getElementById('mbankResults');
   results.style.display = 'block';
 
-  const cats    = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní','Příjem'];
-  const dupCount = rows.filter(r => r._dup).length;
+  const cats     = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní','Příjem'];
+  const dupCount = rows.filter(r => r._dupTx).length;
   const dupNote  = dupCount
-    ? `<div style="color:var(--amber-text);background:var(--amber-bg);padding:8px 12px;border-radius:var(--rsm);font-size:12px;margin-bottom:10px">⚠️ ${dupCount} transakcí vypadá jako duplicitní (stejné datum + částka). Odznač je pokud je nechceš importovat.</div>`
+    ? `<div style="color:var(--amber-text);background:var(--amber-bg);padding:8px 12px;border-radius:var(--rsm);font-size:12px;margin-bottom:10px">⚠ ${dupCount} ${dupCount === 1 ? 'transakce vypadá jako duplicitní' : 'transakcí vypadá jako duplicitních'} — odznačeny. Klikni na <strong>!</strong> pro náhled existující transakce.</div>`
     : '';
 
-  const trs = rows.map((r, i) => `<tr style="${r._dup ? 'opacity:.45' : ''}">
-    <td style="text-align:center"><input type="checkbox" id="mbc-${i}" ${r._dup ? '' : 'checked'}></td>
+  const trs = rows.map((r, i) => {
+    const dup = r._dupTx;
+    const dupBtn = dup
+      ? `<button onclick="toggleMbankDupDetail(${i})" title="Zobrazit existující transakci" style="display:block;margin:3px auto 0;background:var(--amber-bg);color:var(--amber-text);border:1.5px solid var(--amber-text);border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:700;cursor:pointer;padding:0;line-height:1.6">!</button>`
+      : '';
+
+    let dupDetailRow = '';
+    if (dup) {
+      const p = (dup.datum || '').split('/');
+      const dispDate = p.length === 3
+        ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}`
+        : dup.datum;
+      const info = [dispDate, dup.popis, dup.protistrana, `${dup.castka} Kč`, dup.ucet, dup.kategorie].filter(Boolean).join(' · ');
+      const openBtn = dup.id
+        ? `<button onclick="openEdit('${dup.id}')" style="margin-left:10px;font-size:11px;padding:2px 8px;cursor:pointer;background:var(--amber-text);color:#fff;border:none;border-radius:4px;white-space:nowrap">Otevřít →</button>`
+        : '';
+      dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="5" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
+    }
+
+    return `<tr style="${dup ? 'opacity:.55' : ''}">
+    <td style="text-align:center;vertical-align:top;padding-top:8px">
+      <input type="checkbox" id="mbc-${i}" ${dup ? '' : 'checked'}>
+      ${dupBtn}
+    </td>
     <td><input id="mbd-${i}" type="date" value="${r.datum}" style="min-width:130px"/></td>
     <td>
       <input id="mbs-${i}" type="text" value="${r.popis}" style="min-width:150px;margin-bottom:4px"/>
@@ -274,7 +296,8 @@ function showMbankPreview(rows, fname) {
       <option ${r.osoba==='Šárka'?'selected':''}>Šárka</option>
     </select></td>
     <td><input id="mbm-${i}" type="number" min="0" step="0.01" value="${r.castka}" style="min-width:90px"/></td>
-  </tr>`).join('');
+  </tr>${dupDetailRow}`;
+  }).join('');
 
   results.innerHTML = `<div class="card" style="padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
@@ -292,6 +315,11 @@ function showMbankPreview(rows, fname) {
   </div>`;
 
   state._mbankRows = rows;
+}
+
+export function toggleMbankDupDetail(i) {
+  const el = document.getElementById('mbdup-' + i);
+  if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
 }
 
 /* ── CONFIRM & SAVE ── */
