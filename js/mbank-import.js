@@ -218,6 +218,10 @@ function mbankDateToIso(czDate) {
   return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
 }
 
+function daysDiff(isoA, isoB) {
+  return Math.abs(Date.parse(isoA) - Date.parse(isoB)) / 86400000;
+}
+
 function findDuplicate(czDate, amt, typ) {
   const iso = mbankDateToIso(czDate);
   return state.txs.find(t => {
@@ -225,7 +229,8 @@ function findDuplicate(czDate, amt, typ) {
     const tIso = p.length === 3
       ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}`
       : '';
-    return tIso === iso && Math.abs(t.castka - amt) < 0.01 && t.typ === typ;
+    if (!tIso || t.typ !== typ) return false;
+    return daysDiff(tIso, iso) <= 2 && Math.abs(t.castka - amt) / Math.max(amt, 0.01) <= 0.10;
   }) || null;
 }
 
