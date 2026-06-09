@@ -71,8 +71,23 @@ function makeDatalist(id, values) {
     .join('');
 }
 
+function normProtiKey(raw) {
+  const firstWord = (raw || '').trim().split(/[\s,/]+/)[0];
+  return firstWord.toLowerCase().replace(/\.(cz|com|sk|eu|net|org|de|pl|at|hu|io)$/i, '');
+}
+
 function populateProtrList() {
-  makeDatalist('protrList', state.txs.map(t => t.protistrana));
+  const seen = new Set();
+  const values = [];
+  state.txs.forEach(t => {
+    const raw = (t.protistrana || '').trim();
+    if (!raw) return;
+    const norm = normProtiKey(raw);
+    if (!norm || seen.has(norm)) return;
+    seen.add(norm);
+    values.push(norm.charAt(0).toUpperCase() + norm.slice(1));
+  });
+  makeDatalist('protrList', values);
 }
 
 function populateOpisList() {
