@@ -8,7 +8,7 @@ import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
 import { reloadSheets } from './settings.js';
 import { initAuth, logout } from './auth.js';
-import { loadRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
+import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 
@@ -39,7 +39,7 @@ export async function loadSheets() {
     boot(); toast('Načteno ' + state.txs.length + ' transakcí', 'ok');
     setAuth(true);
     loadInvestmentData();
-    loadRecurring();
+    loadRecurring().then(autoGenerateRecurring);
     loadMbankNotification();
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');

@@ -30,6 +30,8 @@ async function procMbankFile(file) {
     Čtu PDF výpis…
   </div>`;
 
+  if (!state._mbankImportFile) state._mbankImportFile = file.name;
+
   try {
     if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js se nepodařilo načíst — zkontroluj internetové připojení');
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -166,7 +168,7 @@ function parseMbankItems(items, osoba) {
         castka:      Math.abs(amt),
         typ:         txTyp,
         kategorie:   guessCategory(popis, protistrana),
-        ucet:        'mBank',
+        ucet:        'Společný účet',
         metoda:      metoda || 'Převod',
         protistrana,
         poznamka,
@@ -198,7 +200,7 @@ function splitDesc(mainDesc, cont) {
     }
     // Strip country code + amount suffix (monthly format): " CZ -1 234,56 CZK ..."
     const merchant = raw.replace(/\s+[A-Z]{2}\s+-[\d\s,]+CZK.*$/i, '').trim();
-    return { popis: 'Platba kartou', protistrana: merchant, metoda: 'Karta' };
+    return { popis: merchant || 'Platba kartou', protistrana: merchant, metoda: 'Karta' };
   }
 
   const known = [
@@ -353,7 +355,7 @@ export async function confirmMbankImport() {
     const sign      = typ === 'Příjem' ? castka : -castka;
     const id        = `${yp}${mp}${dp}-mb${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
 
-    const row = [sheetDate, popis, castka, 'CZK', 'mBank', typ, kat, osoba, metoda,
+    const row = [sheetDate, popis, castka, 'CZK', rows[i].ucet || 'Společný účet', typ, kat, osoba, metoda,
                  proti, rows[i].poznamka || '', sign, mesic, yp, id,
                  typ==='Výdaj'?castka:0, typ==='Příjem'?castka:0, sign, ''];
     allRows.push(row);

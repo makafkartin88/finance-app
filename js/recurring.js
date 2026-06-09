@@ -171,23 +171,23 @@ export async function deleteRec(i) {
   }
 }
 
-/* ── GENERATE TRANSACTIONS FOR CURRENT MONTH ── */
-export async function generateRecurring() {
+/* ── AUTO-GENERATE ON LOAD (silent) ── */
+export async function autoGenerateRecurring() {
   const now = new Date();
   const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const active = state.recurring.filter(r => r.aktivni && r.posledniGen !== curMonth);
+  if (!active.length) return;
+  await _doGenerate(active, now, curMonth);
+  boot();
+}
 
-  if (!active.length) {
-    toast('Žádné šablony k vygenerování tento měsíc', 'ok');
-    return;
-  }
-
+/* ── GENERATE TRANSACTIONS FOR CURRENT MONTH ── */
+async function _doGenerate(active, now, curMonth) {
+  const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const y = String(now.getFullYear());
   const m = String(now.getMonth()+1).padStart(2,'0');
   const allRows = [];
 
-  // Build all rows first
   for (const rec of active) {
     const d = String(Math.min(rec.den, 28)).padStart(2,'0');
     const datum = `${parseInt(m)}/${parseInt(d)}/${y}`;
@@ -199,17 +199,25 @@ export async function generateRecurring() {
                   rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '']);
   }
 
-  // Add all to local state at once
   allRows.forEach(row => { try { state.txs.push(parseRow(row)); } catch(e) {} });
-
-  // Single batch POST to GAS
   try {
     await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: allRows }) });
   } catch(e) {}
-
-  // Mark all as generated this month
   active.forEach(rec => { rec.posledniGen = curMonth; });
+  return allRows.length;
+}
 
+export async function generateRecurring() {
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const active = state.recurring.filter(r => r.aktivni && r.posledniGen !== curMonth);
+
+  if (!active.length) {
+    toast('Žádné šablony k vygenerování tento měsíc', 'ok');
+    return;
+  }
+
+  const count = await _doGenerate(active, now, curMonth);
   boot();
-  toast(`Vygenerováno ${allRows.length} opakujících se transakcí`, 'ok');
+  toast(`Vygenerováno ${count} opakujících se transakcí`, 'ok');
 }

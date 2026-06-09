@@ -26,7 +26,19 @@ export function renderDash() {
   const m3 = document.getElementById('m3');
   m3.textContent = (sav >= 0 ? '+' : '')+czk(sav); m3.className = 'mv '+(sav >= 0 ? 'green' : 'red');
   document.getElementById('m3s').textContent = sr+'% míra úspor';
-  document.getElementById('m4').textContent = czk(inv);
+  const monthMap = {};
+  state.txs.forEach(t => {
+    if (!t.mesic) return;
+    if (!monthMap[t.mesic]) monthMap[t.mesic] = { inc: 0, exp: 0 };
+    if (t.typ === 'Příjem') monthMap[t.mesic].inc += t.castka;
+    else if (t.typ === 'Výdaj') monthMap[t.mesic].exp += t.castka;
+  });
+  const monthBalances = Object.values(monthMap).map(m => m.inc - m.exp);
+  const avgBalance = monthBalances.length ? monthBalances.reduce((s, v) => s + v, 0) / monthBalances.length : 0;
+  const m4el = document.getElementById('m4');
+  m4el.textContent = (avgBalance >= 0 ? '+' : '') + czk(avgBalance);
+  m4el.className = 'mv ' + (avgBalance >= 0 ? 'green' : 'red');
+  document.getElementById('m4s').textContent = `průměr za ${monthBalances.length} měs.`;
 
   // Cash flow
   const months = getMonths(base(null,null)).slice(-6);
