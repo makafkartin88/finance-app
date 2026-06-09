@@ -171,11 +171,29 @@ export async function deleteRec(i) {
   }
 }
 
+function _curMonthStr(now) {
+  const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mn[now.getMonth()+1]} ${now.getFullYear()}`;
+}
+
+function alreadyGeneratedThisMonth(rec, curMonthStr) {
+  return state.txs.some(t =>
+    t.mesic === curMonthStr &&
+    t.poznamka === 'Opakující se' &&
+    t.popis === rec.popis &&
+    t.typ === rec.typ &&
+    Math.abs(t.castka - rec.castka) < 0.01
+  );
+}
+
 /* ── AUTO-GENERATE ON LOAD (silent) ── */
 export async function autoGenerateRecurring() {
   const now = new Date();
   const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const active = state.recurring.filter(r => r.aktivni && r.posledniGen !== curMonth);
+  const curMonthStr = _curMonthStr(now);
+  const active = state.recurring.filter(r =>
+    r.aktivni && r.posledniGen !== curMonth && !alreadyGeneratedThisMonth(r, curMonthStr)
+  );
   if (!active.length) return;
   await _doGenerate(active, now, curMonth);
   boot();
@@ -210,7 +228,10 @@ async function _doGenerate(active, now, curMonth) {
 export async function generateRecurring() {
   const now = new Date();
   const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const active = state.recurring.filter(r => r.aktivni && r.posledniGen !== curMonth);
+  const curMonthStr = _curMonthStr(now);
+  const active = state.recurring.filter(r =>
+    r.aktivni && r.posledniGen !== curMonth && !alreadyGeneratedThisMonth(r, curMonthStr)
+  );
 
   if (!active.length) {
     toast('Žádné šablony k vygenerování tento měsíc', 'ok');

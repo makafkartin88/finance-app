@@ -4,13 +4,13 @@ import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thF
 
 export function renderDash() {
   closePopover();
-  const months = state.drill.months;
+  const drillMonths = state.drill.months;
   const cat = state.drill.cat;
-  const b = base(months.size ? months : null, null);
+  const b = base(drillMonths.size ? drillMonths : null, null);
   const shown = cat ? b.filter(t => t.kategorie === cat) : b;
   const drillChip = document.getElementById('dashDrill');
   if (drillChip) {
-    const drillTxt = cat ? `Kategorie: ${cat}` : months.size ? `Měsíc: ${[...months].join(', ')}` : '';
+    const drillTxt = cat ? `Kategorie: ${cat}` : drillMonths.size ? `Měsíc: ${[...drillMonths].join(', ')}` : '';
     drillChip.textContent = drillTxt;
     drillChip.style.display = drillTxt ? 'inline-flex' : 'none';
   }
@@ -68,7 +68,7 @@ export function renderDash() {
   ).join('') || '<div class="empty">Žádné výdaje</div>';
 
   // Table
-  const monthsLabel = months.size ? [...months].join(', ') : '';
+  const monthsLabel = drillMonths.size ? [...drillMonths].join(', ') : '';
   document.getElementById('recentTitle').textContent = cat ? `Transakce — ${cat}${monthsLabel ? ' ('+monthsLabel+')' : ''}` : monthsLabel ? 'Transakce — '+monthsLabel : `Poslední transakce (${rangeLabel(state._range.from, state._range.to)})`;
 
   // Render dynamic header (with filter indicators)
