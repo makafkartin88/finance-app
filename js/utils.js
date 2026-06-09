@@ -87,6 +87,7 @@ export function scopedTxs(opts = {}) {
   let list = opts.ignorePerson || state.person === 'Oba' ? state.txs : state.txs.filter(t => t.osoba === state.person);
   if (!opts.ignoreRange) list = list.filter(inRange);
   if (opts.month) list = list.filter(t => t.mesic === opts.month);
+  if (opts.months && opts.months.size) list = list.filter(t => opts.months.has(t.mesic));
   if (opts.cat) list = list.filter(t => t.kategorie === opts.cat);
   return list;
 }
@@ -101,5 +102,6 @@ export function getMonths(list) {
 }
 
 export function base(m, c) {
+  if (m instanceof Set) return scopedTxs({ months: m, cat: c });
   return scopedTxs({ month: m, cat: c });
 }

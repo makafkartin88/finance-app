@@ -102,7 +102,7 @@ function setPerson(p, btn) {
   document.querySelectorAll('.pb').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   applyPersonTheme();
-  state.drill = { month: null, cat: null };
+  state.drill = { months: new Set(), cat: null };
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
 }
 
@@ -111,7 +111,7 @@ function applyRangeFromInputs() {
   const to = document.getElementById('dTo')?.value;
   if (!from || !to) return;
   state._range = { from: from <= to ? from : to, to: from <= to ? to : from };
-  state.drill = { month: null, cat: null };
+  state.drill = { months: new Set(), cat: null };
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
 }
 
@@ -119,7 +119,7 @@ function applyRangeFromInputs() {
 function resetRange() {
   const { min } = getBounds();
   state._range = { from: isoDate(min), to: isoDate(new Date()) };
-  state.drill = { month: null, cat: null };
+  state.drill = { months: new Set(), cat: null };
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
 }
 

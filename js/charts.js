@@ -5,7 +5,7 @@ import { fmtD, czk, getMonths, base } from './utils.js';
 let _catFilter = null;
 let _catExpenses = null;
 // Lokální drill stav pro výběr měsíce v grafech (NEovlivňuje globální state._range)
-let _chartMonth = null;
+let _chartMonths = new Set();
 
 export function renderMetricRows(id, rows, empty = 'Žádná data') {
   const el = document.getElementById(id); if (!el) return;
@@ -65,8 +65,14 @@ window.selectCatFilter = function(cat) {
 };
 
 // Voláno z onclick baru v ročním/saldo grafu — lokální drill (NEovlivňuje globální rozsah)
-window.chartDrillMonth = function(m) {
-  _chartMonth = _chartMonth === m ? null : m;
+window.chartDrillMonth = function(m, event) {
+  if (m === null) { _chartMonths.clear(); renderCharts(); return; }
+  if (event?.ctrlKey || event?.metaKey) {
+    if (_chartMonths.has(m)) _chartMonths.delete(m); else _chartMonths.add(m);
+  } else {
+    if (_chartMonths.size === 1 && _chartMonths.has(m)) _chartMonths.clear();
+    else { _chartMonths.clear(); _chartMonths.add(m); }
+  }
   renderCharts();
 };
 
@@ -84,15 +90,15 @@ export function renderCharts() {
   const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
   // Pokud vybraný měsíc už v datech není, resetovat drill
-  if (_chartMonth && !months.includes(_chartMonth)) _chartMonth = null;
+  _chartMonths = new Set([..._chartMonths].filter(m => months.includes(m)));
 
-  // Detail data — filtrovat na vybraný měsíc, nebo celý rozsah
-  const detail = _chartMonth ? base(_chartMonth, null) : all;
+  // Detail data — filtrovat na vybraný měsíc(e), nebo celý rozsah
+  const detail = _chartMonths.size ? base(_chartMonths, null) : all;
 
   // Roční přehled — bar labels + click na měsíc
   document.getElementById('yrChart').innerHTML = monthStats.map(m => {
-    const isSel = _chartMonth === m.month;
-    return `<div class="bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}')" title="${m.month}">
+    const isSel = _chartMonths.has(m.month);
+    return `<div class="bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}', event)" title="${m.month}">
       <div class="bar-lbl"><span class="bv-i">${kFmt(m.income)}</span><span class="bv-e">${kFmt(m.expense)}</span></div>
       <div class="bar bar-income" style="height:${Math.round((m.income/maxV)*100)}px"></div>
       <div class="bar bar-expense" style="height:${Math.round((m.expense/maxV)*100)}px"></div>
@@ -105,8 +111,8 @@ export function renderCharts() {
   document.getElementById('srChart').innerHTML = monthStats.map(m => {
     const net = m.income - m.expense;
     const h = Math.round((Math.abs(net) / maxAbs) * 50);
-    const isSel = _chartMonth === m.month;
-    return `<div class="bg net-bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}')" title="${m.month}: ${czk(net)}">
+    const isSel = _chartMonths.has(m.month);
+    return `<div class="bg net-bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}', event)" title="${m.month}: ${czk(net)}">
       <div class="net-pos">${net >= 0 ? `<div class="bar bar-income net-bar" style="height:${h}px"></div>` : ''}</div>
       <div class="net-neg">${net < 0 ? `<div class="bar bar-expense net-bar" style="height:${h}px"></div>` : ''}</div>
     </div>`;
@@ -120,10 +126,11 @@ export function renderCharts() {
   // Drill label v topbaru — zobrazit vybraný měsíc nebo celý rozsah
   const cTxt = document.getElementById('chRangeTxt');
   if (cTxt) {
-    if (_chartMonth) {
-      cTxt.innerHTML = `<strong>${_chartMonth}</strong><span>${detail.length} transakcí · <a href="#" onclick="chartDrillMonth('${_chartMonth}');return false" style="color:var(--blue-text)">zrušit výběr</a></span>`;
+    if (_chartMonths.size) {
+      const sel = [..._chartMonths].join(', ');
+      cTxt.innerHTML = `<strong>${sel}</strong><span>${detail.length} transakcí · <a href="#" onclick="chartDrillMonth(null);return false" style="color:var(--blue-text)">zrušit výběr</a></span>`;
     }
-    // Při _chartMonth === null ponechat label nastavený z populateSels()
+    // Při prázdném výběru ponechat label nastavený z populateSels()
   }
 
   // Detail karty — počítány z 'detail' (vybraný měsíc nebo celý rozsah)
@@ -131,7 +138,7 @@ export function renderCharts() {
   const totalExpense = expenses.reduce((s,t) => s+t.castka, 0);
   const martin = expenses.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
   const sarka = expenses.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
-  const activeMonths = Math.max(_chartMonth ? 1 : months.length, 1);
+  const activeMonths = Math.max(_chartMonths.size ? _chartMonths.size : months.length, 1);
   const categoryTotals = {}; expenses.forEach(t => { categoryTotals[t.kategorie] = (categoryTotals[t.kategorie]||0)+t.castka; });
   const topCategory = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1])[0];
   document.getElementById('ca1').textContent = czk(martin);
@@ -139,7 +146,7 @@ export function renderCharts() {
   document.getElementById('ca2').textContent = czk(sarka);
   document.getElementById('ca2s').textContent = totalExpense ? `${Math.round((sarka/totalExpense)*100)} % všech výdajů` : 'Bez dat';
   document.getElementById('ca3').textContent = czk(Math.round(totalExpense/activeMonths));
-  document.getElementById('ca3s').textContent = _chartMonth ? _chartMonth : `Průměr za ${activeMonths} měsíců`;
+  document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ') : `Průměr za ${activeMonths} měsíců`;
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 

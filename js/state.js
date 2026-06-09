@@ -6,7 +6,7 @@ export const state = {
   editIdx: null,
   cfg: { apiKey: '' },
   limits: { ...DEFAULT_LIMITS },
-  drill: { month: null, cat: null },
+  drill: { months: new Set(), cat: null },
   _range: null,
   recurring: [],
   _importBusy: false,

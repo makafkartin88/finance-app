@@ -4,13 +4,13 @@ import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thF
 
 export function renderDash() {
   closePopover();
-  const month = state.drill.month;
+  const months = state.drill.months;
   const cat = state.drill.cat;
-  const b = base(month, null);
+  const b = base(months.size ? months : null, null);
   const shown = cat ? b.filter(t => t.kategorie === cat) : b;
   const drillChip = document.getElementById('dashDrill');
   if (drillChip) {
-    const drillTxt = cat ? `Kategorie: ${cat}` : month ? `Měsíc: ${month}` : '';
+    const drillTxt = cat ? `Kategorie: ${cat}` : months.size ? `Měsíc: ${[...months].join(', ')}` : '';
     drillChip.textContent = drillTxt;
     drillChip.style.display = drillTxt ? 'inline-flex' : 'none';
   }
@@ -27,7 +27,7 @@ export function renderDash() {
   m3.textContent = (sav >= 0 ? '+' : '')+czk(sav); m3.className = 'mv '+(sav >= 0 ? 'green' : 'red');
   document.getElementById('m3s').textContent = sr+'% míra úspor';
   const monthMap = {};
-  state.txs.forEach(t => {
+  base(null, null).forEach(t => {
     if (!t.mesic) return;
     if (!monthMap[t.mesic]) monthMap[t.mesic] = { inc: 0, exp: 0 };
     if (t.typ === 'Příjem') monthMap[t.mesic].inc += t.castka;
@@ -52,8 +52,8 @@ export function renderDash() {
     const inc = mt.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
     const ex = mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0);
     const ih = Math.round((inc/maxV)*100), eh = Math.round((ex/maxV)*100);
-    const isSel = state.drill.month === m ? ' sel' : '';
-    return `<div class="bg${isSel}" onclick="drillM('${m}')" title="${m}: Příjmy ${czk(inc)}, Výdaje ${czk(ex)}"><div class="bar" style="height:${ih}px;background:var(--green)"></div><div class="bar" style="height:${eh}px;background:var(--red)"></div></div>`;
+    const isSel = state.drill.months.has(m) ? ' sel' : '';
+    return `<div class="bg${isSel}" onclick="drillM('${m}', event)" title="${m}: Příjmy ${czk(inc)}, Výdaje ${czk(ex)}"><div class="bar" style="height:${ih}px;background:var(--green)"></div><div class="bar" style="height:${eh}px;background:var(--red)"></div></div>`;
   }).join('');
   document.getElementById('cfLabels').innerHTML = months.map(m => `<div class="bl">${m.split(' ')[0]}</div>`).join('');
 
@@ -68,7 +68,8 @@ export function renderDash() {
   ).join('') || '<div class="empty">Žádné výdaje</div>';
 
   // Table
-  document.getElementById('recentTitle').textContent = cat ? `Transakce — ${cat}${state.drill.month ? ' ('+state.drill.month+')' : ''}` : state.drill.month ? 'Transakce — '+state.drill.month : `Poslední transakce (${rangeLabel(state._range.from, state._range.to)})`;
+  const monthsLabel = months.size ? [...months].join(', ') : '';
+  document.getElementById('recentTitle').textContent = cat ? `Transakce — ${cat}${monthsLabel ? ' ('+monthsLabel+')' : ''}` : monthsLabel ? 'Transakce — '+monthsLabel : `Poslední transakce (${rangeLabel(state._range.from, state._range.to)})`;
 
   // Render dynamic header (with filter indicators)
   const head = document.getElementById('recentHead');
@@ -103,9 +104,15 @@ export function renderDash() {
   attachRowInteractions(document.getElementById('recentBody'));
 }
 
-export function drillM(m) {
-  state.drill.month = state.drill.month === m ? null : m;
-  if (state.drill.month) state.drill.cat = null;
+export function drillM(m, event) {
+  const ms = state.drill.months;
+  if (event?.ctrlKey || event?.metaKey) {
+    if (ms.has(m)) ms.delete(m); else ms.add(m);
+  } else {
+    if (ms.size === 1 && ms.has(m)) ms.clear();
+    else { ms.clear(); ms.add(m); }
+  }
+  if (ms.size) state.drill.cat = null;
   renderDash();
 }
 
@@ -115,6 +122,6 @@ export function drillC(c) {
 }
 
 export function clearDrill() {
-  state.drill = { month: null, cat: null };
+  state.drill = { months: new Set(), cat: null };
   renderDash();
 }
