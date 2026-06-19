@@ -271,8 +271,8 @@
       <div class="topbar"><h2>Grafy</h2><div class="topbar-right"><div class="range-summary" id="chRangeTxt"></div></div></div>
       <div class="content">
         <div class="mgrid">
-          <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Utratil Martin</div><div class="mv blue" id="ca1">—</div><div class="ms" id="ca1s"></div></div>
-          <div class="mc" style="border-left-color:#d76593"><div class="ml">Utratila Šárka</div><div class="mv pink" id="ca2">—</div><div class="ms" id="ca2s"></div></div>
+          <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Přispěl Martin</div><div class="mv blue" id="ca1">—</div><div class="ms" id="ca1s"></div></div>
+          <div class="mc" style="border-left-color:#d76593"><div class="ml">Přispěla Šárka</div><div class="mv pink" id="ca2">—</div><div class="ms" id="ca2s"></div></div>
           <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Průměr za měsíc</div><div class="mv" id="ca3">—</div><div class="ms" id="ca3s"></div></div>
           <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Nejsilnější kategorie</div><div class="mv" id="ca4">—</div><div class="ms" id="ca4s"></div></div>
         </div>
@@ -280,9 +280,11 @@
           <div class="card"><div class="card-hdr"><div class="ct">Roční přehled</div><div class="legend"><div class="li"><div class="ld" style="background:var(--green)"></div>Příjmy</div><div class="li"><div class="ld" style="background:var(--red)"></div>Výdaje</div></div></div><div class="bchart" id="yrChart"></div><div class="blrow" id="yrLabels"></div></div>
           <div class="card"><div class="card-hdr"><div class="ct">Saldo měsíce</div></div><div class="bchart" id="srChart"></div><div class="blrow" id="srLabels"></div></div>
         </div>
-        <div class="two">
-          <div class="card"><div class="card-hdr"><div class="ct">Výdaje <span class="badge bme">Martin</span></div></div><div id="cbM"></div></div>
-          <div class="card"><div class="card-hdr"><div class="ct">Výdaje <span class="badge bsa">Šárka</span></div></div><div id="cbS"></div></div>
+        <div class="card">
+          <div class="card-hdr"><div class="ct">Bilance příspěvků <span class="badge bme">Martin</span> vs <span class="badge bsa">Šárka</span></div><div class="legend"><div class="li"><div class="ld" style="background:var(--blue)"></div>Martin</div><div class="li"><div class="ld" style="background:#d76593"></div>Šárka</div></div></div>
+          <div class="bchart" id="bilChart"></div>
+          <div class="blrow" id="bilLabels"></div>
+          <div class="bil-summary" id="bilSummary"></div>
         </div>
         <div class="two">
           <div class="card"><div class="card-hdr"><div class="ct">Poměr útraty Martin vs. Šárka</div></div><div class="split-card"><div id="donutChart" class="donut-wrap"></div><div class="split-legend" id="spendLegend"></div></div></div>
@@ -415,6 +417,21 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn" onclick="reloadSheets()">↺ Znovu načíst data z Tabulky</button>
           </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-hdr"><div class="ct">Bilance příspěvků</div></div>
+          <div class="fg">
+            <label>Počáteční saldo Martin − Šárka (Kč)</label>
+            <input type="number" id="sBilanceOffset" placeholder="20000"/>
+            <div class="fhint">Historická bilance před sledovaným obdobím. Kladné číslo = Martin přispěl více.</div>
+          </div>
+          <div class="fg" style="margin-top:12px">
+            <label>Spořicí účet mBank (vyloučit z importu)</label>
+            <input type="text" id="sBilanceUcet" placeholder="670100-2230152615/6210"/>
+            <div class="fhint">Převody na/z tohoto účtu se přeskočí při importu PDF výpisů z mBank.</div>
+          </div>
+          <button class="btnp" style="margin-top:14px" onclick="saveSettings()">Uložit nastavení</button>
         </div>
 
         <div class="card" style="margin-top:16px">

@@ -257,6 +257,10 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .del-btn:hover{background:var(--red-bg)!important;border-color:var(--red)!important}
 .bar-income{background:linear-gradient(180deg,#2cc991,var(--green))}
 .bar-expense{background:linear-gradient(180deg,#e87a5a,var(--red))}
+.bar-bil-m{background:linear-gradient(180deg,#5b9cf6,var(--blue))}
+.bar-bil-s{background:linear-gradient(180deg,#e87ab5,#d76593)}
+.bil-summary{display:flex;gap:8px 24px;flex-wrap:wrap;padding:10px 0 4px;font-size:13px;border-top:1px solid var(--border);margin-top:6px}
+.bil-offset{font-size:11px;color:var(--text3)}
 .bar-savings-good{background:linear-gradient(180deg,#2cc991,var(--green))}
 .bar-savings-mid{background:linear-gradient(180deg,#f0b84d,var(--amber))}
 .bar-savings-low{background:linear-gradient(180deg,#e87a5a,var(--red))}

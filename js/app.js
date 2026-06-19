@@ -6,7 +6,7 @@ import { renderTx, openTx, openEdit, closeTx, saveTx, searchTx, triggerReceiptUp
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, openInvPosition, closeInvPosition, saveInvPosition, openAccountBalances, saveBalances, invDov, invDol, invDod, invOnFile, confirmInvImport, loadInvestmentData } from './investments.js';
-import { reloadSheets } from './settings.js';
+import { reloadSheets, saveSettings, initSettings } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
@@ -88,6 +88,7 @@ export function nav(id, el) {
     ['txfMonth','txfCat','txfAcc'].forEach(sid => { const s = document.getElementById(sid); if (s) s.onchange = renderTx; });
   }
   if (id === 'charts') renderCharts();
+  if (id === 'settings') initSettings();
   location.hash = '#'+id;
 }
 
@@ -150,6 +151,7 @@ window.clearDrill = clearDrill;
 window.applyRangeFromInputs = applyRangeFromInputs;
 window.resetRange = resetRange;
 window.reloadSheets = () => loadSheets();
+window.saveSettings = saveSettings;
 window.saveLimits = saveLimits;
 window.renderBudgets = renderBudgets;
 window.logout = logout;
@@ -194,6 +196,7 @@ window.toggleMbankDupDetail = toggleMbankDupDetail;
 
 /* ── INIT ── */
 (function init() {
+  const sc = localStorage.getItem('fincfg'); if (sc) Object.assign(state.cfg, JSON.parse(sc));
   const sl = localStorage.getItem('finlim'); if (sl) Object.assign(state.limits, JSON.parse(sl));
   applyPersonTheme();
   const vEl = document.getElementById('appVersion');

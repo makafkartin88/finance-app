@@ -1,5 +1,6 @@
 import { CATEGORY_COLORS } from './config.js';
-import { fmtD, czk, getMonths, base } from './utils.js';
+import { state } from './state.js';
+import { fmtD, czk, getMonths, base, scopedTxs } from './utils.js';
 
 // Interní stav pro výběr kategorie v protistrany-grafu
 let _catFilter = null;
@@ -141,10 +142,12 @@ export function renderCharts() {
   const activeMonths = Math.max(_chartMonths.size ? _chartMonths.size : months.length, 1);
   const categoryTotals = {}; expenses.forEach(t => { categoryTotals[t.kategorie] = (categoryTotals[t.kategorie]||0)+t.castka; });
   const topCategory = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1])[0];
+  // ca1/ca2 — příspěvek každé osoby (jejich výdaje = co do toho vrazili)
+  const totalBoth = Math.max(martin + sarka, 1);
   document.getElementById('ca1').textContent = czk(martin);
-  document.getElementById('ca1s').textContent = totalExpense ? `${Math.round((martin/totalExpense)*100)} % všech výdajů` : 'Bez dat';
+  document.getElementById('ca1s').textContent = totalExpense ? `${Math.round((martin/totalBoth)*100)} % z celku` : 'Bez dat';
   document.getElementById('ca2').textContent = czk(sarka);
-  document.getElementById('ca2s').textContent = totalExpense ? `${Math.round((sarka/totalExpense)*100)} % všech výdajů` : 'Bez dat';
+  document.getElementById('ca2s').textContent = totalExpense ? `${Math.round((sarka/totalBoth)*100)} % z celku` : 'Bez dat';
   document.getElementById('ca3').textContent = czk(Math.round(totalExpense/activeMonths));
   document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ') : `Průměr za ${activeMonths} měsíců`;
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
@@ -206,6 +209,40 @@ export function renderCharts() {
     {title: 'Nejnáročnější měsíc', body: worstSpend ? `${worstSpend.month} spolkl ${czk(worstSpend.expense)}.` : 'Bez dat.'}
   ], 'Žádné insighty');
 
-  renderCB('cbM', expenses.filter(t => t.osoba === 'Martin'));
-  renderCB('cbS', expenses.filter(t => t.osoba === 'Šárka'));
+  // Bilance příspěvků — vždy obě osoby, respektuje date range ale ne person filter
+  const bilAll = scopedTxs({ ignorePerson: true });
+  const bilMonths = getMonths(bilAll);
+  const bilExp = bilAll.filter(t => t.typ === 'Výdaj');
+  const mByM = {}, sByM = {};
+  bilMonths.forEach(m => {
+    mByM[m] = bilExp.filter(t => t.mesic === m && t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
+    sByM[m] = bilExp.filter(t => t.mesic === m && t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
+  });
+  const totalBilM = bilExp.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
+  const totalBilS = bilExp.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
+  const offset = state.cfg.bilanceOffset || 0;
+  const bilDiff = totalBilM - totalBilS + offset;
+  const maxBil = Math.max(...bilMonths.map(m => Math.max(mByM[m]||0, sByM[m]||0)), 1);
+  const bilChartEl = document.getElementById('bilChart');
+  if (bilChartEl) {
+    bilChartEl.innerHTML = bilMonths.map(m => {
+      const mH = Math.max(2, Math.round(((mByM[m]||0)/maxBil)*95));
+      const sH = Math.max(2, Math.round(((sByM[m]||0)/maxBil)*95));
+      return `<div class="bg" style="cursor:default" title="${m}: Martin ${czk(mByM[m]||0)}, Šárka ${czk(sByM[m]||0)}">
+        <div class="bar bar-bil-m" style="height:${mH}px"></div>
+        <div class="bar bar-bil-s" style="height:${sH}px"></div>
+      </div>`;
+    }).join('');
+  }
+  const bilLabelsEl = document.getElementById('bilLabels');
+  if (bilLabelsEl) bilLabelsEl.innerHTML = bilMonths.map(m => `<div class="bl">${m.split(' ')[0]}</div>`).join('');
+  const bilSumEl = document.getElementById('bilSummary');
+  if (bilSumEl) {
+    const ahead = bilDiff >= 0 ? 'Martin' : 'Šárka';
+    const aheadColor = bilDiff >= 0 ? 'var(--blue)' : '#d76593';
+    bilSumEl.innerHTML = `
+      <span><span class="split-dot split-dot-m"></span>Martin: <strong>${czk(totalBilM)}</strong></span>
+      <span><span class="split-dot split-dot-s"></span>Šárka: <strong>${czk(totalBilS)}</strong></span>
+      <span>Bilance: <strong style="color:${aheadColor}">${ahead} +${czk(Math.abs(bilDiff))}</strong>${offset ? ` <span class="bil-offset">(vč. hist. saldo ${czk(offset)})</span>` : ''}</span>`;
+  }
 }

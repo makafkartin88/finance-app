@@ -147,7 +147,8 @@ function parseMbankItems(items, osoba) {
       // 2) Any incoming transfer where counterparty account is own mBank account (670100-xxxxxxxx/6210)
       const mainUp = mainDesc.toUpperCase();
       const contAccount = cont[1] || '';
-      const isOwnAccount = /^670100-\d+\/6210/.test(contAccount);
+      const bilUcet = (state.cfg.bilanceUcet || '670100-2230152615/6210').trim();
+      const isOwnAccount = bilUcet ? contAccount.startsWith(bilUcet) : /^670100-\d+\/6210/.test(contAccount);
       if (mainUp.startsWith('VLASTNÍ PŘEVOD')) { i = j; continue; }
       if (isOwnAccount && (
         mainUp.startsWith('PŘÍCHOZÍ PLATBA Z MBANK') ||

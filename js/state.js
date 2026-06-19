@@ -4,7 +4,7 @@ export const state = {
   txs: [],
   person: 'Oba',
   editIdx: null,
-  cfg: { apiKey: '' },
+  cfg: { apiKey: '', bilanceOffset: 20000, bilanceUcet: '670100-2230152615/6210' },
   limits: { ...DEFAULT_LIMITS },
   drill: { months: new Set(), cat: null },
   _range: null,
