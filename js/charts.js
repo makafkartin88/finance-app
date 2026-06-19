@@ -1,6 +1,6 @@
 import { CATEGORY_COLORS } from './config.js';
 import { state } from './state.js';
-import { fmtD, czk, getMonths, base, scopedTxs } from './utils.js';
+import { fmtD, czk, getMonths, base } from './utils.js';
 
 // Interní stav pro výběr kategorie v protistrany-grafu
 let _catFilter = null;
@@ -16,16 +16,6 @@ export function renderMetricRows(id, rows, empty = 'Žádná data') {
 export function renderInsightRows(id, rows, empty = 'Žádná data') {
   const el = document.getElementById(id); if (!el) return;
   el.innerHTML = rows.map(r => `<div class="insight"><strong>${r.title}</strong><span>${r.body}</span></div>`).join('') || `<div class="empty">${empty}</div>`;
-}
-
-export function renderCB(id, list) {
-  const colors = CATEGORY_COLORS;
-  const cats = {}; list.forEach(t => { cats[t.kategorie] = (cats[t.kategorie]||0)+t.castka; });
-  const sorted = Object.entries(cats).sort((a,z) => z[1]-a[1]);
-  const maxV = sorted[0]?.[1] || 1;
-  document.getElementById(id).innerHTML = sorted.map(([c,v]) =>
-    `<div class="crow"><div class="cname">${c}</div><div class="ctrack"><div class="cfill" style="width:${Math.round((v/maxV)*100)}%;background:${colors[c]||'var(--text3)'}"></div></div><div class="cval">${czk(v)}</div></div>`
-  ).join('') || '<div class="empty">Žádné výdaje</div>';
 }
 
 // Horizontální barplot protistran pro vybranou kategorii
@@ -137,17 +127,10 @@ export function renderCharts() {
   // Detail karty — počítány z 'detail' (vybraný měsíc nebo celý rozsah)
   const expenses = detail.filter(t => t.typ === 'Výdaj');
   const totalExpense = expenses.reduce((s,t) => s+t.castka, 0);
-  const martin = expenses.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
-  const sarka = expenses.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
   const activeMonths = Math.max(_chartMonths.size ? _chartMonths.size : months.length, 1);
   const categoryTotals = {}; expenses.forEach(t => { categoryTotals[t.kategorie] = (categoryTotals[t.kategorie]||0)+t.castka; });
   const topCategory = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1])[0];
-  // ca1/ca2 — příspěvek každé osoby (jejich výdaje = co do toho vrazili)
-  const totalBoth = Math.max(martin + sarka, 1);
-  document.getElementById('ca1').textContent = czk(martin);
-  document.getElementById('ca1s').textContent = totalExpense ? `${Math.round((martin/totalBoth)*100)} % z celku` : 'Bez dat';
-  document.getElementById('ca2').textContent = czk(sarka);
-  document.getElementById('ca2s').textContent = totalExpense ? `${Math.round((sarka/totalBoth)*100)} % z celku` : 'Bez dat';
+  renderBilance();
   document.getElementById('ca3').textContent = czk(Math.round(totalExpense/activeMonths));
   document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ') : `Průměr za ${activeMonths} měsíců`;
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
@@ -188,54 +171,49 @@ export function renderCharts() {
     {title: 'Nejnáročnější měsíc', body: worstSpend ? `${worstSpend.month} spolkl ${czk(worstSpend.expense)}.` : 'Bez dat.'}
   ], 'Žádné insighty');
 
-  // ── Kumulativní bilance — line chart
-  const bilAll = scopedTxs({ ignorePerson: true });
-  const bilMonths = getMonths(bilAll);
-  const bilEl = document.getElementById('bilChart');
-  if (bilEl) {
-    if (!bilMonths.length) { bilEl.innerHTML = '<div class="empty">Žádná data</div>'; return; }
-    const offset = state.cfg.bilanceOffset || 0;
-    let cum = offset;
-    const cumPts = bilMonths.map(m => {
-      const txs = bilAll.filter(t => t.mesic === m && t.typ === 'Výdaj');
-      cum += txs.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0)
-           - txs.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
-      return cum;
-    });
-    const last = cumPts[cumPts.length - 1];
-    const color = last >= 0 ? 'var(--blue)' : '#d76593';
-    const fillClr = last >= 0 ? 'rgba(55,138,221,0.1)' : 'rgba(215,101,147,0.1)';
-    const W = 700, H = 140;
-    const pL = 58, pR = 16, pT = 20, pB = 28;
-    const cW = W - pL - pR, cH = H - pT - pB;
-    const n = bilMonths.length;
-    const xOf = i => pL + (n > 1 ? (i / (n - 1)) * cW : cW / 2);
-    const minV = Math.min(...cumPts, 0);
-    const maxV = Math.max(...cumPts, 0);
-    const range = Math.max(maxV - minV, 1);
-    const yOf = v => pT + cH - ((v - minV) / range) * cH;
-    const y0 = yOf(0);
-    const coords = cumPts.map((v, i) => ({ x: xOf(i), y: yOf(v) }));
-    const linePath = coords.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
-    const areaPath = `M${pL.toFixed(1)},${y0.toFixed(1)} ` + coords.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ` L${xOf(n-1).toFixed(1)},${y0.toFixed(1)} Z`;
-    const kFmt = v => { const a = Math.abs(v), s = v > 0 ? '+' : v < 0 ? '−' : ''; return a >= 1000 ? s + Math.round(a/1000) + 'k' : (v === 0 ? '0' : s + Math.round(a)); };
-    const ticks = [{ v: 0, y: y0 }];
-    if (Math.abs(yOf(minV) - y0) > 14) ticks.push({ v: minV, y: yOf(minV) });
-    if (Math.abs(yOf(maxV) - y0) > 14) ticks.push({ v: maxV, y: yOf(maxV) });
-    const lastCoord = coords[n - 1];
-    // label above last point, flip below if too close to top
-    const lblY = lastCoord.y - 9 < pT + 4 ? lastCoord.y + 14 : lastCoord.y - 9;
-    bilEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">
-      <line x1="${pL}" y1="${y0.toFixed(1)}" x2="${pL+cW}" y2="${y0.toFixed(1)}" stroke="var(--text3)" stroke-width="1" stroke-dasharray="4,3" opacity="0.55"/>
-      <path d="${areaPath}" fill="${fillClr}"/>
-      <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      ${coords.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.2" fill="${color}" stroke="var(--surface)" stroke-width="1.5"/>`).join('')}
-      <text x="${lastCoord.x.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${color}" font-family="-apple-system,sans-serif">${czk(last)}</text>
-      ${ticks.map(t => `<text x="${(pL-4).toFixed(1)}" y="${(t.y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text3)" font-family="-apple-system,sans-serif">${kFmt(t.v)}</text>`).join('')}
-      ${bilMonths.map((m, i) => `<text x="${xOf(i).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--text3)" font-family="-apple-system,sans-serif">${m.split(' ')[0]}</text>`).join('')}
-    </svg>
-    <div class="bil-summary">
-      <span>Bilance: <strong style="color:${color}">${last >= 0 ? 'Martin' : 'Šárka'} +${czk(Math.abs(last))}</strong>${offset ? ` <span class="bil-offset">(vč. poč. saldo ${czk(offset)})</span>` : ''}</span>
-    </div>`;
-  }
 }
+
+// Ručně udržovaná bilance společných příspěvků (kladné = Martin přispěl víc).
+// Hodnota se ukládá do state.cfg.bilanceOffset a přetrvává v localStorage.
+function renderBilance() {
+  const card = document.getElementById('bilCard');
+  if (!card) return;
+  const val = state.cfg.bilanceOffset || 0;
+  const ahead = val > 0 ? 'Martin' : val < 0 ? 'Šárka' : null;
+  const color = val > 0 ? 'var(--blue)' : val < 0 ? '#d76593' : 'var(--text2)';
+  card.style.borderLeftColor = color;
+  const valEl = document.getElementById('caBil');
+  valEl.style.color = color;
+  valEl.textContent = ahead ? `${ahead} +${czk(Math.abs(val))}` : 'Vyrovnáno';
+  document.getElementById('caBils').textContent = ahead
+    ? `${ahead} dosud přispěl${val < 0 ? 'a' : ''} o tolik více`
+    : 'Oba přispěli stejně';
+}
+
+window.editBilance = function() {
+  const valEl = document.getElementById('caBil');
+  if (!valEl) return;
+  const val = state.cfg.bilanceOffset || 0;
+  const who = val < 0 ? 'Šárka' : 'Martin';
+  valEl.innerHTML = `<div class="bil-edit">
+    <select id="bilWho">
+      <option value="Martin"${who === 'Martin' ? ' selected' : ''}>Martin</option>
+      <option value="Šárka"${who === 'Šárka' ? ' selected' : ''}>Šárka</option>
+    </select>
+    <span>+</span>
+    <input id="bilAmt" type="number" min="0" value="${Math.abs(val)}"/>
+    <button class="btn btnsm" onclick="saveBilance()">✓</button>
+    <button class="btn btnsm" onclick="renderCharts()">✕</button>
+  </div>`;
+  const amt = document.getElementById('bilAmt');
+  amt.focus(); amt.select();
+  amt.onkeydown = e => { if (e.key === 'Enter') window.saveBilance(); if (e.key === 'Escape') renderCharts(); };
+};
+
+window.saveBilance = function() {
+  const who = document.getElementById('bilWho')?.value || 'Martin';
+  const amt = Math.abs(Number(document.getElementById('bilAmt')?.value) || 0);
+  state.cfg.bilanceOffset = who === 'Šárka' ? -amt : amt;
+  localStorage.setItem('fincfg', JSON.stringify(state.cfg));
+  renderCharts();
+};
