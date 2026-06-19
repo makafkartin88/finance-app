@@ -153,27 +153,6 @@ export function renderCharts() {
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 
-  // Donut chart — Martin vs. Šárka
-  const splitBase = Math.max(totalExpense, 1);
-  const mPct = martin / splitBase, sPct = sarka / splitBase;
-  const r = 54, circ = 2 * Math.PI * r;
-  const mDash = mPct * circ, sDash = sPct * circ;
-  const mOffset = circ / 4;
-  const sOffset = mOffset - mDash;
-  document.getElementById('donutChart').innerHTML = `<svg viewBox="0 0 160 160" width="140" height="140">
-    <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="22"/>
-    <circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--blue)" stroke-width="22"
-      stroke-dasharray="${mDash.toFixed(1)} ${(circ-mDash).toFixed(1)}"
-      stroke-dashoffset="${mOffset.toFixed(1)}"/>
-    <circle cx="80" cy="80" r="${r}" fill="none" stroke="#d76593" stroke-width="22"
-      stroke-dasharray="${sDash.toFixed(1)} ${(circ-sDash).toFixed(1)}"
-      stroke-dashoffset="${sOffset.toFixed(1)}"/>
-    <text x="80" y="75" text-anchor="middle" font-size="24" font-weight="800" fill="var(--text)" font-family="-apple-system,sans-serif">${Math.round(mPct*100)}%</text>
-    <text x="80" y="93" text-anchor="middle" font-size="11" fill="var(--text2)" font-family="-apple-system,sans-serif">Martin</text>
-  </svg>`;
-  document.getElementById('spendLegend').innerHTML = `
-    <div class="split-line"><span><span class="split-dot split-dot-m"></span>Martin</span><strong>${czk(martin)} · ${Math.round(mPct*100)} %</strong></div>
-    <div class="split-line"><span><span class="split-dot split-dot-s"></span>Šárka</span><strong>${czk(sarka)} · ${Math.round(sPct*100)} %</strong></div>`;
 
   // Průměrná měsíční útrata — jen kategorie + průměr/měsíc
   const avgEl = document.getElementById('avgCats');
@@ -209,40 +188,54 @@ export function renderCharts() {
     {title: 'Nejnáročnější měsíc', body: worstSpend ? `${worstSpend.month} spolkl ${czk(worstSpend.expense)}.` : 'Bez dat.'}
   ], 'Žádné insighty');
 
-  // Bilance příspěvků — vždy obě osoby, respektuje date range ale ne person filter
+  // ── Kumulativní bilance — line chart
   const bilAll = scopedTxs({ ignorePerson: true });
   const bilMonths = getMonths(bilAll);
-  const bilExp = bilAll.filter(t => t.typ === 'Výdaj');
-  const mByM = {}, sByM = {};
-  bilMonths.forEach(m => {
-    mByM[m] = bilExp.filter(t => t.mesic === m && t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
-    sByM[m] = bilExp.filter(t => t.mesic === m && t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
-  });
-  const totalBilM = bilExp.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0);
-  const totalBilS = bilExp.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
-  const offset = state.cfg.bilanceOffset || 0;
-  const bilDiff = totalBilM - totalBilS + offset;
-  const maxBil = Math.max(...bilMonths.map(m => Math.max(mByM[m]||0, sByM[m]||0)), 1);
-  const bilChartEl = document.getElementById('bilChart');
-  if (bilChartEl) {
-    bilChartEl.innerHTML = bilMonths.map(m => {
-      const mH = Math.max(2, Math.round(((mByM[m]||0)/maxBil)*95));
-      const sH = Math.max(2, Math.round(((sByM[m]||0)/maxBil)*95));
-      return `<div class="bg" style="cursor:default" title="${m}: Martin ${czk(mByM[m]||0)}, Šárka ${czk(sByM[m]||0)}">
-        <div class="bar bar-bil-m" style="height:${mH}px"></div>
-        <div class="bar bar-bil-s" style="height:${sH}px"></div>
-      </div>`;
-    }).join('');
-  }
-  const bilLabelsEl = document.getElementById('bilLabels');
-  if (bilLabelsEl) bilLabelsEl.innerHTML = bilMonths.map(m => `<div class="bl">${m.split(' ')[0]}</div>`).join('');
-  const bilSumEl = document.getElementById('bilSummary');
-  if (bilSumEl) {
-    const ahead = bilDiff >= 0 ? 'Martin' : 'Šárka';
-    const aheadColor = bilDiff >= 0 ? 'var(--blue)' : '#d76593';
-    bilSumEl.innerHTML = `
-      <span><span class="split-dot split-dot-m"></span>Martin: <strong>${czk(totalBilM)}</strong></span>
-      <span><span class="split-dot split-dot-s"></span>Šárka: <strong>${czk(totalBilS)}</strong></span>
-      <span>Bilance: <strong style="color:${aheadColor}">${ahead} +${czk(Math.abs(bilDiff))}</strong>${offset ? ` <span class="bil-offset">(vč. hist. saldo ${czk(offset)})</span>` : ''}</span>`;
+  const bilEl = document.getElementById('bilChart');
+  if (bilEl) {
+    if (!bilMonths.length) { bilEl.innerHTML = '<div class="empty">Žádná data</div>'; return; }
+    const offset = state.cfg.bilanceOffset || 0;
+    let cum = offset;
+    const cumPts = bilMonths.map(m => {
+      const txs = bilAll.filter(t => t.mesic === m && t.typ === 'Výdaj');
+      cum += txs.filter(t => t.osoba === 'Martin').reduce((s,t) => s+t.castka, 0)
+           - txs.filter(t => t.osoba === 'Šárka').reduce((s,t) => s+t.castka, 0);
+      return cum;
+    });
+    const last = cumPts[cumPts.length - 1];
+    const color = last >= 0 ? 'var(--blue)' : '#d76593';
+    const fillClr = last >= 0 ? 'rgba(55,138,221,0.1)' : 'rgba(215,101,147,0.1)';
+    const W = 700, H = 140;
+    const pL = 58, pR = 16, pT = 20, pB = 28;
+    const cW = W - pL - pR, cH = H - pT - pB;
+    const n = bilMonths.length;
+    const xOf = i => pL + (n > 1 ? (i / (n - 1)) * cW : cW / 2);
+    const minV = Math.min(...cumPts, 0);
+    const maxV = Math.max(...cumPts, 0);
+    const range = Math.max(maxV - minV, 1);
+    const yOf = v => pT + cH - ((v - minV) / range) * cH;
+    const y0 = yOf(0);
+    const coords = cumPts.map((v, i) => ({ x: xOf(i), y: yOf(v) }));
+    const linePath = coords.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+    const areaPath = `M${pL.toFixed(1)},${y0.toFixed(1)} ` + coords.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ` L${xOf(n-1).toFixed(1)},${y0.toFixed(1)} Z`;
+    const kFmt = v => { const a = Math.abs(v), s = v > 0 ? '+' : v < 0 ? '−' : ''; return a >= 1000 ? s + Math.round(a/1000) + 'k' : (v === 0 ? '0' : s + Math.round(a)); };
+    const ticks = [{ v: 0, y: y0 }];
+    if (Math.abs(yOf(minV) - y0) > 14) ticks.push({ v: minV, y: yOf(minV) });
+    if (Math.abs(yOf(maxV) - y0) > 14) ticks.push({ v: maxV, y: yOf(maxV) });
+    const lastCoord = coords[n - 1];
+    // label above last point, flip below if too close to top
+    const lblY = lastCoord.y - 9 < pT + 4 ? lastCoord.y + 14 : lastCoord.y - 9;
+    bilEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${pL}" y1="${y0.toFixed(1)}" x2="${pL+cW}" y2="${y0.toFixed(1)}" stroke="var(--text3)" stroke-width="1" stroke-dasharray="4,3" opacity="0.55"/>
+      <path d="${areaPath}" fill="${fillClr}"/>
+      <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      ${coords.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.2" fill="${color}" stroke="var(--surface)" stroke-width="1.5"/>`).join('')}
+      <text x="${lastCoord.x.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${color}" font-family="-apple-system,sans-serif">${czk(last)}</text>
+      ${ticks.map(t => `<text x="${(pL-4).toFixed(1)}" y="${(t.y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text3)" font-family="-apple-system,sans-serif">${kFmt(t.v)}</text>`).join('')}
+      ${bilMonths.map((m, i) => `<text x="${xOf(i).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--text3)" font-family="-apple-system,sans-serif">${m.split(' ')[0]}</text>`).join('')}
+    </svg>
+    <div class="bil-summary">
+      <span>Bilance: <strong style="color:${color}">${last >= 0 ? 'Martin' : 'Šárka'} +${czk(Math.abs(last))}</strong>${offset ? ` <span class="bil-offset">(vč. poč. saldo ${czk(offset)})</span>` : ''}</span>
+    </div>`;
   }
 }
