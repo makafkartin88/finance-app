@@ -54,7 +54,7 @@ function renderRecList() {
   el.innerHTML = list.map((r, i) => `
     <div class="rec-row">
       <div class="rec-info">
-        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':'var(--red)'}">${r.typ}</span></div>
+        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${r.typ}</span></div>
         <div class="rec-detail">${czk(r.castka)} · ${r.osoba} · ${r.ucet} · den ${r.den}</div>
       </div>
       <div class="rec-actions">
