@@ -53,7 +53,8 @@ export function renderTx() {
 
   document.getElementById('txBody').innerHTML = list.map((t,i) => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.typ === 'Vyrovnání' ? 'av' : t.kategorie === 'Investice' ? 'ai' : 'an';
-    const amtTxt = t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`;
+    const bilMark = (t.bilance && t.typ !== 'Vyrovnání') ? ' <span class="av" title="Počítá se do bilance Martin ↔ Šárka">⇄</span>' : '';
+    const amtTxt = (t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`) + bilMark;
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
@@ -113,6 +114,7 @@ export function openTx(idx) {
     document.getElementById('fMetoda').value = t.metoda;
     document.getElementById('fProti').value = t.protistrana;
     document.getElementById('fNotes').value = t.poznamka;
+    document.getElementById('fBilance').checked = !!t.bilance;
     if (t.uctenka) {
       document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
     } else {
@@ -124,6 +126,7 @@ export function openTx(idx) {
     document.getElementById('fTyp').value = 'Výdaj'; document.getElementById('fKat').value = 'Jídlo';
     document.getElementById('fOsoba').value = 'Martin'; document.getElementById('fUcet').value = 'mBank';
     document.getElementById('fMetoda').value = 'Karta';
+    document.getElementById('fBilance').checked = false;
     document.getElementById('fReceiptInfo').innerHTML = '';
   }
   _modalReceiptFile = null;
@@ -178,7 +181,8 @@ export async function saveTx() {
   const sign = typ === 'Příjem' ? castka : -castka;
   const newId = `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
   const uctenka = state.editIdx !== null ? (state.txs[state.editIdx].uctenka || '') : '';
-  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka];
+  const bilance = document.getElementById('fBilance').checked ? 'TRUE' : 'FALSE';
+  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
   const tx = parseRow(row);
   if (state.editIdx !== null) { state.txs[state.editIdx] = tx; } else {
     state.txs.push(tx);

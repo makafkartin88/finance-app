@@ -30,7 +30,8 @@ function parseRecRow(r) {
     frekvence: r[9] || 'monthly',
     den: parseInt(r[10])||1,
     aktivni: r[11] !== 'FALSE' && r[11] !== false,
-    posledniGen: r[12] || ''
+    posledniGen: r[12] || '',
+    bilance: r[13] === true || (r[13]||'').toString().toUpperCase() === 'TRUE'
   };
 }
 
@@ -54,7 +55,7 @@ function renderRecList() {
   el.innerHTML = list.map((r, i) => `
     <div class="rec-row">
       <div class="rec-info">
-        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${r.typ}</span></div>
+        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${r.typ}</span>${r.bilance ? ' <span style="font-size:11px;color:var(--purple)" title="Počítá se do bilance Martin ↔ Šárka">⇄ bilance</span>' : ''}</div>
         <div class="rec-detail">${czk(r.castka)} · ${r.osoba} · ${r.ucet} · den ${r.den}</div>
       </div>
       <div class="rec-actions">
@@ -82,6 +83,7 @@ export function openRecForm() {
   document.getElementById('rfMetoda').value = 'Karta';
   document.getElementById('rfProti').value = '';
   document.getElementById('rfDay').value = '1';
+  document.getElementById('rfBilance').checked = false;
 }
 
 export function openRecEdit(i) {
@@ -100,6 +102,7 @@ export function openRecEdit(i) {
   document.getElementById('rfMetoda').value = r.metoda;
   document.getElementById('rfProti').value = r.protistrana;
   document.getElementById('rfDay').value = r.den;
+  document.getElementById('rfBilance').checked = !!r.bilance;
 }
 
 export function closeRecForm() {
@@ -119,6 +122,7 @@ export async function saveRecTemplate() {
   const metoda = document.getElementById('rfMetoda').value;
   const proti = document.getElementById('rfProti').value;
   const den = parseInt(document.getElementById('rfDay').value)||1;
+  const bilance = document.getElementById('rfBilance').checked ? 'TRUE' : 'FALSE';
 
   const editIdx = state._recEditIdx;
   const isEdit = editIdx !== null && editIdx !== undefined;
@@ -127,7 +131,7 @@ export async function saveRecTemplate() {
   const aktivni = isEdit ? (old.aktivni ? 'TRUE' : 'FALSE') : 'TRUE';
   const posledniGen = isEdit ? (old.posledniGen || '') : '';
 
-  const row = [id, popis, castka, typ, kat, osoba, ucet, metoda, proti, 'monthly', den, aktivni, posledniGen];
+  const row = [id, popis, castka, typ, kat, osoba, ucet, metoda, proti, 'monthly', den, aktivni, posledniGen, bilance];
 
   try {
     if (isEdit) {
@@ -214,7 +218,8 @@ async function _doGenerate(active, now, curMonth) {
     const newId = `${y}${m}${d}-R${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
     allRows.push([datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie,
                   rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId,
-                  rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '']);
+                  rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '',
+                  rec.bilance ? 'TRUE' : 'FALSE']);
   }
 
   allRows.forEach(row => { try { state.txs.push(parseRow(row)); } catch(e) {} });

@@ -5,7 +5,7 @@ export const VERSION = '2.1';
 
 export const GAS_URL = 'https://script.google.com/macros/s/AKfycbzKcg3Zr5PUQ5MPvxVavSxr8RtySOJ3rtmHTMQaxv13dwqUaP5BFS2IYZRFF3UsHPPP-Q/exec';
 
-export const C = {datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14,uctenka:18};
+export const C = {datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14,uctenka:18,bilance:19};
 
 export const DEMO = [
   ['1/1/2026','Soundbar','10000','CZK','mBank','Výdaj','Bydlení','Martin','Karta','Alza','','(10000)','Jan 2026','2026','20260101-001'],

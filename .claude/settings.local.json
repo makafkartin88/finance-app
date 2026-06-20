@@ -4,7 +4,28 @@
       "mcp__Claude_Preview__preview_start",
       "WebFetch(domain:script.google.com)",
       "WebFetch(domain:script.googleusercontent.com)",
-      "WebFetch(domain:makafkartin88.github.io)"
+      "WebFetch(domain:makafkartin88.github.io)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Update GAS_URL to new deployment with Gmail scope *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'Fix Gmail search — sender is kontakt@mbank.cz not noreply *)",
+      "Bash(git commit -m 'Update GAS_URL to latest deployment *)",
+      "Bash(git commit -m 'Fix mBank parser: PLATBA KARTOU merchant extraction, skip internal transfers *)",
+      "Bash(git commit -m 'Fix double-click submit and batch all rows in single GAS POST *)",
+      "Bash(git commit -m 'Add mBank PDF import button to Dashboard topbar *)",
+      "Bash(git commit -m 'Fix mBank POST: explicitly target Transakce sheet *)",
+      "Bash(git commit -m 'Support both mBank PDF formats: monthly and custom period *)",
+      "Bash(git commit -m 'Recurring: add edit button, show type, fix row array, GAS delete by sheet *)",
+      "Bash(git commit -m 'Fix generateRecurring: batch all rows, catch parseRow errors per-row *)",
+      "Bash(git commit -m 'Fix deleteRec: actually delete row from GAS Recurring sheet *)",
+      "Bash(git commit -m 'Add hover tooltip for truncated Popis and Protistrana columns *)",
+      "Bash(git commit -m 'Add Protistrana column to Dashboard recent transactions table *)",
+      "Bash(git commit -m 'Revert Protistrana column from Dashboard, add to Popis tooltip instead *)",
+      "Bash(git restore *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit -m 'Default person view to Oba for both Martin and Sarka after login *)",
+      "Bash(Get-ChildItem -Recurse -Depth 2)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

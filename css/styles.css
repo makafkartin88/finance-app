@@ -179,6 +179,8 @@ label{font-size:12px;font-weight:600;color:var(--text2)}
 input,select,textarea{padding:8px 11px;border-radius:var(--rsm);border:1px solid var(--border2);background:var(--surface);font-size:13px;color:var(--text);font-family:inherit;transition:border .1s}
 input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(55,138,221,.12)}
 .fhint{font-size:11px;color:var(--text3)}
+.check-row{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;text-transform:none;letter-spacing:0}
+.check-row input[type=checkbox]{width:16px;height:16px;margin:0;flex-shrink:0;cursor:pointer}
 .upzone{border:2px dashed var(--border2);border-radius:var(--r);padding:36px 24px;text-align:center;cursor:pointer;transition:all .15s}
 .upzone:hover,.upzone.over{border-color:var(--blue);background:var(--blue-bg)}
 .upzone h3{font-size:15px;font-weight:600;margin-bottom:6px}

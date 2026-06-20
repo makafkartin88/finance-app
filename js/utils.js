@@ -28,7 +28,8 @@ export function parseRow(r) {
     mesic: mStr,
     rok: yStr,
     id: r[C.id]||'',
-    uctenka: r[C.uctenka]||''
+    uctenka: r[C.uctenka]||'',
+    bilance: r[C.bilance] === true || (r[C.bilance]||'').toString().toUpperCase() === 'TRUE'
   };
 }
 

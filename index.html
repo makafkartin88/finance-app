@@ -32,6 +32,7 @@
       <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
       <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" list="protrList" autocomplete="off" placeholder="Obchod nebo firma"/><datalist id="protrList"></datalist></div>
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
+      <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="fBilance"/> Počítat do bilance Martin ↔ Šárka</label></div>
       <div class="fg fgfull">
         <label>Účtenka</label>
         <div class="rcpt-modal-row">
@@ -99,6 +100,7 @@
         <div class="fg"><label>Metoda</label><select id="rfMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
         <div class="fg"><label>Protistrana</label><input type="text" id="rfProti" list="protrList" autocomplete="off" placeholder="Firma"/></div>
         <div class="fg"><label>Den v měsíci</label><input type="number" id="rfDay" value="1" min="1" max="28"/></div>
+        <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="rfBilance"/> Počítat do bilance Martin ↔ Šárka</label></div>
       </div>
       <div class="mactions" style="margin-top:14px">
         <button class="btnp" onclick="saveRecTemplate()">Uložit šablonu</button>

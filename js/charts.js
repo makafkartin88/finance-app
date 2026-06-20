@@ -180,8 +180,11 @@ function renderBilance() {
   const card = document.getElementById('bilCard');
   if (!card) return;
   const base = state.cfg.bilanceOffset || 0;
-  const settle = state.txs.filter(t => t.typ === 'Vyrovnání');
-  const adj = settle.reduce((s, t) => s + (t.osoba === 'Šárka' ? -t.castka : t.castka), 0);
+  // Bilanci ovlivňují: transakce typu „Vyrovnání" a jakákoli transakce
+  // s příznakem „do vyrovnání" (i příjem/výdaj). Martin +, Šárka −.
+  const settle = state.txs.filter(t => t.typ === 'Vyrovnání' || t.bilance);
+  const adj = settle.reduce((s, t) =>
+    s + (t.osoba === 'Martin' ? t.castka : t.osoba === 'Šárka' ? -t.castka : 0), 0);
   const val = base + adj;
   const ahead = val > 0 ? 'Martin' : val < 0 ? 'Šárka' : null;
   const color = val > 0 ? 'var(--blue)' : val < 0 ? '#d76593' : 'var(--text2)';

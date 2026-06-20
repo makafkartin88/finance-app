@@ -95,7 +95,8 @@ export function renderDash() {
 
   document.getElementById('recentBody').innerHTML = list.map(t => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.typ === 'Vyrovnání' ? 'av' : t.kategorie === 'Investice' ? 'ai' : 'an';
-    const amtTxt = t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`;
+    const bilMark = (t.bilance && t.typ !== 'Vyrovnání') ? ' <span class="av" title="Počítá se do bilance Martin ↔ Šárka">⇄</span>' : '';
+    const amtTxt = (t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`) + bilMark;
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
