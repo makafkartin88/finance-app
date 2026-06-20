@@ -25,7 +25,7 @@
       <div class="fg"><label>Datum</label><input type="date" id="fDate"/></div>
       <div class="fg"><label>Částka (Kč)</label><input type="number" id="fAmt" placeholder="0" step="1"/></div>
       <div class="fg fgfull"><label>Popis</label><input type="text" id="fDesc" list="opisList" autocomplete="off" placeholder="Popis transakce"/><datalist id="opisList"></datalist></div>
-      <div class="fg"><label>Typ</label><select id="fTyp"><option>Výdaj</option><option>Příjem</option></select></div>
+      <div class="fg"><label>Typ</label><select id="fTyp"><option>Výdaj</option><option>Příjem</option><option>Vyrovnání</option></select></div>
       <div class="fg"><label>Kategorie</label><select id="fKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
       <div class="fg"><label>Osoba</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
       <div class="fg"><label>Účet</label><select id="fUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
@@ -271,7 +271,7 @@
       <div class="topbar"><h2>Grafy</h2><div class="topbar-right"><div class="range-summary" id="chRangeTxt"></div></div></div>
       <div class="content">
         <div class="mgrid">
-          <div class="mc bil-card" id="bilCard" style="border-left-color:var(--blue);grid-column:span 2"><div class="ml">Bilance příspěvků <button class="bil-edit-btn" onclick="editBilance()" title="Upravit bilanci">✎</button></div><div class="mv" id="caBil">—</div><div class="ms" id="caBils"></div></div>
+          <div class="mc bil-card" id="bilCard" style="border-left-color:var(--blue);grid-column:span 2"><div class="ml">Bilance příspěvků <span class="bil-actions"><button class="bil-edit-btn" onclick="openVyrovnani()" title="Zadat vyrovnání">+ Vyrovnání</button><button class="bil-edit-btn" onclick="editBilance()" title="Upravit počáteční stav">✎</button></span></div><div class="mv" id="caBil">—</div><div class="ms" id="caBils"></div></div>
           <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Průměr za měsíc</div><div class="mv" id="ca3">—</div><div class="ms" id="ca3s"></div></div>
           <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Nejsilnější kategorie</div><div class="mv" id="ca4">—</div><div class="ms" id="ca4s"></div></div>
         </div>
@@ -412,9 +412,9 @@
         <div class="card" style="margin-top:16px">
           <div class="card-hdr"><div class="ct">Bilance příspěvků</div></div>
           <div class="fg">
-            <label>Bilance Martin − Šárka (Kč)</label>
+            <label>Počáteční bilance Martin − Šárka (Kč)</label>
             <input type="number" id="sBilanceOffset" placeholder="20000"/>
-            <div class="fhint">Kladné číslo = Martin přispěl více. Lze upravit i přímo v sekci Grafy.</div>
+            <div class="fhint">Výchozí stav před vyrovnáními. Kladné číslo = Martin přispěl více. Samotná vyrovnání zadávej jako transakce typu „Vyrovnání" (tlačítko v sekci Grafy).</div>
           </div>
           <div class="fg" style="margin-top:12px">
             <label>Spořicí účet mBank (vyloučit z importu)</label>

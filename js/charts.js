@@ -173,21 +173,28 @@ export function renderCharts() {
 
 }
 
-// Ručně udržovaná bilance společných příspěvků (kladné = Martin přispěl víc).
-// Hodnota se ukládá do state.cfg.bilanceOffset a přetrvává v localStorage.
+// Bilance společných příspěvků (kladné = Martin přispěl víc).
+// = ruční počáteční stav (state.cfg.bilanceOffset) + transakce typu „Vyrovnání":
+//   vyrovnání od Martina bilanci zvyšuje, od Šárky snižuje.
 function renderBilance() {
   const card = document.getElementById('bilCard');
   if (!card) return;
-  const val = state.cfg.bilanceOffset || 0;
+  const base = state.cfg.bilanceOffset || 0;
+  const settle = state.txs.filter(t => t.typ === 'Vyrovnání');
+  const adj = settle.reduce((s, t) => s + (t.osoba === 'Šárka' ? -t.castka : t.castka), 0);
+  const val = base + adj;
   const ahead = val > 0 ? 'Martin' : val < 0 ? 'Šárka' : null;
   const color = val > 0 ? 'var(--blue)' : val < 0 ? '#d76593' : 'var(--text2)';
   card.style.borderLeftColor = color;
   const valEl = document.getElementById('caBil');
   valEl.style.color = color;
   valEl.textContent = ahead ? `${ahead} +${czk(Math.abs(val))}` : 'Vyrovnáno';
-  document.getElementById('caBils').textContent = ahead
-    ? `${ahead} dosud přispěl${val < 0 ? 'a' : ''} o tolik více`
+  const sub = ahead
+    ? `${ahead} přispěl${val < 0 ? 'a' : ''} o tolik více`
     : 'Oba přispěli stejně';
+  document.getElementById('caBils').textContent = settle.length
+    ? `${sub} · základ ${czk(base)} + ${settle.length}× vyrovnání`
+    : sub;
 }
 
 window.editBilance = function() {

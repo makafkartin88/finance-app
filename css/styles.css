@@ -153,7 +153,7 @@ td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertica
 tr:last-child td{border-bottom:none}
 tbody tr:nth-child(even) td{background:var(--surface2)}
 tr:hover td{background:rgba(0,0,0,0.04)}
-.ap{color:var(--green);font-weight:600}.an{color:var(--red);font-weight:600}.ai{color:var(--blue);font-weight:600}
+.ap{color:var(--green);font-weight:600}.an{color:var(--red);font-weight:600}.ai{color:var(--blue);font-weight:600}.av{color:var(--purple);font-weight:600}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
 .b-Bydlení{background:var(--amber-bg);color:var(--amber-text)}
 .b-Jídlo{background:var(--green-bg);color:var(--green-text)}
@@ -164,6 +164,7 @@ tr:hover td{background:rgba(0,0,0,0.04)}
 .b-Příjem{background:var(--green-bg);color:var(--green-text)}
 .b-Ostatní{background:var(--surface2);color:var(--text2)}
 .b-Výdaj{background:var(--red-bg);color:var(--red-text)}
+.b-Vyrovnání{background:var(--purple-bg);color:var(--purple-text)}
 .bme{background:var(--blue-bg);color:var(--blue-text)}
 .bsa{background:var(--pink-bg);color:var(--pink-text)}
 .budrow{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
@@ -248,8 +249,9 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .del-btn:hover{background:var(--red-bg)!important;border-color:var(--red)!important}
 .bar-income{background:linear-gradient(180deg,#2cc991,var(--green))}
 .bar-expense{background:linear-gradient(180deg,#e87a5a,var(--red))}
-.bil-card .ml{display:flex;align-items:center;justify-content:space-between}
-.bil-edit-btn{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:0 2px;line-height:1}
+.bil-card .ml{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bil-actions{display:flex;align-items:center;gap:10px}
+.bil-edit-btn{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:11px;font-weight:600;padding:0 2px;line-height:1;text-transform:none;letter-spacing:0}
 .bil-edit-btn:hover{color:var(--blue)}
 .bil-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .bil-edit select{padding:4px 6px;font-size:13px}
