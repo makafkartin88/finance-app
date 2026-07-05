@@ -9,6 +9,9 @@ export const state = {
   drill: { months: new Set(), cat: null },
   _range: null,
   recurring: [],
+  salary: [],            // parsované výplatní pásky (list Mzdy)
+  _salaryParsed: null,   // aktuálně naparsovaná páska v preview modalu
+  _salaryImportFile: null, // název souboru při importu z banneru (pro markPayslipImported)
   _importBusy: false,
   _impRows: [],
   _tt: null,

@@ -140,6 +140,27 @@
   </div>
 </div>
 
+<!-- Výplatní páska Import Modal -->
+<div class="overlay" id="salaryModal" style="display:none">
+  <div class="modal" style="max-width:560px">
+    <h2>📥 Import výplatní pásky</h2>
+    <div id="salaryZone" class="upzone" style="margin-bottom:12px"
+      ondragover="salaryDov(event)" ondragleave="salaryDol()" ondrop="salaryDod(event)">
+      <div style="font-size:28px;margin-bottom:8px">💵</div>
+      <div style="font-weight:600;margin-bottom:4px">Přetáhni PDF výplatní pásku sem</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">nebo</div>
+      <label class="btnp btnsm" style="cursor:pointer">Vybrat soubor
+        <input type="file" accept=".pdf,application/pdf" style="display:none" onchange="onSalaryFile(event)"/>
+      </label>
+    </div>
+    <div id="salaryStatus" style="display:none"></div>
+    <div id="salaryResults" style="display:none"></div>
+    <div class="mactions" style="margin-top:12px">
+      <button class="btn" onclick="closeSalaryImport()">Zavřít</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="app">
@@ -147,14 +168,15 @@
     <div class="logo"><h1>Finance</h1><p>Martin & Šárka</p></div>
     <nav class="nav">
       <div class="nlabel">Přehled</div>
-      <div class="ni active" onclick="nav('dashboard',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg><span>Přehled</span></div>
-      <div class="ni" onclick="nav('transactions',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="11" width="14" height="2" rx="1"/></svg><span>Transakce</span></div>
-      <div class="ni" onclick="nav('budgets',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2" stroke-linecap="round"/></svg><span>Rozpočty</span></div>
+      <div class="ni active" data-page="dashboard" onclick="nav('dashboard',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg><span>Přehled</span></div>
+      <div class="ni" data-page="transactions" onclick="nav('transactions',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="11" width="14" height="2" rx="1"/></svg><span>Transakce</span></div>
+      <div class="ni" data-page="budgets" onclick="nav('budgets',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2" stroke-linecap="round"/></svg><span>Rozpočty</span></div>
       <div class="nlabel">Analýzy</div>
-      <div class="ni" onclick="nav('charts',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="6" width="3" height="9"/></svg><span>Grafy</span></div>
-      <div class="ni" onclick="nav('investments',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 14,3"/><polyline points="11,3 14,3 14,6"/></svg><span>Investice</span></div>
+      <div class="ni" data-page="charts" onclick="nav('charts',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="6" width="3" height="9"/></svg><span>Grafy</span></div>
+      <div class="ni" data-page="investments" onclick="nav('investments',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 14,3"/><polyline points="11,3 14,3 14,6"/></svg><span>Investice</span></div>
+      <div class="ni" data-page="salary" style="display:none" onclick="nav('salary',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3.5" width="14" height="9" rx="1.5"/><circle cx="8" cy="8" r="2.2"/><path d="M3.5 6v0M12.5 10v0" stroke-linecap="round"/></svg><span>Mzda</span></div>
       <div class="nlabel">Data</div>
-      <div class="ni" onclick="nav('settings',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg><span>Nastavení</span></div>
+      <div class="ni" data-page="settings" onclick="nav('settings',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg><span>Nastavení</span></div>
     </nav>
     <div class="sidebar-bottom">
       <div class="auth-row"><div class="adot" id="adot"></div><span id="atext">Nepřipojeno</span></div>
@@ -395,6 +417,61 @@
             <div class="tw"><table><thead><tr><th>Datum</th><th>Název</th><th>Typ</th><th>Částka</th><th>Poznámka</th></tr></thead><tbody id="histBody"></tbody></table></div>
             <div id="histEmpty" class="empty" style="display:none">Žádná historie.</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-salary" class="page">
+      <div class="topbar">
+        <h2>Mzda</h2>
+        <div class="topbar-right">
+          <button class="btnp" onclick="openSalaryImport()">📥 Nahrát pásku</button>
+        </div>
+      </div>
+      <div id="salaryBanner" style="display:none;background:var(--surface);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin:12px 16px 0;align-items:center;gap:10px;flex-wrap:wrap"></div>
+      <div class="content">
+        <div class="mgrid">
+          <div class="mc" style="border-left-color:var(--green)"><div class="ml">Poslední čistá mzda</div><div class="mv green" id="sal1">—</div><div class="ms" id="sal1s"></div></div>
+          <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Poslední hrubá mzda</div><div class="mv" id="sal2">—</div><div class="ms" id="sal2s"></div></div>
+          <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Meziroční růst</div><div class="mv" id="sal3">—</div><div class="ms" id="sal3s"></div></div>
+          <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Reálný růst (po inflaci)</div><div class="mv" id="sal4">—</div><div class="ms" id="sal4s"></div></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-hdr">
+            <div class="ct">Vývoj mzdy v čase</div>
+            <div class="legend"><div class="li"><div class="ld bar-income" style="border-radius:3px"></div>Hrubá</div><div class="li"><div class="ld" style="background:var(--blue);border-radius:3px"></div>Čistá</div></div>
+          </div>
+          <div class="bchart" id="salChart"></div>
+          <div class="blrow" id="salLabels"></div>
+        </div>
+        <div class="two" style="margin-top:16px">
+          <div class="card">
+            <div class="card-hdr"><div class="ct">💡 Inflační pomocník</div></div>
+            <div class="fg" style="margin-bottom:10px">
+              <label>Porovnat od měsíce (základna)</label>
+              <select class="sel" id="salBaseline" onchange="renderSalary()"></select>
+            </div>
+            <div id="salInflation"></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Tarif (základ mzdy)</div></div>
+            <div id="salTarif"></div>
+          </div>
+        </div>
+        <div class="two" style="margin-top:16px">
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Struktura poslední pásky</div></div>
+            <div id="salStructure"></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="ct">Prémie v čase</div></div>
+            <div id="salPremie"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-hdr"><div class="ct">Historie pásek</div></div>
+          <div class="tw"><table><thead><tr><th>Měsíc</th><th>Tarif</th><th>Hrubá</th><th>Čistá</th><th>K výplatě</th><th>Odprac. h</th><th>Dovolená zůst.</th><th></th></tr></thead><tbody id="salBody"></tbody></table></div>
+          <div id="salEmpty" class="empty" style="display:none">Zatím žádné pásky. Nahraj první přes „📥 Nahrát pásku".</div>
         </div>
       </div>
     </div>

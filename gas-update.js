@@ -63,6 +63,16 @@ function doPost(e) {
       return handleMarkMbankImported(body);
     }
 
+    // ── GET DRIVE FILE (base64) ──
+    if (body.action === 'getDriveFile') {
+      return handleGetDriveFile(body);
+    }
+
+    // ── MARK PAYSLIP IMPORTED ──
+    if (body.action === 'markPayslipImported') {
+      return handleMarkPayslipImported(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -202,6 +212,89 @@ function handleMarkMbankImported(body) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ── GET DRIVE FILE AS BASE64 (pro import výplatní pásky bez CORS) ──
+function handleGetDriveFile(body) {
+  try {
+    var file = DriveApp.getFileById(body.fileId);
+    var blob = file.getBlob();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      name: file.getName(),
+      data: Utilities.base64Encode(blob.getBytes())
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── MARK PAYSLIP IMPORT AS DONE ──
+function handleMarkPayslipImported(body) {
+  try {
+    var filename = body.filename;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('MzdyImport');
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][1] === filename && data[i][4] === 'new') {
+        sheet.getRange(i + 1, 5).setValue('imported');
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── GMAIL → DRIVE → SHEET: VÝPLATNÍ PÁSKY ──
+// Spusť ručně nebo nastav time-trigger: Triggers → checkPayslipEmail → Time-driven → Day timer
+function checkPayslipEmail() {
+  var threads = GmailApp.search('from:harnol.cz has:attachment newer_than:35d', 0, 10);
+  if (!threads.length) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('MzdyImport');
+  if (!sheet) {
+    sheet = ss.insertSheet('MzdyImport');
+    sheet.appendRow(['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status']);
+  }
+
+  // Dedup dle názvu souboru
+  var existing = {};
+  var rows = sheet.getDataRange().getValues();
+  for (var r = 1; r < rows.length; r++) {
+    existing[rows[r][1]] = true;
+  }
+
+  // Najdi nebo vytvoř složku Finance-Vyplaty (privátní — bez sdílení)
+  var folders = DriveApp.getFoldersByName('Finance-Vyplaty');
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vyplaty');
+
+  threads.forEach(function(thread) {
+    thread.getMessages().forEach(function(msg) {
+      msg.getAttachments().forEach(function(att) {
+        if (att.getContentType() !== 'application/pdf') return;
+        var name = att.getName();
+        if (existing[name]) return;
+
+        var file = folder.createFile(att); // záměrně BEZ setSharing — čte ho jen GAS
+
+        sheet.appendRow([
+          new Date(),      // datum_detekce
+          name,            // soubor
+          file.getId(),    // file_id (pro akci getDriveFile)
+          msg.getDate(),   // datum_emailu
+          'new'            // status
+        ]);
+        existing[name] = true;
+      });
+    });
+  });
 }
 
 // ── GMAIL → DRIVE → SHEET NOTIFICATION ──

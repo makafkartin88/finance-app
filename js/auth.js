@@ -48,9 +48,11 @@ measurementId: "G-BD3K8RTMZB"
           b.classList.toggle('active', b.textContent === 'Oba');
         });
 
-        // Skrýt/zobrazit investice
-        const invNav = document.querySelectorAll('.ni')[4]; // Investice nav item
+        // Skrýt/zobrazit investice a mzdu (dle práv přihlášeného uživatele)
+        const invNav = document.querySelector('.ni[data-page="investments"]');
         if (invNav) invNav.style.display = allowed.canSeeInvestments ? '' : 'none';
+        const salNav = document.querySelector('.ni[data-page="salary"]');
+        if (salNav) salNav.style.display = allowed.canSeeSalary ? '' : 'none';
 
         applyPersonTheme();
         onReady();
@@ -123,6 +125,13 @@ export function isInvestmentsAllowed() {
   if (!user) return true; // Pokud není auth, zobrazit vše
   const allowed = AUTH_USERS[user.email.toLowerCase()];
   return allowed?.canSeeInvestments ?? false;
+}
+
+export function isSalaryAllowed() {
+  const user = getCurrentUser();
+  if (!user) return true; // Pokud není auth (lokální vývoj), zobrazit vše
+  const allowed = AUTH_USERS[user.email.toLowerCase()];
+  return allowed?.canSeeSalary ?? false;
 }
 
 // Expose login to window for onclick handler

@@ -11,6 +11,8 @@ import { initAuth, logout } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
+import { renderSalary } from './salary.js';
+import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive } from './salary-import.js';
 
 /* ── TOAST ── */
 export function toast(msg, type) {
@@ -41,6 +43,7 @@ export async function loadSheets() {
     loadInvestmentData();
     loadRecurring().then(autoGenerateRecurring);
     loadMbankNotification();
+    loadSalaryData();
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');
     state.txs = DEMO.map(parseRow);
@@ -88,6 +91,7 @@ export function nav(id, el) {
     ['txfMonth','txfCat','txfAcc'].forEach(sid => { const s = document.getElementById(sid); if (s) s.onchange = renderTx; });
   }
   if (id === 'charts') renderCharts();
+  if (id === 'salary') renderSalary();
   if (id === 'settings') initSettings();
   location.hash = '#'+id;
 }
@@ -127,11 +131,9 @@ function resetRange() {
 /* ── HASH ROUTING ── */
 function handleHash() {
   const hash = location.hash.slice(1) || 'dashboard';
-  const validPages = ['dashboard','transactions','budgets','charts','investments','settings'];
+  const validPages = ['dashboard','transactions','budgets','charts','investments','salary','settings'];
   const page = validPages.includes(hash) ? hash : 'dashboard';
-  const navItems = document.querySelectorAll('.ni');
-  const pageMap = { dashboard: 0, transactions: 1, budgets: 2, charts: 3, investments: 4, settings: 5 };
-  nav(page, navItems[pageMap[page]]);
+  nav(page, document.querySelector(`.ni[data-page="${page}"]`));
 }
 
 /* ── EXPOSE TO WINDOW (for inline onclick handlers) ── */
@@ -193,6 +195,16 @@ window.onMbankFile = onMbankFile;
 window.confirmMbankImport = confirmMbankImport;
 window.hideMbankBanner = hideMbankBanner;
 window.toggleMbankDupDetail = toggleMbankDupDetail;
+window.renderSalary = renderSalary;
+window.openSalaryImport = openSalaryImport;
+window.closeSalaryImport = closeSalaryImport;
+window.salaryDov = salaryDov;
+window.salaryDol = salaryDol;
+window.salaryDod = salaryDod;
+window.onSalaryFile = onSalaryFile;
+window.confirmSalaryImport = confirmSalaryImport;
+window.hideSalaryBanner = hideSalaryBanner;
+window.importPayslipFromDrive = importPayslipFromDrive;
 
 
 /* ── INIT ── */
