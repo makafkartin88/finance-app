@@ -103,8 +103,10 @@ select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--bord
 tbody tr.sel td{background:var(--blue-bg)}
 .metric-stack{display:grid;gap:12px}
 .metric-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:var(--rsm);background:var(--surface2)}
+.metric-row>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}
 .metric-row strong{font-size:13px}
 .metric-row span{font-size:11px;color:var(--text2)}
+.metric-row>strong{white-space:nowrap}
 .cat-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .cat-chip{padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);font-size:12px;cursor:pointer;color:var(--text2);font-weight:500;transition:all .12s}
 .cat-chip:hover{border-color:var(--text3);color:var(--text)}

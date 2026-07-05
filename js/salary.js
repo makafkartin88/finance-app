@@ -99,48 +99,65 @@ export function renderSalary() {
   }
   if (empty) empty.style.display = 'none';
 
-  // Vybraný měsíc pro detail — default poslední v rozsahu
-  if (!_salSelected || !data.some(s => s.id === _salSelected)) _salSelected = data[data.length - 1].id;
-  const sel = data.find(s => s.id === _salSelected);
+  // Výběr měsíce — null = žádný filtr (celý rozsah); druhý klik odznačí (viz salSelect)
+  if (_salSelected && !data.some(s => s.id === _salSelected)) _salSelected = null;
   const last = data[data.length - 1];
+  const sel = _salSelected ? data.find(s => s.id === _salSelected) : null;
+  const focus = sel || last; // měsíc pro Detail pásky
 
-  /* ── METRIKY ── */
-  document.getElementById('sal1').textContent = czk(last.cistaMzda);
-  document.getElementById('sal1s').textContent = `${MONTH_NAMES[last.mesic]} ${last.rok} · k výplatě ${czk(last.kVyplate)}`;
-  document.getElementById('sal2').textContent = czk(last.hrubaMzda);
-  document.getElementById('sal2s').textContent = `tarif ${czk(last.tarif)} + prémie ${czk(last.premie)}`;
+  // Dovolená čerpaná v daném měsíci (pokles zůstatku vůči předchozí pásce,
+  // fallback: dovolená v Kč / hodinový průměr)
+  const usageOf = s => {
+    const idx = all.indexOf(s);
+    if (idx > 0) {
+      const d = all[idx - 1].dovolenaZustatek - s.dovolenaZustatek;
+      if (d > 0) return d;
+    }
+    return (s.dovolenaKc > 0 && s.prumerHod > 0) ? Math.round(s.dovolenaKc / s.prumerHod) : 0;
+  };
+  const days = h => (h / 8).toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
 
-  // Bonusy & vratky za rozsah (roční zúčtování daně apod.)
-  const bonuses = data.map(s => ({ s, b: bonusOf(s) })).filter(x => Math.abs(x.b) > 100);
-  const bonusSum = bonuses.reduce((sum, x) => sum + x.b, 0);
-  document.getElementById('sal3').textContent = bonusSum ? (bonusSum > 0 ? '+' : '') + czk(bonusSum) : '0 Kč';
-  document.getElementById('sal3').className = 'mv' + (bonusSum > 0 ? ' green' : '');
-  document.getElementById('sal3s').textContent = bonuses.length
-    ? bonuses.map(x => `${x.s.mesic}/${x.s.rok}: ${x.b > 0 ? '+' : ''}${kFmt(x.b)}`).join(' · ')
-    : 'žádné mimořádné položky v rozsahu';
+  /* ── METRIKY — cross-filter: výběr měsíce v grafu je filtruje (PBI styl) ── */
+  const mSrc = sel || last;
+  document.getElementById('sal1').textContent = czk(mSrc.cistaMzda);
+  document.getElementById('sal1s').textContent = `${sel ? '' : 'poslední: '}${MONTH_NAMES[mSrc.mesic]} ${mSrc.rok} · k výplatě ${czk(mSrc.kVyplate)}`;
+  document.getElementById('sal2').textContent = czk(mSrc.hrubaMzda);
+  document.getElementById('sal2s').textContent = `tarif ${czk(mSrc.tarif)} + prémie ${czk(mSrc.premie)}`;
 
-  // Dovolená čerpaná v rozsahu (pokles zůstatku mezi po sobě jdoucími páskami)
-  let usedH = 0;
-  for (let i = 1; i < data.length; i++) {
-    const d = data[i - 1].dovolenaZustatek - data[i].dovolenaZustatek;
-    if (d > 0) usedH += d;
+  // Bonusy & vratky — vybraný měsíc, jinak suma za rozsah
+  if (sel) {
+    const b = bonusOf(sel);
+    document.getElementById('sal3').textContent = Math.abs(b) > 100 ? (b > 0 ? '+' : '') + czk(b) : '0 Kč';
+    document.getElementById('sal3').className = 'mv' + (b > 100 ? ' green' : '');
+    document.getElementById('sal3s').textContent = `${MONTH_NAMES[sel.mesic]} ${sel.rok} · klik znovu zruší výběr`;
+  } else {
+    const bonuses = data.map(s => ({ s, b: bonusOf(s) })).filter(x => Math.abs(x.b) > 100);
+    const bonusSum = bonuses.reduce((sum, x) => sum + x.b, 0);
+    document.getElementById('sal3').textContent = bonusSum ? (bonusSum > 0 ? '+' : '') + czk(bonusSum) : '0 Kč';
+    document.getElementById('sal3').className = 'mv' + (bonusSum > 0 ? ' green' : '');
+    document.getElementById('sal3s').textContent = bonuses.length
+      ? bonuses.map(x => `${x.s.mesic}/${x.s.rok}: ${x.b > 0 ? '+' : ''}${kFmt(x.b)}`).join(' · ')
+      : 'žádné mimořádné položky v rozsahu';
   }
-  // + čerpání v první pásce rozsahu (dle Kč a hodinového průměru, když jde spočítat)
-  if (data[0].dovolenaKc > 0 && data[0].prumerHod > 0) usedH += Math.round(data[0].dovolenaKc / data[0].prumerHod);
-  document.getElementById('sal4').textContent = `${(usedH / 8).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} dní`;
-  document.getElementById('sal4s').textContent = `${usedH} h v rozsahu · zůstatek ${last.dovolenaZustatek} h = ${(last.dovolenaZustatek / 8).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} dní`;
+
+  // Dovolená čerpaná — vybraný měsíc, jinak celý rozsah
+  const usedH = sel ? usageOf(sel) : data.reduce((sum, s) => sum + usageOf(s), 0);
+  document.getElementById('sal4').textContent = `${days(usedH)} dní`;
+  document.getElementById('sal4s').textContent = sel
+    ? `${usedH} h v ${sel.mesic}/${sel.rok} · zůstatek ${sel.dovolenaZustatek} h = ${days(sel.dovolenaZustatek)} dní`
+    : `${usedH} h v rozsahu · zůstatek ${last.dovolenaZustatek} h = ${days(last.dovolenaZustatek)} dní`;
 
   /* ── GRAF ── */
   document.getElementById('salChart').innerHTML = salChartSVG(data, _salSelected);
 
-  /* ── DETAIL PÁSKY (vybraný měsíc) ── */
-  document.getElementById('salDetailTitle').textContent = `Detail pásky — ${MONTH_NAMES[sel.mesic]} ${sel.rok}`;
-  const selBonus = bonusOf(sel);
+  /* ── DETAIL PÁSKY (vybraný měsíc, jinak poslední) ── */
+  document.getElementById('salDetailTitle').textContent = `Detail pásky — ${MONTH_NAMES[focus.mesic]} ${focus.rok}${sel ? '' : ' (poslední)'}`;
+  const focusBonus = bonusOf(focus);
   const parts = [
-    ['Základní mzda', sel.zakladniMzda, 'var(--green)'],
-    ['Prémie', sel.premie, 'var(--blue)'],
-    ['Svátek', sel.svatek, 'var(--amber)'],
-    ['Dovolená', sel.dovolenaKc, 'var(--purple)'],
+    ['Základní mzda', focus.zakladniMzda, 'var(--green)'],
+    ['Prémie', focus.premie, 'var(--blue)'],
+    ['Svátek', focus.svatek, 'var(--amber)'],
+    ['Dovolená', focus.dovolenaKc, 'var(--purple)'],
   ].filter(x => x[1] > 0);
   const maxPart = Math.max(...parts.map(x => x[1]), 1);
   document.getElementById('salDetail').innerHTML =
@@ -148,12 +165,12 @@ export function renderSalary() {
       <div class="crow" style="cursor:default"><div class="cname">${name}</div>
       <div class="ctrack"><div class="cfill" style="width:${Math.round((val / maxPart) * 100)}%;background:${color}"></div></div>
       <div class="cval cval-w">${czk(val)}</div></div>`).join('')
-    + `<div class="metric-row"><div><strong>Hrubá mzda</strong><span>odprac. ${sel.odpracHod} h${sel.neodpracHod ? ` + ${sel.neodpracHod} h neodprac.` : ''}</span></div><strong>${czk(sel.hrubaMzda)}</strong></div>
-    <div class="metric-row"><div><strong>Odvody + daň</strong><span>ZP ${czk(sel.zpPrac)} · SP ${czk(sel.spPrac)} · daň ${czk(sel.danPoSleve)}</span></div><strong class="an">−${czk(sel.zpPrac + sel.spPrac + sel.danPoSleve)}</strong></div>
-    ${Math.abs(selBonus) > 100 ? `<div class="metric-row"><div><strong>Bonus / vratka daně</strong><span>např. roční zúčtování daně</span></div><strong class="${selBonus > 0 ? 'ap' : 'an'}">${selBonus > 0 ? '+' : ''}${czk(selBonus)}</strong></div>` : ''}
-    ${sel.stravenky ? `<div class="metric-row"><div><strong>Stravenkový paušál</strong><span>nad rámec čisté mzdy</span></div><strong class="ap">+${czk(sel.stravenky)}</strong></div>` : ''}
-    ${sel.multisport ? `<div class="metric-row"><div><strong>Multisport</strong><span>srážka ze mzdy</span></div><strong class="an">−${czk(sel.multisport)}</strong></div>` : ''}
-    <div class="metric-row" style="border-top:2px solid var(--border2)"><div><strong>K výplatě na účet</strong><span>čistá ${czk(sel.cistaMzda)}</span></div><strong style="font-size:15px">${czk(sel.kVyplate)}</strong></div>`;
+    + `<div class="metric-row"><div><strong>Hrubá mzda</strong><span>odprac. ${focus.odpracHod} h${focus.neodpracHod ? ` + ${focus.neodpracHod} h neodprac.` : ''}</span></div><strong>${czk(focus.hrubaMzda)}</strong></div>
+    <div class="metric-row"><div><strong>Odvody + daň</strong><span>ZP ${czk(focus.zpPrac)} · SP ${czk(focus.spPrac)} · daň ${czk(focus.danPoSleve)}</span></div><strong class="an">−${czk(focus.zpPrac + focus.spPrac + focus.danPoSleve)}</strong></div>
+    ${Math.abs(focusBonus) > 100 ? `<div class="metric-row"><div><strong>Bonus / vratka daně</strong><span>např. roční zúčtování daně</span></div><strong class="${focusBonus > 0 ? 'ap' : 'an'}">${focusBonus > 0 ? '+' : ''}${czk(focusBonus)}</strong></div>` : ''}
+    ${focus.stravenky ? `<div class="metric-row"><div><strong>Stravenkový paušál</strong><span>nad rámec čisté mzdy</span></div><strong class="ap">+${czk(focus.stravenky)}</strong></div>` : ''}
+    ${focus.multisport ? `<div class="metric-row"><div><strong>Multisport</strong><span>srážka ze mzdy</span></div><strong class="an">−${czk(focus.multisport)}</strong></div>` : ''}
+    <div class="metric-row" style="border-top:2px solid var(--border2)"><div><strong>K výplatě na účet</strong><span>čistá ${czk(focus.cistaMzda)}</span></div><strong style="font-size:15px">${czk(focus.kVyplate)}</strong></div>`;
 
   /* ── ZÁKLADNA + INFLAČNÍ POMOCNÍK (z celých dat, ne jen rozsahu) ── */
   const baseSel = document.getElementById('salBaseline');
@@ -162,9 +179,8 @@ export function renderSalary() {
   baseSel.innerHTML = all.slice(0, -1).map(s =>
     `<option value="${s.id}">${MONTH_NAMES[s.mesic]} ${s.rok} — hrubá ${czk(s.hrubaMzda)}</option>`
   ).join('') || `<option value="${lastAll.id}">${MONTH_NAMES[lastAll.mesic]} ${lastAll.rok}</option>`;
-  let defBase = all[0].id;
-  for (let i = 1; i < all.length; i++) if (all[i].tarif !== all[i - 1].tarif) defBase = all[i].id;
-  baseSel.value = [...baseSel.options].some(o => o.value === prevBase) ? prevBase : defBase;
+  // Default základna = první výpis (uživatel může kdykoli přepnout)
+  baseSel.value = [...baseSel.options].some(o => o.value === prevBase) ? prevBase : all[0].id;
   const base = all.find(s => s.id === baseSel.value) || all[0];
 
   const infl = cumulativeInflation(base.id, lastAll.id);
