@@ -55,6 +55,69 @@ window.selectCatFilter = function(cat) {
   renderCatBars(cat);
 };
 
+// SVG sloupcový graf příjmy/výdaje — čitelné hodnoty nad bary, klikací (Ctrl = multi-select)
+function yrChartSVG(monthStats, selected, kFmt) {
+  const W = Math.max(560, monthStats.length * 64), H = 200, padT = 30, padB = 24, padX = 6;
+  const plotH = H - padT - padB;
+  const maxRaw = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
+  const step = maxRaw > 80000 ? 40000 : maxRaw > 40000 ? 20000 : 10000;
+  const topV = Math.ceil(maxRaw / step) * step;
+  const y = v => padT + plotH - (v / topV) * plotH;
+  const groupW = (W - padX * 2) / monthStats.length;
+  const barW = Math.min(24, groupW * 0.3);
+  const fs = monthStats.length > 10 ? 8 : 10;
+
+  let grid = '';
+  for (let v = 0; v <= topV; v += step) {
+    grid += `<line x1="${padX}" y1="${y(v)}" x2="${W - padX}" y2="${y(v)}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${padX}" y="${y(v) - 3}" font-size="9" fill="var(--text3)">${v / 1000}k</text>`;
+  }
+
+  const groups = monthStats.map((m, i) => {
+    const cx = padX + groupW * i + groupW / 2;
+    const isSel = selected.has(m.month);
+    const iY = y(m.income), eY = y(m.expense);
+    return `<g onclick="chartDrillMonth('${m.month}', event)" style="cursor:pointer">
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 32}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      <rect x="${cx - barW - 1.5}" y="${iY}" width="${barW}" height="${padT + plotH - iY}" rx="3" fill="var(--green)"/>
+      <rect x="${cx + 1.5}" y="${eY}" width="${barW}" height="${padT + plotH - eY}" rx="3" fill="var(--red)"/>
+      <text x="${cx - barW / 2 - 1.5}" y="${iY - 4}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--green)">${kFmt(m.income)}</text>
+      <text x="${cx + barW / 2 + 1.5}" y="${eY - 4}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--red)">${kFmt(m.expense)}</text>
+      <text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
+    </g>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${groups}</svg>`;
+}
+
+// SVG diverging graf salda — nulová osa uprostřed, čitelné hodnoty, klikací (Ctrl = multi-select)
+function netChartSVG(monthStats, selected, kFmt) {
+  const W = Math.max(560, monthStats.length * 64), H = 200, midY = 88, maxBar = 54, padX = 6;
+  const maxAbs = Math.max(...monthStats.map(m => Math.abs(m.income - m.expense)), 1);
+  const groupW = (W - padX * 2) / monthStats.length;
+  const barW = Math.min(28, groupW * 0.4);
+  const netFmt = n => (n >= 0 ? '+' : '') + kFmt(n);
+
+  let zero = `<line x1="${padX}" y1="${midY}" x2="${W - padX}" y2="${midY}" stroke="var(--border2)" stroke-width="1"/>`;
+  const groups = monthStats.map((m, i) => {
+    const cx = padX + groupW * i + groupW / 2;
+    const net = m.income - m.expense;
+    const h = Math.round((Math.abs(net) / maxAbs) * maxBar);
+    const isSel = selected.has(m.month);
+    const color = net >= 0 ? 'var(--green)' : 'var(--red)';
+    const barY = net >= 0 ? midY - h : midY;
+    const lblY = net >= 0 ? midY - h - 6 : midY + h + 14;
+    return `<g onclick="chartDrillMonth('${m.month}', event)" style="cursor:pointer">
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="8" width="${groupW - 4}" height="${H - 16}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      <rect x="${cx - barW / 2}" y="${barY}" width="${barW}" height="${h || 1}" rx="3" fill="${color}"/>
+      <text x="${cx}" y="${lblY}" text-anchor="middle" font-size="10" font-weight="700" fill="${color}">${netFmt(net)}</text>
+      <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
+    </g>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${zero}${groups}</svg>`;
+}
+
 // Voláno z onclick baru v ročním/saldo grafu — lokální drill (NEovlivňuje globální rozsah)
 window.chartDrillMonth = function(m, event) {
   if (m === null) { _chartMonths.clear(); renderCharts(); return; }
@@ -77,7 +140,6 @@ export function renderCharts() {
     const expense = mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0);
     return { month: m, income, expense, rate: income > 0 ? Math.max(0, Math.round(((income-expense)/income)*100)) : 0 };
   });
-  const maxV = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
   const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
   // Pokud vybraný měsíc už v datech není, resetovat drill
@@ -86,33 +148,9 @@ export function renderCharts() {
   // Detail data — filtrovat na vybraný měsíc(e), nebo celý rozsah
   const detail = _chartMonths.size ? base(_chartMonths, null) : all;
 
-  // Roční přehled — bar labels + click na měsíc
-  document.getElementById('yrChart').innerHTML = monthStats.map(m => {
-    const isSel = _chartMonths.has(m.month);
-    return `<div class="bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}', event)" title="${m.month}">
-      <div class="bar-lbl"><span class="bv-i">${kFmt(m.income)}</span><span class="bv-e">${kFmt(m.expense)}</span></div>
-      <div class="bar bar-income" style="height:${Math.round((m.income/maxV)*100)}px"></div>
-      <div class="bar bar-expense" style="height:${Math.round((m.expense/maxV)*100)}px"></div>
-    </div>`;
-  }).join('');
-  document.getElementById('yrLabels').innerHTML = monthStats.map(m => `<div class="bl">${m.month.split(' ')[0]}</div>`).join('');
-
-  // Saldo měsíce — diverging bar chart (nahoře = kladné, dole = záporné)
-  const maxAbs = Math.max(...monthStats.map(m => Math.abs(m.income - m.expense)), 1);
-  document.getElementById('srChart').innerHTML = monthStats.map(m => {
-    const net = m.income - m.expense;
-    const h = Math.round((Math.abs(net) / maxAbs) * 50);
-    const isSel = _chartMonths.has(m.month);
-    return `<div class="bg net-bg${isSel ? ' sel' : ''}" onclick="chartDrillMonth('${m.month}', event)" title="${m.month}: ${czk(net)}">
-      <div class="net-pos">${net >= 0 ? `<div class="bar bar-income net-bar" style="height:${h}px"></div>` : ''}</div>
-      <div class="net-neg">${net < 0 ? `<div class="bar bar-expense net-bar" style="height:${h}px"></div>` : ''}</div>
-    </div>`;
-  }).join('');
-  const netFmt = n => (n >= 0 ? '+' : '') + (Math.abs(n) >= 1000 ? Math.round(n/1000)+'k' : Math.round(n).toString());
-  document.getElementById('srLabels').innerHTML = monthStats.map(m => {
-    const net = m.income - m.expense;
-    return `<div class="bl">${m.month.split(' ')[0]}<br><b style="color:${net>=0?'var(--green)':'var(--red)'}">${netFmt(net)}</b></div>`;
-  }).join('');
+  // Roční přehled + Saldo měsíce — čitelné SVG grafy, klikací (Ctrl = multi-select)
+  document.getElementById('yrChart').innerHTML = yrChartSVG(monthStats, _chartMonths, kFmt);
+  document.getElementById('srChart').innerHTML = netChartSVG(monthStats, _chartMonths, kFmt);
 
   // Drill label v topbaru — zobrazit vybraný měsíc nebo celý rozsah
   const cTxt = document.getElementById('chRangeTxt');
