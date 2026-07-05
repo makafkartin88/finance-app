@@ -231,6 +231,6 @@ export function renderSalary() {
     <td>${czk(s.tarif)}</td><td>${czk(s.hrubaMzda)}</td><td class="ap">${czk(s.cistaMzda)}</td>
     <td class="${Math.abs(b) > 100 ? (b > 0 ? 'ap' : 'an') : ''}" style="white-space:nowrap">${Math.abs(b) > 100 ? (b > 0 ? '+' : '') + czk(b) : '—'}</td>
     <td><b>${czk(s.kVyplate)}</b></td><td style="color:var(--text2)">${s.odpracHod}</td>
-    <td style="color:var(--text2)">${s.dovolenaZustatek} h</td></tr>`;
+    <td style="color:var(--text2)">${days(s.dovolenaZustatek)} dní</td></tr>`;
   }).join('');
 }
