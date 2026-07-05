@@ -425,26 +425,43 @@
       <div class="topbar">
         <h2>Mzda</h2>
         <div class="topbar-right">
+          <div class="range-box">
+            <div class="range-field">
+              <label>Od</label>
+              <input type="month" id="salFrom" onchange="salApplyRange()"/>
+            </div>
+            <div class="range-field">
+              <label>Do</label>
+              <input type="month" id="salTo" onchange="salApplyRange()"/>
+            </div>
+          </div>
+          <div class="dash-meta-row">
+            <div class="range-summary" id="salRangeTxt"></div>
+            <button class="btn range-reset" onclick="salResetRange()">Celý rozsah</button>
+          </div>
           <button class="btnp" onclick="openSalaryImport()">📥 Nahrát pásku</button>
         </div>
       </div>
       <div id="salaryBanner" style="display:none;background:var(--surface);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin:12px 16px 0;align-items:center;gap:10px;flex-wrap:wrap"></div>
       <div class="content">
         <div class="mgrid">
-          <div class="mc" style="border-left-color:var(--green)"><div class="ml">Poslední čistá mzda</div><div class="mv green" id="sal1">—</div><div class="ms" id="sal1s"></div></div>
-          <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Poslední hrubá mzda</div><div class="mv" id="sal2">—</div><div class="ms" id="sal2s"></div></div>
-          <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Meziroční růst</div><div class="mv" id="sal3">—</div><div class="ms" id="sal3s"></div></div>
-          <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Reálný růst (po inflaci)</div><div class="mv" id="sal4">—</div><div class="ms" id="sal4s"></div></div>
+          <div class="mc" style="border-left-color:var(--green)"><div class="ml">Čistá mzda</div><div class="mv green" id="sal1">—</div><div class="ms" id="sal1s"></div></div>
+          <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Hrubá mzda</div><div class="mv" id="sal2">—</div><div class="ms" id="sal2s"></div></div>
+          <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Bonusy &amp; vratky</div><div class="mv" id="sal3">—</div><div class="ms" id="sal3s"></div></div>
+          <div class="mc" style="border-left-color:var(--purple)"><div class="ml">Dovolená čerpáno</div><div class="mv" id="sal4">—</div><div class="ms" id="sal4s"></div></div>
         </div>
         <div class="card" style="margin-top:16px">
           <div class="card-hdr">
-            <div class="ct">Vývoj mzdy v čase</div>
-            <div class="legend"><div class="li"><div class="ld bar-income" style="border-radius:3px"></div>Hrubá</div><div class="li"><div class="ld" style="background:var(--blue);border-radius:3px"></div>Čistá</div></div>
+            <div class="ct">Vývoj mzdy — klikni na měsíc pro detail</div>
+            <div class="legend"><div class="li"><div class="ld" style="background:var(--green);border-radius:3px"></div>Hrubá</div><div class="li"><div class="ld" style="background:var(--blue);border-radius:3px"></div>Čistá</div><div class="li"><div class="ld" style="background:var(--amber);border-radius:3px"></div>Bonus/vratka</div></div>
           </div>
-          <div class="bchart" id="salChart"></div>
-          <div class="blrow" id="salLabels"></div>
+          <div id="salChart"></div>
         </div>
         <div class="two" style="margin-top:16px">
+          <div class="card">
+            <div class="card-hdr"><div class="ct" id="salDetailTitle">Detail pásky</div></div>
+            <div id="salDetail"></div>
+          </div>
           <div class="card">
             <div class="card-hdr"><div class="ct">💡 Inflační pomocník</div></div>
             <div class="fg" style="margin-bottom:10px">
@@ -453,15 +470,11 @@
             </div>
             <div id="salInflation"></div>
           </div>
-          <div class="card">
-            <div class="card-hdr"><div class="ct">Tarif (základ mzdy)</div></div>
-            <div id="salTarif"></div>
-          </div>
         </div>
         <div class="two" style="margin-top:16px">
           <div class="card">
-            <div class="card-hdr"><div class="ct">Struktura poslední pásky</div></div>
-            <div id="salStructure"></div>
+            <div class="card-hdr"><div class="ct">Tarif (základ mzdy)</div></div>
+            <div id="salTarif"></div>
           </div>
           <div class="card">
             <div class="card-hdr"><div class="ct">Prémie v čase</div></div>
@@ -469,8 +482,8 @@
           </div>
         </div>
         <div class="card" style="margin-top:16px">
-          <div class="card-hdr"><div class="ct">Historie pásek</div></div>
-          <div class="tw"><table><thead><tr><th>Měsíc</th><th>Tarif</th><th>Hrubá</th><th>Čistá</th><th>K výplatě</th><th>Odprac. h</th><th>Dovolená zůst.</th><th></th></tr></thead><tbody id="salBody"></tbody></table></div>
+          <div class="card-hdr"><div class="ct">Historie pásek — klikni na řádek pro detail</div></div>
+          <div class="tw"><table><thead><tr><th>Měsíc</th><th>Tarif</th><th>Hrubá</th><th>Čistá</th><th>Bonus</th><th>K výplatě</th><th>Odprac. h</th><th>Dovolená zůst.</th></tr></thead><tbody id="salBody"></tbody></table></div>
           <div id="salEmpty" class="empty" style="display:none">Zatím žádné pásky. Nahraj první přes „📥 Nahrát pásku".</div>
         </div>
       </div>

@@ -99,6 +99,8 @@ select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--bord
 .ctrack{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
 .cfill{height:100%;border-radius:3px}
 .cval{font-size:12px;font-weight:600;width:80px;text-align:right;flex-shrink:0}
+.cval-w{width:118px;white-space:nowrap}
+tbody tr.sel td{background:var(--blue-bg)}
 .metric-stack{display:grid;gap:12px}
 .metric-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:var(--rsm);background:var(--surface2)}
 .metric-row strong{font-size:13px}

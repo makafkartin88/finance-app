@@ -11,7 +11,7 @@ import { initAuth, logout } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
-import { renderSalary } from './salary.js';
+import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
 import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive } from './salary-import.js';
 
 /* ── TOAST ── */
@@ -196,6 +196,9 @@ window.confirmMbankImport = confirmMbankImport;
 window.hideMbankBanner = hideMbankBanner;
 window.toggleMbankDupDetail = toggleMbankDupDetail;
 window.renderSalary = renderSalary;
+window.salApplyRange = salApplyRange;
+window.salResetRange = salResetRange;
+window.salSelect = salSelect;
 window.openSalaryImport = openSalaryImport;
 window.closeSalaryImport = closeSalaryImport;
 window.salaryDov = salaryDov;

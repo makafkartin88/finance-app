@@ -103,7 +103,8 @@ function parsePayslip(items) {
   // 2) Kódované složky — pozičně: částka = nejpravější číslo na stejném
   //    Y-řádku do ~335px od kódu (páska má dva sloupce, tohle je nesmíchá)
   const NUM_ONLY = /^-?\d{1,3}(?:[\s ]\d{3})*(?:,\d+)?$/;
-  const CODE_MAP = { '001': 'zakladniMzda', '008': 'svatek', '432': 'premie', '211': 'dovolenaKc', '111': 'stravenky', '923': 'multisport' };
+  // 111 = Stravenkový paušál do limitu, 794 = Stravovací paušál (starší pásky)
+  const CODE_MAP = { '001': 'zakladniMzda', '008': 'svatek', '432': 'premie', '211': 'dovolenaKc', '111': 'stravenky', '794': 'stravenky', '923': 'multisport' };
   // Kód složky = 3ciferné číslo, které má hned napravo textový popisek
   const isCode = it => /^\d{3}$/.test(it.str)
     && items.some(t => Math.abs(t.y - it.y) <= 4 && t.x > it.x && t.x - it.x < 40 && /^[A-Za-zÁ-Žá-žĚŠČŘŽýůú]/.test(t.str));
@@ -231,10 +232,23 @@ export async function confirmSalaryImport() {
 }
 
 /* ── LOAD (list Mzdy) ── */
+// Sheets si "2026-05" automaticky převede na datum a GAS vrátí ISO string
+// ("2026-05-01T00:00:00.000Z", případně s TZ posunem) — normalizovat zpět na YYYY-MM
+function normSalaryId(v) {
+  const s = String(v || '');
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const dt = new Date(s);
+    dt.setUTCHours(dt.getUTCHours() + 12); // tolerance ±12 h na TZ posun
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+  return '';
+}
+
 export function parseSalaryRow(r) {
   const num = i => parseNum(r[i]);
   return {
-    id: String(r[MZ.id] || ''), mesic: num(MZ.mesic), rok: num(MZ.rok), tarif: num(MZ.tarif),
+    id: normSalaryId(r[MZ.id]), mesic: num(MZ.mesic), rok: num(MZ.rok), tarif: num(MZ.tarif),
     prumerHod: num(MZ.prumerHod), zakladniMzda: num(MZ.zakladniMzda), svatek: num(MZ.svatek),
     premie: num(MZ.premie), dovolenaKc: num(MZ.dovolenaKc), stravenky: num(MZ.stravenky),
     hrubaMzda: num(MZ.hrubaMzda), hrubyPrijem: num(MZ.hrubyPrijem), danPoSleve: num(MZ.danPoSleve),
@@ -251,7 +265,8 @@ export async function loadSalaryData() {
     const r = await fetch(GAS_URL + '?sheet=Mzdy');
     const d = await r.json();
     if (d.error) { state.salary = []; renderSalary(); return; } // list ještě neexistuje
-    state.salary = (d.values || []).slice(1).filter(row => row[MZ.id]).map(parseSalaryRow);
+    // GAS list auto-vytváří bez hlavičky — filtrovat dle tvaru id, ne slice(1)
+    state.salary = (d.values || []).map(parseSalaryRow).filter(s => s.id);
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
     renderSalary();
     loadPayslipNotification();
