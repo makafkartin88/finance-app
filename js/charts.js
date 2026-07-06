@@ -15,7 +15,10 @@ export function renderMetricRows(id, rows, empty = 'Žádná data') {
 
 export function renderInsightRows(id, rows, empty = 'Žádná data') {
   const el = document.getElementById(id); if (!el) return;
-  el.innerHTML = rows.map(r => `<div class="insight"><strong>${r.title}</strong><span>${r.body}</span></div>`).join('') || `<div class="empty">${empty}</div>`;
+  el.innerHTML = rows.map(r => r.badge
+    ? `<div class="insight insight-badged"><div><strong>${r.title}</strong><span>${r.body}</span></div><strong class="insight-badge" style="color:${r.badge.color}">${r.badge.text}</strong></div>`
+    : `<div class="insight"><strong>${r.title}</strong><span>${r.body}</span></div>`
+  ).join('') || `<div class="empty">${empty}</div>`;
 }
 
 // Horizontální barplot protistran pro vybranou kategorii
@@ -79,7 +82,7 @@ export function yrChartSVG(monthStats, selected, kFmt, onclickFn = 'chartDrillMo
     const isSel = selected.has(m.month);
     const iY = y(m.income), eY = y(m.expense);
     return `<g onclick="${onclickFn}('${m.month}', event)" style="cursor:pointer">
-      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 32}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 18}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
       <rect x="${cx - barW - 1.5}" y="${iY}" width="${barW}" height="${padT + plotH - iY}" rx="3" fill="var(--green)"/>
       <rect x="${cx + 1.5}" y="${eY}" width="${barW}" height="${padT + plotH - eY}" rx="3" fill="var(--red)"/>
       <text x="${cx - barW / 2 - 1.5}" y="${iY - 4}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--green)">${kFmt(m.income)}</text>
@@ -109,7 +112,7 @@ function netChartSVG(monthStats, selected, kFmt) {
     const barY = net >= 0 ? midY - h : midY;
     const lblY = net >= 0 ? midY - h - 6 : midY + h + 14;
     return `<g onclick="chartDrillMonth('${m.month}', event)" style="cursor:pointer">
-      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="8" width="${groupW - 4}" height="${H - 16}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="8" width="${groupW - 4}" height="160" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
       <rect x="${cx - barW / 2}" y="${barY}" width="${barW}" height="${h || 1}" rx="3" fill="${color}"/>
       <text x="${cx}" y="${lblY}" text-anchor="middle" font-size="10" font-weight="700" fill="${color}">${netFmt(net)}</text>
       <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
@@ -196,8 +199,15 @@ export function renderCharts() {
   }
   renderCatBars(_catFilter);
 
-  renderInsightRows('topMonths', monthStats.slice().sort((a,b) => b.expense-a.expense).slice(0,3).map(m => ({title: m.month, body: `Výdaje ${czk(m.expense)}, příjmy ${czk(m.income)} a míra úspor ${m.rate} %.`})), 'Žádné měsíce v rozsahu');
-  renderInsightRows('topExpenses', expenses.slice().sort((a,b) => b.castka-a.castka).slice(0,3).map(t => ({title: `${t.popis} · ${czk(t.castka)}`, body: `${fmtD(t.datum)} · ${t.kategorie} · ${t.osoba}`})), 'Žádné výdaje v rozsahu');
+  renderInsightRows('topMonths', monthStats.slice().sort((a,b) => b.expense-a.expense).slice(0,3).map(m => {
+    const net = m.income - m.expense;
+    return {
+      title: m.month,
+      body: `Výdaje ${czk(m.expense)}, příjmy ${czk(m.income)}.`,
+      badge: { text: (net >= 0 ? '+' : '-') + kFmt(Math.abs(net)), color: net >= 0 ? 'var(--green)' : 'var(--red)' }
+    };
+  }), 'Žádné měsíce v rozsahu');
+  renderInsightRows('topExpenses', expenses.slice().sort((a,b) => b.castka-a.castka).slice(0,3).map(t => ({title: `${t.popis} · ${czk(t.castka)}`, body: `${fmtD(t.datum)} · ${t.kategorie}`})), 'Žádné výdaje v rozsahu');
 
   // Insighty vždy z celého rozsahu
   const incomeTotal = all.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
