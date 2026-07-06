@@ -56,7 +56,8 @@ window.selectCatFilter = function(cat) {
 };
 
 // SVG sloupcový graf příjmy/výdaje — čitelné hodnoty nad bary, klikací (Ctrl = multi-select)
-function yrChartSVG(monthStats, selected, kFmt) {
+// onclickFn: název window funkce volané jako fn('<month>', event) — sdíleno mezi Grafy (chartDrillMonth) a Přehledem (drillM)
+export function yrChartSVG(monthStats, selected, kFmt, onclickFn = 'chartDrillMonth') {
   const W = Math.max(560, monthStats.length * 64), H = 200, padT = 30, padB = 24, padX = 6;
   const plotH = H - padT - padB;
   const maxRaw = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
@@ -77,7 +78,7 @@ function yrChartSVG(monthStats, selected, kFmt) {
     const cx = padX + groupW * i + groupW / 2;
     const isSel = selected.has(m.month);
     const iY = y(m.income), eY = y(m.expense);
-    return `<g onclick="chartDrillMonth('${m.month}', event)" style="cursor:pointer">
+    return `<g onclick="${onclickFn}('${m.month}', event)" style="cursor:pointer">
       ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 32}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
       <rect x="${cx - barW - 1.5}" y="${iY}" width="${barW}" height="${padT + plotH - iY}" rx="3" fill="var(--green)"/>
       <rect x="${cx + 1.5}" y="${eY}" width="${barW}" height="${padT + plotH - eY}" rx="3" fill="var(--red)"/>

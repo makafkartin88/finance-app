@@ -1,6 +1,9 @@
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
+import { yrChartSVG } from './charts.js';
+
+const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
 export function renderDash() {
   closePopover();
@@ -40,22 +43,18 @@ export function renderDash() {
   m4el.className = 'mv ' + (avgBalance >= 0 ? 'green' : 'red');
   document.getElementById('m4s').textContent = `průměr za ${monthBalances.length} měs.`;
 
-  // Cash flow
+  // Cash flow — čitelný SVG graf (sdílený s Grafy), klikací (Ctrl = multi-select)
   const months = getMonths(base(null,null)).slice(-6);
   const allF = base(null,null);
-  const maxV = Math.max(...months.map(m => {
+  const monthStats = months.map(m => {
     const mt = allF.filter(t => t.mesic === m);
-    return Math.max(mt.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0), mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0));
-  }), 1);
-  document.getElementById('cfChart').innerHTML = months.map(m => {
-    const mt = allF.filter(t => t.mesic === m);
-    const inc = mt.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
-    const ex = mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0);
-    const ih = Math.round((inc/maxV)*100), eh = Math.round((ex/maxV)*100);
-    const isSel = state.drill.months.has(m) ? ' sel' : '';
-    return `<div class="bg${isSel}" onclick="drillM('${m}', event)" title="${m}: Příjmy ${czk(inc)}, Výdaje ${czk(ex)}"><div class="bar" style="height:${ih}px;background:var(--green)"></div><div class="bar" style="height:${eh}px;background:var(--red)"></div></div>`;
-  }).join('');
-  document.getElementById('cfLabels').innerHTML = months.map(m => `<div class="bl">${m.split(' ')[0]}</div>`).join('');
+    return {
+      month: m,
+      income: mt.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0),
+      expense: mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0),
+    };
+  });
+  document.getElementById('cfChart').innerHTML = yrChartSVG(monthStats, state.drill.months, kFmt, 'drillM');
 
   // Cat bars
   const cats = {};
