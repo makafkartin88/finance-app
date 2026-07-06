@@ -100,7 +100,7 @@ function netChartSVG(monthStats, selected, kFmt) {
   const maxAbs = Math.max(...monthStats.map(m => Math.abs(m.income - m.expense)), 1);
   const groupW = (W - padX * 2) / monthStats.length;
   const barW = Math.min(28, groupW * 0.4);
-  const netFmt = n => (n >= 0 ? '+' : '') + kFmt(n);
+  const netFmt = n => (n >= 0 ? '+' : '-') + kFmt(Math.abs(n));
 
   let zero = `<line x1="${padX}" y1="${midY}" x2="${W - padX}" y2="${midY}" stroke="var(--border2)" stroke-width="1"/>`;
   const groups = monthStats.map((m, i) => {
