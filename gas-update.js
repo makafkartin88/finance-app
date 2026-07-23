@@ -78,6 +78,11 @@ function doPost(e) {
       return handleUpsertFund(body);
     }
 
+    // ── REFRESH NAV (scrape aktuálních kurzů z webů fondů) ──
+    if (body.action === 'refreshNav') {
+      return refreshNav();
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -300,6 +305,95 @@ function handleUpsertFund(body) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+// ── REFRESH NAV: scrape aktuálních kurzů fondů z webů CODYA/CONSEQ ──
+// Voláno z appky (action:'refreshNav') NEBO jako time-trigger (týdně).
+// Fondy se oceňují měsíčně; scrape drží aktuální NAV bez ručního re-importu.
+// Sloupce listu Fondy musí odpovídat FOND v js/config.js.
+var FOND_C = { isin: 1, mena: 3, pocetCP: 4, aktualNAV: 8, aktualNAVdatum: 9, aktualHodnotaCZK: 10, kurzEUR: 12 };
+
+// ISIN → veřejná stránka fondu + textová kotva NAV. Ověřeno 2026-07-23.
+var NAV_SOURCES = {
+  'CZ0008042892': { url: 'https://www.codyainvest.cz/nase-fondy/zdr-sicav-a-s-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ0008045333': { url: 'https://www.codyainvest.cz/nase-fondy/ambeat-ii-realitni-podfond-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ0008051224': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ0008051711': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-e', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ1005201499': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-r', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ1005201655': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-e', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ1005202968': { url: 'https://www.codyainvest.cz/nase-fondy/fidurock-retail-parks-fund-trida-pia-a', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ1005100618': { url: 'https://www.conseq.cz/investice/prehled-fondu/conseq-panattoni-logistics-developement-1-czk', anchor: 'Cena za kus' }
+};
+
+function refreshNav() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Fondy');
+    if (!sheet) return jsonOut({ error: 'List Fondy neexistuje — nejdřív naimportuj výpis.' });
+    var data = sheet.getDataRange().getValues();
+    var eur = fetchCnbEur(); // number nebo null
+    var updated = 0, log = [];
+    for (var i = 1; i < data.length; i++) {
+      var isin = String(data[i][FOND_C.isin] || '');
+      var src = NAV_SOURCES[isin];
+      if (!src) continue;
+      var res = scrapeNav(src.url, src.anchor);
+      if (!res || !res.nav) { log.push(isin + ': nenačteno'); continue; }
+      data[i][FOND_C.aktualNAV] = res.nav;
+      if (res.datum) data[i][FOND_C.aktualNAVdatum] = res.datum;
+      var mena = data[i][FOND_C.mena];
+      var kurz = (mena === 'EUR') ? (eur || numCz(data[i][FOND_C.kurzEUR]) || 25) : 1;
+      if (mena === 'EUR' && eur) data[i][FOND_C.kurzEUR] = eur;
+      var pocet = numCz(data[i][FOND_C.pocetCP]);
+      data[i][FOND_C.aktualHodnotaCZK] = Math.round(pocet * res.nav * kurz);
+      updated++;
+      log.push(isin + ': ' + res.nav + (res.datum ? ' (' + res.datum + ')' : ''));
+    }
+    sheet.getDataRange().setValues(data);
+    return jsonOut({ success: true, updated: updated, eur: eur, log: log });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  }
+}
+
+// Stáhne stránku fondu, odstraní HTML tagy a najde NAV (4 desetinná místa)
+// za textovou kotvou + datum platnosti. Defenzivní: vrací null když nenajde.
+function scrapeNav(url, anchor) {
+  try {
+    var html = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FinanceApp/1.0)' } }).getContentText();
+    var text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+    var start = anchor ? text.indexOf(anchor) : 0;
+    if (start < 0) start = 0;
+    var scope = text.substring(start, start + 400); // hledej hned za kotvou
+    var navM = scope.match(/(\d{1,3},\d{4})/);       // NAV = X,XXXX
+    var nav = navM ? parseFloat(navM[1].replace(',', '.')) : null;
+    if (nav !== null && (nav <= 0.1 || nav >= 1000)) nav = null; // sanity
+    // datum s rokem (u CODYA rozsahu "1.5. - 31.5.2026" chytne koncové 31.5.2026)
+    var dm = scope.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+    var datum = dm ? (parseInt(dm[1]) + '.' + parseInt(dm[2]) + '.' + dm[3]) : '';
+    return { nav: nav, datum: datum };
+  } catch (e) { return null; }
+}
+
+// EUR/CZK z oficiálního denního kurzu ČNB (textový feed, bez CORS/klíče)
+function fetchCnbEur() {
+  try {
+    var txt = UrlFetchApp.fetch('https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt',
+      { muteHttpExceptions: true }).getContentText();
+    var lines = txt.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var p = lines[i].split('|'); // země|měna|množství|kód|kurz
+      if (p.length >= 5 && p[3] === 'EUR') {
+        var amount = numCz(p[2]) || 1;
+        return numCz(p[4]) / amount;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function numCz(v) { var n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; }
+function jsonOut(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 // ── GMAIL → DRIVE → SHEET: VÝPLATNÍ PÁSKY ──
 // Spusť ručně nebo nastav time-trigger: Triggers → checkPayslipEmail → Time-driven → Day timer

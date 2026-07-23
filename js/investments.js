@@ -1,6 +1,7 @@
 import { GAS_URL, FOND, FUND_FOCUS } from './config.js';
 import { state } from './state.js';
 import { czk } from './utils.js';
+import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 
 /* ============================================================
@@ -19,6 +20,23 @@ export function invTab(tab, btn) {
   document.querySelectorAll('.inv-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('inv-' + tab)?.classList.add('active');
   if (btn) btn.classList.add('active');
+}
+
+/* ── REFRESH NAV (scrape aktuálních kurzů přes GAS) ── */
+export async function refreshInvNav() {
+  const btn = document.getElementById('invRefreshBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Aktualizuji…'; }
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    toast(`Kurzy aktualizovány (${d.updated} fondů${d.eur ? `, EUR ${d.eur.toFixed(2)}` : ''})`, 'ok');
+    await loadInvestmentData();
+  } catch (e) {
+    toast('Chyba aktualizace kurzů: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Aktualizovat kurzy'; }
+  }
 }
 
 /* ── LOAD ── */
