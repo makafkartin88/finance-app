@@ -73,6 +73,11 @@ function doPost(e) {
       return handleMarkPayslipImported(body);
     }
 
+    // ── UPSERT FUND (merge dle ISIN, list Fondy) ──
+    if (body.action === 'upsertFund') {
+      return handleUpsertFund(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -241,6 +246,51 @@ function handleMarkPayslipImported(body) {
     for (var i = 1; i < data.length; i++) {
       if (data[i][1] === filename && data[i][4] === 'new') {
         sheet.getRange(i + 1, 5).setValue('imported');
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── UPSERT FUND (list Fondy, klíč = ISIN, sloupec B/index 1) ──
+// body.values = pole řádků; každý řádek se sloučí do existujícího dle ISIN.
+// Prázdné buňky ('' nebo null) NEPŘEPISUJÍ existující hodnotu → dvě CODYA PDF
+// (majetkový výpis + transakce) se sloučí do jednoho řádku fondu.
+function handleUpsertFund(body) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Fondy');
+    if (!sheet) {
+      sheet = ss.insertSheet('Fondy');
+      sheet.appendRow(['provider','isin','nazev','mena','pocetCP','nakupNAV','nakupDatum','investovanoCZK','aktualNAV','aktualNAVdatum','aktualHodnotaCZK','poplatek','kurzEUR','hotovostCZK','poznamka']);
+    }
+    var ISIN_COL = 1; // index sloupce isin
+    var data = sheet.getDataRange().getValues();
+    var rows = body.values || [];
+    for (var r = 0; r < rows.length; r++) {
+      var incoming = rows[r];
+      var isin = incoming[ISIN_COL];
+      if (!isin) continue;
+      var foundRow = -1;
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][ISIN_COL] === isin) { foundRow = i; break; }
+      }
+      if (foundRow === -1) {
+        // nový fond → append
+        sheet.appendRow(incoming);
+        data.push(incoming);
+      } else {
+        // merge: přepiš jen neprázdná příchozí pole
+        var existing = data[foundRow];
+        for (var c = 0; c < incoming.length; c++) {
+          var v = incoming[c];
+          if (v !== '' && v !== null && v !== undefined) existing[c] = v;
+        }
+        sheet.getRange(foundRow + 1, 1, 1, existing.length).setValues([existing]);
       }
     }
     return ContentService.createTextOutput(JSON.stringify({ success: true }))
