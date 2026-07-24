@@ -312,15 +312,22 @@ function handleUpsertFund(body) {
 // Sloupce listu Fondy musí odpovídat FOND v js/config.js.
 var FOND_C = { isin: 1, mena: 3, pocetCP: 4, aktualNAV: 8, aktualNAVdatum: 9, aktualHodnotaCZK: 10, kurzEUR: 12 };
 
-// ISIN → veřejná stránka fondu + textová kotva NAV. Ověřeno 2026-07-23.
+// CODYA nemá jednotný popisek napříč fondy — třídy stále v upisovacím
+// období ("Zahájeno/Zahájení upisovací(ho) období") mají jiný text než
+// již obchodované třídy ("Aktuální hodnota/kurz investiční akcie").
+// Zkouší se v pořadí, první nalezená kotva vyhrává. Ověřeno 2026-07-24.
+var CODYA_ANCHORS = ['Aktuální hodnota investiční akcie', 'Aktuální kurz investiční akcie',
+  'Zahájeno upisovací období', 'Zahájení upisovacího období', 'Zahájení upisovací období'];
+
+// ISIN → veřejná stránka fondu + textová kotva/kotvy NAV.
 var NAV_SOURCES = {
-  'CZ0008042892': { url: 'https://www.codyainvest.cz/nase-fondy/zdr-sicav-a-s-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ0008045333': { url: 'https://www.codyainvest.cz/nase-fondy/ambeat-ii-realitni-podfond-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ0008051224': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-a', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ0008051711': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-e', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ1005201499': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-r', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ1005201655': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-e', anchor: 'Aktuální hodnota investiční akcie' },
-  'CZ1005202968': { url: 'https://www.codyainvest.cz/nase-fondy/fidurock-retail-parks-fund-trida-pia-a', anchor: 'Aktuální hodnota investiční akcie' },
+  'CZ0008042892': { url: 'https://www.codyainvest.cz/nase-fondy/zdr-sicav-a-s-trida-a', anchor: CODYA_ANCHORS },
+  'CZ0008045333': { url: 'https://www.codyainvest.cz/nase-fondy/ambeat-ii-realitni-podfond-trida-a', anchor: CODYA_ANCHORS },
+  'CZ0008051224': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-a', anchor: CODYA_ANCHORS },
+  'CZ0008051711': { url: 'https://www.codyainvest.cz/nase-fondy/axelor-fund-watt-build-podfond-trida-e', anchor: CODYA_ANCHORS },
+  'CZ1005201499': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-r', anchor: CODYA_ANCHORS },
+  'CZ1005201655': { url: 'https://www.codyainvest.cz/nase-fondy/direct-pro-sicav-investicni-fond-a-s-direct-pro-podfond-trida-e', anchor: CODYA_ANCHORS },
+  'CZ1005202968': { url: 'https://www.codyainvest.cz/nase-fondy/fidurock-retail-parks-fund-trida-pia-a', anchor: CODYA_ANCHORS },
   'CZ1005100618': { url: 'https://www.conseq.cz/investice/prehled-fondu/conseq-panattoni-logistics-developement-1-czk', anchor: 'Cena za kus' }
 };
 
@@ -441,8 +448,9 @@ function sendNavAlert(failed, log) {
 }
 
 // Stáhne stránku fondu, odstraní HTML tagy a najde NAV (4 desetinná místa)
-// za textovou kotvou + datum platnosti. Vrací {nav, datum, err} — err nese
-// důvod selhání (HTTP status / výjimka / nenalezeno) pro diagnostiku.
+// za textovou kotvou + datum platnosti. `anchor` může být string nebo pole
+// kotev zkoušených v pořadí (CODYA nemá jednotný popisek napříč fondy).
+// Vrací {nav, datum, err} — err nese důvod selhání pro diagnostiku.
 function scrapeNav(url, anchor) {
   try {
     var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true,
@@ -452,17 +460,21 @@ function scrapeNav(url, anchor) {
     if (code !== 200) return { nav: null, err: 'HTTP ' + code };
     var html = resp.getContentText();
     var text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
-    var start = anchor ? text.indexOf(anchor) : 0;
-    if (start < 0) return { nav: null, err: 'kotva "' + anchor + '" nenalezena (JS render?)' };
-    var scope = text.substring(start, start + 400); // hledej hned za kotvou
-    var navM = scope.match(/(\d{1,3},\d{4})/);       // NAV = X,XXXX
-    var nav = navM ? parseFloat(navM[1].replace(',', '.')) : null;
-    if (nav !== null && (nav <= 0.1 || nav >= 1000)) nav = null; // sanity
-    if (nav === null) return { nav: null, err: 'NAV nenalezen za kotvou' };
-    var dm = scope.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
-    var datum = dm ? (parseInt(dm[1]) + '.' + parseInt(dm[2]) + '.' + dm[3]) : '';
-    return { nav: nav, datum: datum };
-  } catch (e) { return null; }
+    var anchors = Array.isArray(anchor) ? anchor : (anchor ? [anchor] : ['']);
+    for (var a = 0; a < anchors.length; a++) {
+      var start = anchors[a] ? text.indexOf(anchors[a]) : 0;
+      if (start < 0) continue;
+      var scope = text.substring(start, start + 400); // hledej hned za kotvou
+      var navM = scope.match(/(\d{1,3},\d{4})/);       // NAV = X,XXXX
+      var nav = navM ? parseFloat(navM[1].replace(',', '.')) : null;
+      if (nav !== null && (nav <= 0.1 || nav >= 1000)) nav = null; // sanity
+      if (nav === null) continue;
+      var dm = scope.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+      var datum = dm ? (parseInt(dm[1]) + '.' + parseInt(dm[2]) + '.' + dm[3]) : '';
+      return { nav: nav, datum: datum };
+    }
+    return { nav: null, err: 'žádná kotva nenalezena (' + anchors.length + ' zkoušeno)' };
+  } catch (e) { return { nav: null, err: e.message }; }
 }
 
 // EUR/CZK z oficiálního denního kurzu ČNB (textový feed, bez CORS/klíče)
