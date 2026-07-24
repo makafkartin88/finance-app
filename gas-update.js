@@ -330,14 +330,16 @@ function refreshNav() {
     var sheet = ss.getSheetByName('Fondy');
     if (!sheet) return jsonOut({ error: 'List Fondy neexistuje — nejdřív naimportuj výpis.' });
     var data = sheet.getDataRange().getValues();
-    var eur = fetchCnbEur(); // number nebo null
+    var eurR = fetchCnbEur(); // { v, err }
+    var eur = eurR.v;
     var updated = 0, log = [], failed = [];
+    if (!eur) log.push('ČNB EUR: ' + (eurR.err || 'nenačteno'));
     for (var i = 1; i < data.length; i++) {
       var isin = String(data[i][FOND_C.isin] || '');
       var src = NAV_SOURCES[isin];
       if (!src) continue;
       var res = scrapeNav(src.url, src.anchor);
-      if (!res || !res.nav) { log.push(isin + ': NENAČTENO'); failed.push(isin); continue; }
+      if (!res || !res.nav) { log.push(isin + ': ' + ((res && res.err) || 'nenačteno')); failed.push(isin); continue; }
       data[i][FOND_C.aktualNAV] = res.nav;
       if (res.datum) data[i][FOND_C.aktualNAVdatum] = res.datum;
       var mena = data[i][FOND_C.mena];
@@ -352,7 +354,7 @@ function refreshNav() {
 
     // S&P 500 benchmark → list Trh (per provider: startDate, spStart, spCurrent)
     var market = updateMarket(ss, data);
-    if (!market) failed.push('S&P500');
+    if (!market.ok) { failed.push('S&P500'); log.push(market.err || 'S&P: nenačteno'); }
 
     // Upozornění e-mailem když scrape selže (funguje hlavně pro týdenní trigger;
     // při ručním volání z appky se stav vrací i v JSON logu).
@@ -366,11 +368,12 @@ function refreshNav() {
 }
 
 // Stáhne S&P 500 z Yahoo Finance a zapíše do listu "Trh" per provider:
-// [provider, startDate, spStart, spCurrent, spCurrentDate]. Vrací true/false.
+// [provider, startDate, spStart, spCurrent, spCurrentDate]. Vrací {ok, err}.
 function updateMarket(ss, fondyData) {
   try {
-    var sp = fetchSP500();
-    if (!sp) return false;
+    var spR = fetchSP500();
+    if (!spR.pairs) return { ok: false, err: 'S&P: ' + (spR.err || 'nenačteno') };
+    var sp = spR;
     // seskupit fondy dle providera → nejstarší datum nákupu
     var byProv = {};
     for (var i = 1; i < fondyData.length; i++) {
@@ -390,23 +393,25 @@ function updateMarket(ss, fondyData) {
       sheet.appendRow([prov, Utilities.formatDate(start, 'Europe/Prague', 'd.M.yyyy'),
         spStart || '', sp.current, curDate]);
     }
-    return true;
-  } catch (e) { return false; }
+    return { ok: true };
+  } catch (e) { return { ok: false, err: 'S&P zápis: ' + e.message }; }
 }
 
 function fetchSP500() {
   try {
     var url = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1y&interval=1d';
     var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    var code = resp.getResponseCode();
+    if (code !== 200) return { err: 'HTTP ' + code };
     var j = JSON.parse(resp.getContentText());
     var r = j.chart.result[0];
     var ts = r.timestamp, cl = r.indicators.quote[0].close;
     var pairs = [];
     for (var i = 0; i < ts.length; i++) if (cl[i] != null) pairs.push({ t: new Date(ts[i] * 1000), c: cl[i] });
-    if (!pairs.length) return null;
+    if (!pairs.length) return { err: 'prázdná data' };
     var current = r.meta && r.meta.regularMarketPrice ? r.meta.regularMarketPrice : pairs[pairs.length - 1].c;
     return { pairs: pairs, current: current, currentDate: pairs[pairs.length - 1].t };
-  } catch (e) { return null; }
+  } catch (e) { return { err: e.message }; }
 }
 
 // S&P close k datu (poslední obchodní den na/před daným datem)
@@ -436,19 +441,24 @@ function sendNavAlert(failed, log) {
 }
 
 // Stáhne stránku fondu, odstraní HTML tagy a najde NAV (4 desetinná místa)
-// za textovou kotvou + datum platnosti. Defenzivní: vrací null když nenajde.
+// za textovou kotvou + datum platnosti. Vrací {nav, datum, err} — err nese
+// důvod selhání (HTTP status / výjimka / nenalezeno) pro diagnostiku.
 function scrapeNav(url, anchor) {
   try {
-    var html = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FinanceApp/1.0)' } }).getContentText();
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        'Accept': 'text/html', 'Accept-Language': 'cs,en' } });
+    var code = resp.getResponseCode();
+    if (code !== 200) return { nav: null, err: 'HTTP ' + code };
+    var html = resp.getContentText();
     var text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
     var start = anchor ? text.indexOf(anchor) : 0;
-    if (start < 0) start = 0;
+    if (start < 0) return { nav: null, err: 'kotva "' + anchor + '" nenalezena (JS render?)' };
     var scope = text.substring(start, start + 400); // hledej hned za kotvou
     var navM = scope.match(/(\d{1,3},\d{4})/);       // NAV = X,XXXX
     var nav = navM ? parseFloat(navM[1].replace(',', '.')) : null;
     if (nav !== null && (nav <= 0.1 || nav >= 1000)) nav = null; // sanity
-    // datum s rokem (u CODYA rozsahu "1.5. - 31.5.2026" chytne koncové 31.5.2026)
+    if (nav === null) return { nav: null, err: 'NAV nenalezen za kotvou' };
     var dm = scope.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
     var datum = dm ? (parseInt(dm[1]) + '.' + parseInt(dm[2]) + '.' + dm[3]) : '';
     return { nav: nav, datum: datum };
@@ -456,20 +466,23 @@ function scrapeNav(url, anchor) {
 }
 
 // EUR/CZK z oficiálního denního kurzu ČNB (textový feed, bez CORS/klíče)
+// Vrací { v, err } — v = kurz nebo null, err = důvod selhání.
 function fetchCnbEur() {
   try {
-    var txt = UrlFetchApp.fetch('https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt',
-      { muteHttpExceptions: true }).getContentText();
-    var lines = txt.split('\n');
+    var resp = UrlFetchApp.fetch('https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt',
+      { muteHttpExceptions: true });
+    var code = resp.getResponseCode();
+    if (code !== 200) return { v: null, err: 'HTTP ' + code };
+    var lines = resp.getContentText().split('\n');
     for (var i = 0; i < lines.length; i++) {
       var p = lines[i].split('|'); // země|měna|množství|kód|kurz
       if (p.length >= 5 && p[3] === 'EUR') {
         var amount = numCz(p[2]) || 1;
-        return numCz(p[4]) / amount;
+        return { v: numCz(p[4]) / amount, err: null };
       }
     }
-  } catch (e) {}
-  return null;
+    return { v: null, err: 'EUR řádek nenalezen' };
+  } catch (e) { return { v: null, err: e.message }; }
 }
 
 function numCz(v) { var n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; }
