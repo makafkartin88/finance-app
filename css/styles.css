@@ -392,6 +392,11 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .portfolio-val{font-size:13px;font-weight:600;text-align:right;min-width:100px}
 .portfolio-pct{font-size:11px;color:var(--text2);min-width:50px;text-align:right}
 .portfolio-total{display:flex;align-items:center;justify-content:space-between;padding:12px 0;font-weight:700;font-size:15px;border-top:2px solid var(--text)}
+.donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.donut-wrap svg circle{transition:opacity .12s}
+.donut-wrap svg:hover circle[stroke-dasharray]{opacity:.55}
+.donut-wrap svg circle[stroke-dasharray]:hover{opacity:1}
+.donut-legend{flex:1;min-width:220px}
 /* ── BTC CARD ── */
 .btc-price{font-size:28px;font-weight:700;letter-spacing:-.5px;margin-bottom:4px}
 .btc-sub{font-size:12px;color:var(--text2)}

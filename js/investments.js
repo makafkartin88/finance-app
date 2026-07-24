@@ -12,6 +12,23 @@ import { isInvestmentsAllowed } from './auth.js';
 
 const DEFAULT_EUR = 25;
 let activeTab = 'codya';
+let _lastRefresh = null; // { updated, failed[], eur, when } — feedback z posledního refreshe
+
+// Google Sheets převádí datumové buňky na Date → GAS je vrací jako ISO
+// timestamp ("2026-04-15T00:00:00.000Z"). Normalizace zpět na "YYYY-MM-DD"
+// TZ-bezpečně (Europe/Prague), aby nedošlo k posunu o den.
+function normDate(v) {
+  const s = String(v || '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.includes('T')) {
+    try { return new Date(s).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' }); } catch (e) {}
+  }
+  const m = s.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+  if (m) return `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  return s.slice(0, 10);
+}
+// "YYYY-MM-DD" → "D.M.YYYY" pro zobrazení
+function czFromIso(iso) { const p = iso.split('-'); return p.length === 3 ? `${+p[2]}.${+p[1]}.${p[0]}` : iso; }
 
 /* ── TABS ── */
 export function invTab(tab, btn) {
@@ -30,14 +47,23 @@ export async function refreshInvNav() {
     const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    toast(`Kurzy aktualizovány (${d.updated} fondů${d.eur ? `, EUR ${d.eur.toFixed(2)}` : ''})`, 'ok');
+    // odfiltruj S&P500 z failed → to je benchmark, ne fond
+    const failedFunds = (d.failed || []).filter(x => /^CZ\d{10}$/.test(x));
+    _lastRefresh = { updated: d.updated || 0, failed: failedFunds, eur: d.eur, when: new Date() };
+    const okMsg = `Aktualizováno ${d.updated} kurzů${d.eur ? ` · EUR ${d.eur.toFixed(2)}` : ''}`;
+    toast(failedFunds.length ? `${okMsg} · ${failedFunds.length} selhalo` : okMsg, failedFunds.length ? 'err' : 'ok');
     await loadInvestmentData();
   } catch (e) {
+    _lastRefresh = { error: e.message, when: new Date() };
     toast('Chyba aktualizace kurzů: ' + e.message, 'err');
+    renderInv();
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Aktualizovat kurzy'; }
   }
 }
+
+// Název fondu z ISIN (pro feedback o selhání)
+function fundName(isin) { const f = (state.investments || []).find(x => x.isin === isin); return f ? f.nazev : isin; }
 
 /* ── LOAD ── */
 export async function loadInvestmentData() {
@@ -58,19 +84,19 @@ export async function loadInvestmentData() {
       spStartCzk: pn(r[5]), spCurrentCzk: pn(r[6])   // devizově korigované (CZK)
     }));
     state.invHist = (fhR.values || []).slice(1).filter(r => r[0] && r[1]).map(r => ({
-      datum: r[0], isin: String(r[1]), provider: r[2], nav: pn(r[3]), hodnotaCZK: pn(r[4])
+      datum: normDate(r[0]), isin: String(r[1]), provider: r[2], nav: pn(r[3]), hodnotaCZK: pn(r[4])
     }));
     state.trhHist = (thR.values || []).slice(1).filter(r => r[0]).map(r => ({
-      datum: r[0], spCzk: pn(r[3]) || pn(r[1])   // preferuj CZK; fallback USD
+      datum: normDate(r[0]), spCzk: pn(r[3]) || pn(r[1])   // preferuj CZK; fallback USD
     })).filter(r => r.spCzk > 0);
     renderInv();
   } catch (e) { /* investice jsou volitelné — neshodit boot */ }
 }
 
-// "26.2.2026" → Date (pro výpočet délky držby)
+// datum (D.M.YYYY nebo ISO) → Date (pro výpočet délky držby)
 function czDate(s) {
-  const m = String(s).match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
-  return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null;
+  const iso = normDate(s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + 'T00:00:00') : null;
 }
 // Anualizace: z výnosu za `days` dní → tempo p.a. (extrapolace)
 function annualize(totalRet, days) {
@@ -115,7 +141,12 @@ export function renderInv() {
 
 /* ── PŘEHLED: alokace + graf vývoje vs S&P ── */
 let _chartSel = 'all';
+let _allocView = 'provider';   // 'provider' | 'funds'
+let _lineCtx = null;           // kontext grafu pro hover
 window.invChartSel = function (v) { _chartSel = v; renderOverview(); };
+window.invAllocView = function (v) { _allocView = v; renderOverview(); };
+
+const CZK_COLORS = ['var(--blue)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#d76593', '#38bdb8', '#e8833a', 'var(--text3)'];
 
 function renderOverview() {
   const el = document.getElementById('inv-overview');
@@ -126,32 +157,72 @@ function renderOverview() {
     return;
   }
 
-  // --- Alokace: CODYA / CONSEQ / hotovost ---
-  const provVal = {};
-  let cash = 0;
-  funds.forEach(f => { provVal[f.provider] = (provVal[f.provider] || 0) + curCZK(f); cash += (f.hotovostCZK || 0); });
-  const segs = [
-    { label: 'CODYA', val: provVal['CODYA'] || 0, color: 'var(--blue)' },
-    { label: 'CONSEQ', val: provVal['CONSEQ'] || 0, color: 'var(--green)' },
-    { label: 'Volná hotovost', val: cash, color: 'var(--text3)' }
-  ].filter(s => s.val > 0);
+  // --- Feedback z poslední aktualizace ---
+  let fb = '';
+  if (_lastRefresh) {
+    if (_lastRefresh.error) {
+      fb = `<div class="card" style="border-left:3px solid var(--red);margin-bottom:16px"><strong style="color:var(--red)">Aktualizace kurzů selhala</strong><div style="font-size:12px;color:var(--text2);margin-top:4px">${_lastRefresh.error}</div></div>`;
+    } else {
+      const t = _lastRefresh.when.toLocaleString('cs-CZ', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' });
+      const fails = (_lastRefresh.failed || []).length
+        ? `<div style="font-size:12px;color:var(--red);margin-top:4px">Nepodařilo se: ${_lastRefresh.failed.map(fundName).join(', ')}</div>` : '';
+      fb = `<div class="card" style="border-left:3px solid ${(_lastRefresh.failed || []).length ? 'var(--amber)' : 'var(--green)'};margin-bottom:16px">
+        <strong>Aktualizováno ${_lastRefresh.updated} kurzů</strong> <span style="font-size:12px;color:var(--text3)">${t}${_lastRefresh.eur ? ` · kurz EUR ${_lastRefresh.eur.toFixed(2)}` : ''}</span>${fails}</div>`;
+    }
+  }
+
+  // --- Alokace (donut s přepínačem poskytovatel / fondy) ---
+  let segs;
+  if (_allocView === 'funds') {
+    segs = funds.slice().sort((a, b) => curCZK(b) - curCZK(a)).map((f, i) => ({ label: f.nazev || f.isin, val: curCZK(f), color: CZK_COLORS[i % CZK_COLORS.length] }));
+    const cashTot = funds.reduce((s, f) => s + (f.hotovostCZK || 0), 0);
+    if (cashTot > 0) segs.push({ label: 'Volná hotovost', val: cashTot, color: 'var(--text3)' });
+  } else {
+    const provVal = {}; let cash = 0;
+    funds.forEach(f => { provVal[f.provider] = (provVal[f.provider] || 0) + curCZK(f); cash += (f.hotovostCZK || 0); });
+    segs = [
+      { label: 'CODYA', val: provVal['CODYA'] || 0, color: 'var(--blue)' },
+      { label: 'CONSEQ', val: provVal['CONSEQ'] || 0, color: 'var(--green)' },
+      { label: 'Volná hotovost', val: cash, color: 'var(--text3)' }
+    ];
+  }
+  segs = segs.filter(s => s.val > 0);
   const totAlloc = segs.reduce((s, x) => s + x.val, 0) || 1;
-  const bar = segs.map(s => `<div style="width:${(s.val / totAlloc * 100).toFixed(1)}%;background:${s.color}"></div>`).join('');
-  const legend = segs.map(s => `<div class="portfolio-row"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`).join('');
   const allocCard = `<div class="card">
-    <div class="card-hdr"><div class="ct">Celková alokace majetku</div></div>
-    <div class="split-track" style="margin-bottom:14px">${bar}</div>
-    ${legend}
-    <div class="portfolio-total"><span>Celkem</span><span>${czk(totAlloc)}</span></div>
+    <div class="card-hdr"><div class="ct">Celková alokace majetku</div>
+      <div class="inv-tabs" style="margin:0"><button class="inv-tab${_allocView === 'provider' ? ' active' : ''}" onclick="invAllocView('provider')">Poskytovatelé</button><button class="inv-tab${_allocView === 'funds' ? ' active' : ''}" onclick="invAllocView('funds')">Fondy</button></div>
+    </div>
+    <div class="donut-wrap">${donutSVG(segs, totAlloc)}
+      <div class="donut-legend">${segs.map(s => `<div class="portfolio-row"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`).join('')}</div>
+    </div>
   </div>`;
 
   // --- Graf vývoje vs S&P ---
-  el.innerHTML = allocCard + `<div class="card" style="margin-top:16px">
+  el.innerHTML = fb + allocCard + `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Vývoj vs. S&amp;P 500 (rebasováno na 100, v CZK)</div>
       <select class="sel" onchange="invChartSel(this.value)">${chartSelOptions()}</select></div>
     <div id="invChart"></div>
   </div>`;
   document.getElementById('invChart').innerHTML = buildChart();
+  attachChartHover();
+}
+
+// SVG donut s hover tooltipem (nativní <title>) + středový součet
+function donutSVG(segs, total) {
+  const r = 52, C = 2 * Math.PI * r;
+  let off = C / 4; // start nahoře
+  const arcs = segs.map(s => {
+    const frac = s.val / total, len = frac * C;
+    const dash = `${len.toFixed(2)} ${(C - len).toFixed(2)}`;
+    const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="20" stroke-dasharray="${dash}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 70 70)"><title>${s.label}: ${czk(s.val)} · ${Math.round(frac * 100)} %</title></circle>`;
+    off -= len;
+    return arc;
+  }).join('');
+  return `<svg viewBox="0 0 140 140" width="150" height="150" style="flex-shrink:0">
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="20"/>${arcs}
+    <text x="70" y="66" text-anchor="middle" font-size="10" fill="var(--text3)">Celkem</text>
+    <text x="70" y="82" text-anchor="middle" font-size="14" font-weight="800" fill="var(--text)">${(total / 1e6).toFixed(2)} M</text>
+  </svg>`;
 }
 
 function chartSelOptions() {
@@ -166,11 +237,11 @@ function histSeries(filterFn) {
   (state.invHist || []).filter(filterFn).forEach(h => { byDate[h.datum] = (byDate[h.datum] || 0) + h.hodnotaCZK; });
   return Object.keys(byDate).sort().map(d => ({ t: d, v: byDate[d] }));
 }
-// Rebase řady na 100 v prvním bodě
+// Rebase řady na 100 v prvním bodě (raw = původní hodnota CZK)
 function rebase(pts) {
   if (!pts.length || !pts[0].v) return [];
   const base = pts[0].v;
-  return pts.map(p => ({ t: p.t, v: p.v / base * 100 }));
+  return pts.map(p => ({ t: p.t, v: p.v / base * 100, raw: p.v }));
 }
 // S&P (CZK) rebasovaná na 100 k danému startovnímu datu
 function spSeries(startISO) {
@@ -179,7 +250,7 @@ function spSeries(startISO) {
   let base = 0;
   for (const r of th) { if (r.datum <= startISO) base = r.spCzk; }
   if (!base) base = th[0].spCzk;
-  return th.filter(r => r.datum >= startISO).map(r => ({ t: r.datum, v: r.spCzk / base * 100 }));
+  return th.filter(r => r.datum >= startISO).map(r => ({ t: r.datum, v: r.spCzk / base * 100, raw: r.spCzk }));
 }
 
 function buildChart() {
@@ -189,56 +260,126 @@ function buildChart() {
   const startOf = s => s.length ? s[0].t : null;
 
   if (_chartSel === 'all') {
-    if (codya.length) series.push({ label: 'CODYA', color: 'var(--blue)', pts: codya });
-    if (conseq.length) series.push({ label: 'CONSEQ', color: 'var(--green)', pts: conseq });
+    if (codya.length) series.push({ label: 'CODYA', color: 'var(--blue)', pts: codya, money: true });
+    if (conseq.length) series.push({ label: 'CONSEQ', color: 'var(--green)', pts: conseq, money: true });
     const earliest = [startOf(codya), startOf(conseq)].filter(Boolean).sort()[0];
     if (earliest) series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(earliest) });
   } else if (_chartSel === 'CODYA' || _chartSel === 'CONSEQ') {
     const s = _chartSel === 'CODYA' ? codya : conseq;
-    if (s.length) { series.push({ label: _chartSel, color: 'var(--blue)', pts: s }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
+    if (s.length) { series.push({ label: _chartSel, color: 'var(--blue)', pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
   } else if (_chartSel.startsWith('isin:')) {
     const isin = _chartSel.slice(5);
     const s = rebase(histSeries(h => h.isin === isin));
-    if (s.length) { series.push({ label: (state.investments.find(f => f.isin === isin) || {}).nazev || isin, color: 'var(--purple)', pts: s }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
+    if (s.length) { series.push({ label: (state.investments.find(f => f.isin === isin) || {}).nazev || isin, color: 'var(--purple)', pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
   }
   return lineChartSVG(series);
 }
 
-// SVG multi-line graf. series: [{label,color,pts:[{t:'YYYY-MM-DD',v}]}] (rebased)
+// SVG multi-line graf. series: [{label,color,pts:[{t,v,raw}],money}] (rebased)
 function lineChartSVG(series) {
   const withPts = series.filter(s => s.pts && s.pts.length);
+  _lineCtx = null;
   if (!withPts.length) return `<div class="empty" style="padding:32px 0">Historie se zatím sbírá — po pár aktualizacích kurzů se tu objeví křivky. (Klikni na „🔄 Aktualizovat kurzy".)</div>`;
-  const W = 720, H = 260, padL = 40, padR = 12, padT = 16, padB = 40;
+  const W = 720, H = 260, padL = 40, padR = 14, padT = 16, padB = 34;
   const allDates = [...new Set(withPts.flatMap(s => s.pts.map(p => p.t)))].sort();
   const t2i = {}; allDates.forEach((d, i) => t2i[d] = i);
   const xN = Math.max(allDates.length - 1, 1);
   const vals = withPts.flatMap(s => s.pts.map(p => p.v));
   const vMin = Math.min(...vals, 100), vMax = Math.max(...vals, 100);
-  const pad = (vMax - vMin) * 0.1 || 5;
+  const pad = (vMax - vMin) * 0.12 || 5;
   const lo = vMin - pad, hi = vMax + pad;
   const x = i => padL + (i / xN) * (W - padL - padR);
   const y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
 
-  // mřížka: 100 (baseline) + min/max
+  // vodorovná mřížka: 100 (baseline) + hi + lo
   let grid = '';
-  [100, hi, lo].forEach(gv => {
-    grid += `<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="var(--border)" stroke-width="${gv === 100 ? 1.5 : 1}" ${gv === 100 ? '' : 'stroke-dasharray="3 3"'}/>
+  [lo, 100, hi].forEach(gv => {
+    grid += `<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="var(--border)" stroke-width="${gv === 100 ? 1.5 : 1}"${gv === 100 ? '' : ' stroke-dasharray="3 3"'}/>
       <text x="${padL - 5}" y="${y(gv) + 3}" text-anchor="end" font-size="9" fill="var(--text3)">${Math.round(gv)}</text>`;
   });
-  // osa X: první a poslední datum
-  const fmtD = iso => { const p = iso.split('-'); return p[2] + '.' + p[1] + '.'; };
-  grid += `<text x="${padL}" y="${H - padB + 16}" font-size="9" fill="var(--text3)">${fmtD(allDates[0])}</text>
-    <text x="${W - padR}" y="${H - padB + 16}" text-anchor="end" font-size="9" fill="var(--text3)">${fmtD(allDates[allDates.length - 1])}</text>`;
+  // osa X: svislé rysky na začátku každého měsíce + popisek M/RR
+  let prevMon = '';
+  allDates.forEach((d, i) => {
+    const mon = d.slice(0, 7); // YYYY-MM
+    if (mon !== prevMon) {
+      prevMon = mon;
+      const p = d.split('-');
+      grid += `<line x1="${x(i).toFixed(1)}" y1="${padT}" x2="${x(i).toFixed(1)}" y2="${H - padB}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 4" opacity="0.5"/>
+        <text x="${x(i).toFixed(1)}" y="${H - padB + 15}" text-anchor="middle" font-size="9" fill="var(--text3)">${+p[1]}/${p[0].slice(2)}</text>`;
+    }
+  });
 
   const lines = withPts.map(s => {
     const d = s.pts.map((p, i) => `${i ? 'L' : 'M'}${x(t2i[p.t]).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
-    const dots = s.pts.length <= 12 ? s.pts.map(p => `<circle cx="${x(t2i[p.t]).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5" fill="${s.color}"/>`).join('') : '';
+    const dots = s.pts.length <= 14 ? s.pts.map(p => `<circle cx="${x(t2i[p.t]).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5" fill="${s.color}"/>`).join('') : '';
     const last = s.pts[s.pts.length - 1];
     return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}
       <text x="${(x(t2i[last.t]) - 2).toFixed(1)}" y="${(y(last.v) - 5).toFixed(1)}" text-anchor="end" font-size="9" font-weight="700" fill="${s.color}">${last.v.toFixed(0)}</text>`;
   }).join('');
   const legend = `<div class="legend" style="margin-top:8px">${withPts.map(s => `<div class="li"><div class="ld" style="background:${s.color};border-radius:3px"></div>${s.label}${s.pts.length === 1 ? ' (1 bod)' : ''}</div>`).join('')}</div>`;
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${lines}</svg>${legend}`;
+
+  // kontext pro hover
+  _lineCtx = { series: withPts, allDates, t2i, W, H, padL, padR, padT, padB, lo, hi, xN };
+
+  return `<div id="invChartWrap" style="position:relative">
+    <svg id="invChartSvg" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}
+      <line id="invCrosshair" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="var(--text3)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
+      <g id="invHoverDots"></g>${lines}</svg>
+    <div id="invChartTip" style="position:absolute;display:none;pointer-events:none;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:7px 9px;font-size:11px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:5;white-space:nowrap"></div>
+  </div>${legend}`;
+}
+
+// Hodnota série k danému indexu data (lineární interpolace mezi body)
+function seriesValueAt(s, idx, t2i) {
+  const pts = s.pts.map(p => ({ i: t2i[p.t], v: p.v, raw: p.raw })).sort((a, b) => a.i - b.i);
+  if (idx <= pts[0].i) return null;              // před začátkem série → nezobrazuj
+  if (idx >= pts[pts.length - 1].i) return pts[pts.length - 1];
+  for (let k = 1; k < pts.length; k++) {
+    if (idx <= pts[k].i) {
+      const a = pts[k - 1], b = pts[k], f = (idx - a.i) / (b.i - a.i);
+      return { i: idx, v: a.v + (b.v - a.v) * f, raw: a.raw + (b.raw - a.raw) * f };
+    }
+  }
+  return pts[pts.length - 1];
+}
+
+function attachChartHover() {
+  const svg = document.getElementById('invChartSvg');
+  const tip = document.getElementById('invChartTip');
+  const cross = document.getElementById('invCrosshair');
+  const dotsG = document.getElementById('invHoverDots');
+  if (!svg || !_lineCtx) return;
+  const ctx = _lineCtx;
+  const xPix = i => ctx.padL + (i / ctx.xN) * (ctx.W - ctx.padL - ctx.padR);
+  const yPix = v => ctx.padT + (1 - (v - ctx.lo) / (ctx.hi - ctx.lo)) * (ctx.H - ctx.padT - ctx.padB);
+
+  svg.addEventListener('mousemove', e => {
+    const rect = svg.getBoundingClientRect();
+    const vbX = (e.clientX - rect.left) / rect.width * ctx.W;   // do viewBox souřadnic
+    let idx = Math.round((vbX - ctx.padL) / (ctx.W - ctx.padL - ctx.padR) * ctx.xN);
+    idx = Math.max(0, Math.min(ctx.allDates.length - 1, idx));
+    const date = ctx.allDates[idx];
+    const cx = xPix(idx);
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.style.display = '';
+    let dots = '', rows = '';
+    ctx.series.forEach(s => {
+      const val = seriesValueAt(s, idx, ctx.t2i);
+      if (!val) return;
+      dots += `<circle cx="${cx.toFixed(1)}" cy="${yPix(val.v).toFixed(1)}" r="3.5" fill="${s.color}" stroke="var(--surface)" stroke-width="1.5"/>`;
+      const dpct = val.v - 100;
+      rows += `<div style="display:flex;gap:8px;justify-content:space-between"><span style="color:${s.color};font-weight:600">${s.label}</span><span>${dpct >= 0 ? '+' : ''}${dpct.toFixed(1).replace('.', ',')} %${s.money ? ' · ' + czk(Math.round(val.raw)) : ''}</span></div>`;
+    });
+    dotsG.innerHTML = dots;
+    tip.innerHTML = `<div style="font-weight:700;margin-bottom:3px">${czFromIso(date)}</div>${rows}`;
+    tip.style.display = 'block';
+    // umísti tooltip poblíž kurzoru (v pixelech kontejneru)
+    const wrapRect = document.getElementById('invChartWrap').getBoundingClientRect();
+    let left = e.clientX - wrapRect.left + 12;
+    if (left + 160 > wrapRect.width) left = e.clientX - wrapRect.left - 160;
+    tip.style.left = Math.max(0, left) + 'px';
+    tip.style.top = (e.clientY - wrapRect.top + 12) + 'px';
+  });
+  svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; cross.style.display = 'none'; dotsG.innerHTML = ''; });
 }
 
 function renderProviderView(tabId, provider) {
@@ -311,8 +452,17 @@ function renderProviderView(tabId, provider) {
       const mktRet = spB / spA - 1;
       const mktAnn = annualize(mktRet, mDays);
       const diffPP = (periodRet - mktRet) * 100;    // procentní body za období
+      // Debug rozklad: index v USD × pohyb kurzu USD/CZK = výsledek v CZK
+      let debug = '';
+      if (useCzk && mkt.spStart > 0) {
+        const idxUsdPct = (mkt.spCurrent / mkt.spStart - 1) * 100;
+        const fxStart = mkt.spStartCzk / mkt.spStart, fxCur = mkt.spCurrentCzk / mkt.spCurrent;
+        const fxPct = (fxCur / fxStart - 1) * 100;
+        debug = `<div style="font-size:11px;color:var(--text3);margin:2px 0 0 12px;line-height:1.6">
+          ↳ index ${idxUsdPct >= 0 ? '+' : ''}${idxUsdPct.toFixed(1).replace('.', ',')} % (USD) × kurz USD/CZK ${fxStart.toFixed(2).replace('.', ',')}→${fxCur.toFixed(2).replace('.', ',')} (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(1).replace('.', ',')} %) = ${pctTxt(mktRet * 100)} v CZK</div>`;
+      }
       mktRows = `
-        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh${useCzk ? ' (v CZK)' : ''} · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>
+        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh${useCzk ? ' (v CZK)' : ''} · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>${debug}
         <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500${useCzk ? ' (korigováno kurzem USD/CZK)' : ''} za ${perLabel}.</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
     } else {
       mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po kliknutí na „🔄 Aktualizovat kurzy".</div>`;
@@ -329,6 +479,6 @@ function renderProviderView(tabId, provider) {
     <div class="card-hdr"><div class="ct">Fondy — nákupní vs. aktuální cena</div></div>
     <div class="tw"><table><thead><tr><th>Fond</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${cashRow}
-    <div style="font-size:11px;color:var(--text3);margin-top:12px">Aktuální NAV k datu posledního výpisu (${funds[0].aktualNAVdatum || '—'}). Tyto fondy se oceňují měsíčně, nejde o realtime kurz.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Aktuální NAV k datu ${funds[0].aktualNAVdatum || '—'}${_lastRefresh && !_lastRefresh.error ? ` · 🔄 staženo z webu ${_lastRefresh.when.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}. Tyto fondy se oceňují měsíčně, nejde o realtime kurz.</div>
   </div>`;
 }
