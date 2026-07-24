@@ -209,17 +209,16 @@ export function renderCharts() {
   }), 'Žádné měsíce v rozsahu');
   renderInsightRows('topExpenses', expenses.slice().sort((a,b) => b.castka-a.castka).slice(0,3).map(t => ({title: `${t.popis} · ${czk(t.castka)}`, body: `${fmtD(t.datum)} · ${t.kategorie}`})), 'Žádné výdaje v rozsahu');
 
-  // Insighty vždy z celého rozsahu
-  const incomeTotal = all.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
-  const allTotalExpense = all.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0);
-  const bestRate = monthStats.slice().sort((a,b) => b.rate-a.rate)[0];
-  const worstSpend = monthStats.slice().sort((a,b) => b.expense-a.expense)[0];
-  renderInsightRows('chartInsights', [
-    {title: 'Bilance rozsahu', body: `Příjmy ${czk(incomeTotal)}, výdaje ${czk(allTotalExpense)} a čistá rezerva ${czk(incomeTotal-allTotalExpense)}.`},
-    {title: 'Nejzdravější měsíc', body: bestRate ? `${bestRate.month} měl míru úspor ${bestRate.rate} %.` : 'Bez dat.'},
-    {title: 'Nejnáročnější měsíc', body: worstSpend ? `${worstSpend.month} spolkl ${czk(worstSpend.expense)}.` : 'Bez dat.'}
-  ], 'Žádné insighty');
-
+  // Bilance — tři boxy (příjmy / výdaje / rezerva), reaguje na filtry
+  // (osoba + rozsah přes base(), i drill na měsíc → počítá z 'detail')
+  const incomeSel = detail.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
+  const reserve = incomeSel - totalExpense;
+  const scopeLabel = _chartMonths.size ? [..._chartMonths].join(', ') : 'celý rozsah';
+  const balEl = document.getElementById('chartInsights');
+  if (balEl) balEl.innerHTML = `
+    <div class="metric-row"><div><strong>Celkové příjmy</strong><span>${scopeLabel}</span></div><strong class="ap">+${czk(incomeSel)}</strong></div>
+    <div class="metric-row"><div><strong>Celkové výdaje</strong><span>${scopeLabel}</span></div><strong class="an">−${czk(totalExpense)}</strong></div>
+    <div class="metric-row"><div><strong>Čistá rezerva</strong><span>příjmy − výdaje</span></div><strong class="${reserve >= 0 ? 'ap' : 'an'}">${reserve >= 0 ? '+' : '−'}${czk(Math.abs(reserve))}</strong></div>`;
 }
 
 // Bilance společných příspěvků (kladné = Martin přispěl víc).
