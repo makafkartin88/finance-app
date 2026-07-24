@@ -43,12 +43,31 @@ export async function refreshInvNav() {
 export async function loadInvestmentData() {
   if (!isInvestmentsAllowed()) { state.investments = []; renderInv(); return; }
   try {
-    const r = await fetch(GAS_URL + '?sheet=Fondy');
-    const d = await r.json();
-    if (d.error) { state.investments = []; renderInv(); return; } // list ještě neexistuje
-    state.investments = (d.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin));
+    const [fR, tR] = await Promise.all([
+      fetch(GAS_URL + '?sheet=Fondy').then(r => r.json()).catch(() => ({ error: 1 })),
+      fetch(GAS_URL + '?sheet=Trh').then(r => r.json()).catch(() => ({ values: [] }))
+    ]);
+    if (fR.error) { state.investments = []; state.market = []; renderInv(); return; }
+    state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin));
+    state.market = (tR.values || []).slice(1).filter(r => r[0]).map(r => ({
+      provider: r[0], startDate: r[1],
+      spStart: parseFloat(String(r[2]).replace(',', '.')) || 0,
+      spCurrent: parseFloat(String(r[3]).replace(',', '.')) || 0,
+      spCurrentDate: r[4] || ''
+    }));
     renderInv();
   } catch (e) { /* investice jsou volitelné — neshodit boot */ }
+}
+
+// "26.2.2026" → Date (pro výpočet délky držby)
+function czDate(s) {
+  const m = String(s).match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+  return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null;
+}
+// Anualizace: z výnosu za `days` dní → tempo p.a. (extrapolace)
+function annualize(totalRet, days) {
+  if (!days || days < 1) return 0;
+  return (Math.pow(1 + totalRet, 365 / days) - 1) * 100;
 }
 
 function parseFundRow(r) {
@@ -131,7 +150,41 @@ function renderProviderView(tabId, provider) {
 
   const cashRow = cash ? `<div class="metric-row" style="margin-top:12px"><div><strong>Volná hotovost</strong><span>nezainvestováno u ${provider}</span></div><strong>${czk(cash)}</strong></div>` : '';
 
-  el.innerHTML = cards + `<div class="card" style="margin-top:16px">
+  // ── VÝKONNOST & SROVNÁNÍ (období, anualizace, S&P 500) ──
+  const SAVINGS_PA = 4; // referenční spořák % p.a. (orientační)
+  const startDates = funds.map(f => czDate(f.nakupDatum)).filter(Boolean);
+  const navDates = funds.map(f => czDate(f.aktualNAVdatum)).filter(Boolean);
+  const startDate = startDates.length ? new Date(Math.min(...startDates)) : null;
+  const navDate = navDates.length ? new Date(Math.max(...navDates)) : new Date();
+  let compCard = '';
+  if (startDate && invested > 0) {
+    const days = Math.max(Math.round((navDate - startDate) / 864e5), 1);
+    const months = (days / 30.44);
+    const periodRet = gain / invested;              // frakce
+    const annPct = annualize(periodRet, days);
+    const perLabel = months >= 1.5 ? `${months.toFixed(1).replace('.', ',')} měsíce` : `${days} dní`;
+    const mkt = (state.market || []).find(m => m.provider === provider);
+    let mktRows = '';
+    if (mkt && mkt.spStart > 0 && mkt.spCurrent > 0) {
+      const mDays = Math.max(days, 1);
+      const mktRet = mkt.spCurrent / mkt.spStart - 1;
+      const mktAnn = annualize(mktRet, mDays);
+      const diffPP = (periodRet - mktRet) * 100;    // procentní body za období
+      mktRows = `
+        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>
+        <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500 za ${perLabel}.</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
+    } else {
+      mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po kliknutí na „🔄 Aktualizovat kurzy".</div>`;
+    }
+    compCard = `<div class="card" style="margin-top:16px">
+      <div class="card-hdr"><div class="ct">Výkonnost &amp; srovnání</div></div>
+      <div class="metric-row"><div><strong>Zhodnocení fondů</strong><span>za ${perLabel} · tempo ~${annPct.toFixed(1).replace('.', ',')} % p.a. (extrapolace)</span></div><strong class="${periodRet >= 0 ? 'ap' : 'an'}">${pctTxt(periodRet * 100)}</strong></div>
+      <div class="metric-row"><div><strong>Typický spořicí účet</strong><span>orientační reference</span></div><strong style="color:var(--text2)">~${SAVINGS_PA} % p.a.</strong></div>
+      ${mktRows}
+    </div>`;
+  }
+
+  el.innerHTML = cards + compCard + `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Fondy — nákupní vs. aktuální cena</div></div>
     <div class="tw"><table><thead><tr><th>Fond</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${cashRow}

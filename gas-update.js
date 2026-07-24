@@ -331,13 +331,13 @@ function refreshNav() {
     if (!sheet) return jsonOut({ error: 'List Fondy neexistuje — nejdřív naimportuj výpis.' });
     var data = sheet.getDataRange().getValues();
     var eur = fetchCnbEur(); // number nebo null
-    var updated = 0, log = [];
+    var updated = 0, log = [], failed = [];
     for (var i = 1; i < data.length; i++) {
       var isin = String(data[i][FOND_C.isin] || '');
       var src = NAV_SOURCES[isin];
       if (!src) continue;
       var res = scrapeNav(src.url, src.anchor);
-      if (!res || !res.nav) { log.push(isin + ': nenačteno'); continue; }
+      if (!res || !res.nav) { log.push(isin + ': NENAČTENO'); failed.push(isin); continue; }
       data[i][FOND_C.aktualNAV] = res.nav;
       if (res.datum) data[i][FOND_C.aktualNAVdatum] = res.datum;
       var mena = data[i][FOND_C.mena];
@@ -349,10 +349,90 @@ function refreshNav() {
       log.push(isin + ': ' + res.nav + (res.datum ? ' (' + res.datum + ')' : ''));
     }
     sheet.getDataRange().setValues(data);
-    return jsonOut({ success: true, updated: updated, eur: eur, log: log });
+
+    // S&P 500 benchmark → list Trh (per provider: startDate, spStart, spCurrent)
+    var market = updateMarket(ss, data);
+    if (!market) failed.push('S&P500');
+
+    // Upozornění e-mailem když scrape selže (funguje hlavně pro týdenní trigger;
+    // při ručním volání z appky se stav vrací i v JSON logu).
+    if (failed.length) sendNavAlert(failed, log);
+
+    return jsonOut({ success: true, updated: updated, eur: eur, failed: failed, log: log });
   } catch (err) {
+    try { sendNavAlert(['VÝJIMKA'], [err.message]); } catch (e2) {}
     return jsonOut({ error: err.message });
   }
+}
+
+// Stáhne S&P 500 z Yahoo Finance a zapíše do listu "Trh" per provider:
+// [provider, startDate, spStart, spCurrent, spCurrentDate]. Vrací true/false.
+function updateMarket(ss, fondyData) {
+  try {
+    var sp = fetchSP500();
+    if (!sp) return false;
+    // seskupit fondy dle providera → nejstarší datum nákupu
+    var byProv = {};
+    for (var i = 1; i < fondyData.length; i++) {
+      var prov = fondyData[i][0]; // FOND.provider = 0
+      var d = parseCzDate(fondyData[i][6]); // FOND.nakupDatum = 6
+      if (!prov || !d) continue;
+      if (!byProv[prov] || d < byProv[prov]) byProv[prov] = d;
+    }
+    var sheet = ss.getSheetByName('Trh');
+    if (!sheet) sheet = ss.insertSheet('Trh');
+    sheet.clear();
+    sheet.appendRow(['provider', 'startDate', 'spStart', 'spCurrent', 'spCurrentDate']);
+    var curDate = Utilities.formatDate(sp.currentDate, 'Europe/Prague', 'd.M.yyyy');
+    for (var prov in byProv) {
+      var start = byProv[prov];
+      var spStart = spCloseOnOrBefore(sp, start);
+      sheet.appendRow([prov, Utilities.formatDate(start, 'Europe/Prague', 'd.M.yyyy'),
+        spStart || '', sp.current, curDate]);
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+function fetchSP500() {
+  try {
+    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1y&interval=1d';
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    var j = JSON.parse(resp.getContentText());
+    var r = j.chart.result[0];
+    var ts = r.timestamp, cl = r.indicators.quote[0].close;
+    var pairs = [];
+    for (var i = 0; i < ts.length; i++) if (cl[i] != null) pairs.push({ t: new Date(ts[i] * 1000), c: cl[i] });
+    if (!pairs.length) return null;
+    var current = r.meta && r.meta.regularMarketPrice ? r.meta.regularMarketPrice : pairs[pairs.length - 1].c;
+    return { pairs: pairs, current: current, currentDate: pairs[pairs.length - 1].t };
+  } catch (e) { return null; }
+}
+
+// S&P close k datu (poslední obchodní den na/před daným datem)
+function spCloseOnOrBefore(sp, date) {
+  var best = null;
+  for (var i = 0; i < sp.pairs.length; i++) {
+    if (sp.pairs[i].t <= date) best = sp.pairs[i].c; else break;
+  }
+  return best;
+}
+
+// "26.2.2026" → Date
+function parseCzDate(s) {
+  var m = String(s).match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+  return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : null;
+}
+
+// Upozornění na selhání scrapu (jen když umíme zjistit adresu — bez PII v repu)
+function sendNavAlert(failed, log) {
+  try {
+    var to = Session.getEffectiveUser().getEmail();
+    if (!to) return; // ruční volání z web appky nemá uživatele → přeskočit (stav je v JSON)
+    MailApp.sendEmail(to, 'Finance App: aktualizace kurzů selhala',
+      'Nepodařilo se načíst: ' + failed.join(', ') + '\n\nLog:\n' + log.join('\n') +
+      '\n\nZkontroluj, jestli nezměnily web CODYA/CONSEQ (parser v NAV_SOURCES).');
+  } catch (e) {}
 }
 
 // Stáhne stránku fondu, odstraní HTML tagy a najde NAV (4 desetinná místa)
