@@ -142,9 +142,16 @@ export function renderInv() {
 /* ── PŘEHLED: alokace + graf vývoje vs S&P ── */
 let _chartSel = 'all';
 let _allocView = 'provider';   // 'provider' | 'funds'
+let _allocSel = null;          // vybraný výsek koláče (klíč: 'CODYA'|'CONSEQ'|'Volná hotovost'|'isin:...')
 let _lineCtx = null;           // kontext grafu pro hover
-window.invChartSel = function (v) { _chartSel = v; renderOverview(); };
+window.invChartSel = function (v) { _chartSel = v; _allocSel = (v === 'all') ? null : v; renderOverview(); };
 window.invAllocView = function (v) { _allocView = v; renderOverview(); };
+// Klik na výsek/řádek alokace → zvýraznění + filtr grafu (druhý klik zruší)
+window.invAllocPick = function (key) {
+  _allocSel = (_allocSel === key) ? null : key;
+  _chartSel = (!_allocSel || _allocSel === 'Volná hotovost') ? 'all' : _allocSel;
+  renderOverview();
+};
 
 const CZK_COLORS = ['var(--blue)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#d76593', '#38bdb8', '#e8833a', 'var(--text3)'];
 
@@ -174,16 +181,16 @@ function renderOverview() {
   // --- Alokace (donut s přepínačem poskytovatel / fondy) ---
   let segs;
   if (_allocView === 'funds') {
-    segs = funds.slice().sort((a, b) => curCZK(b) - curCZK(a)).map((f, i) => ({ label: f.nazev || f.isin, val: curCZK(f), color: CZK_COLORS[i % CZK_COLORS.length] }));
+    segs = funds.slice().sort((a, b) => curCZK(b) - curCZK(a)).map((f, i) => ({ label: f.nazev || f.isin, key: 'isin:' + f.isin, val: curCZK(f), color: CZK_COLORS[i % CZK_COLORS.length] }));
     const cashTot = funds.reduce((s, f) => s + (f.hotovostCZK || 0), 0);
-    if (cashTot > 0) segs.push({ label: 'Volná hotovost', val: cashTot, color: 'var(--text3)' });
+    if (cashTot > 0) segs.push({ label: 'Volná hotovost', key: 'Volná hotovost', val: cashTot, color: 'var(--text3)' });
   } else {
     const provVal = {}; let cash = 0;
     funds.forEach(f => { provVal[f.provider] = (provVal[f.provider] || 0) + curCZK(f); cash += (f.hotovostCZK || 0); });
     segs = [
-      { label: 'CODYA', val: provVal['CODYA'] || 0, color: 'var(--blue)' },
-      { label: 'CONSEQ', val: provVal['CONSEQ'] || 0, color: 'var(--green)' },
-      { label: 'Volná hotovost', val: cash, color: 'var(--text3)' }
+      { label: 'CODYA', key: 'CODYA', val: provVal['CODYA'] || 0, color: 'var(--blue)' },
+      { label: 'CONSEQ', key: 'CONSEQ', val: provVal['CONSEQ'] || 0, color: 'var(--green)' },
+      { label: 'Volná hotovost', key: 'Volná hotovost', val: cash, color: 'var(--text3)' }
     ];
   }
   segs = segs.filter(s => s.val > 0);
@@ -192,8 +199,11 @@ function renderOverview() {
     <div class="card-hdr"><div class="ct">Celková alokace majetku</div>
       <div class="inv-tabs" style="margin:0"><button class="inv-tab${_allocView === 'provider' ? ' active' : ''}" onclick="invAllocView('provider')">Poskytovatelé</button><button class="inv-tab${_allocView === 'funds' ? ' active' : ''}" onclick="invAllocView('funds')">Fondy</button></div>
     </div>
-    <div class="donut-wrap">${donutSVG(segs, totAlloc)}
-      <div class="donut-legend">${segs.map(s => `<div class="portfolio-row"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`).join('')}</div>
+    <div class="donut-wrap">${donutSVG(segs, totAlloc, _allocSel)}
+      <div class="donut-legend">${segs.map(s => {
+        const sel = _allocSel === s.key;
+        return `<div class="portfolio-row alloc-row${sel ? ' sel' : ''}" onclick="invAllocPick('${s.key}')" style="cursor:pointer${sel ? `;border-left:3px solid ${s.color};padding-left:8px;background:var(--surface2)` : ''}"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`;
+      }).join('')}</div>
     </div>
   </div>`;
 
@@ -207,21 +217,26 @@ function renderOverview() {
   attachChartHover();
 }
 
-// SVG donut s hover tooltipem (nativní <title>) + středový součet
-function donutSVG(segs, total) {
+// SVG donut — klikací výseky (filtr grafu), hover tooltip, středový součet.
+// selKey = vybraný výsek → zvýrazní se (silnější), ostatní ztlumí.
+function donutSVG(segs, total, selKey) {
   const r = 52, C = 2 * Math.PI * r;
   let off = C / 4; // start nahoře
   const arcs = segs.map(s => {
     const frac = s.val / total, len = frac * C;
     const dash = `${len.toFixed(2)} ${(C - len).toFixed(2)}`;
-    const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="20" stroke-dasharray="${dash}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 70 70)"><title>${s.label}: ${czk(s.val)} · ${Math.round(frac * 100)} %</title></circle>`;
+    const isSel = selKey === s.key;
+    const dim = selKey && !isSel;
+    const sw = isSel ? 25 : 20;
+    const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${dash}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 70 70)" onclick="invAllocPick('${s.key}')" style="cursor:pointer"${dim ? ' opacity="0.3"' : ''}><title>${s.label}: ${czk(s.val)} · ${Math.round(frac * 100)} %${selKey ? ' — klik zruší filtr' : ' — klik = filtr grafu'}</title></circle>`;
     off -= len;
     return arc;
   }).join('');
+  const center = selKey
+    ? (() => { const s = segs.find(x => x.key === selKey); return s ? `<text x="70" y="66" text-anchor="middle" font-size="9" fill="var(--text3)">${Math.round(s.val / total * 100)} %</text><text x="70" y="82" text-anchor="middle" font-size="12" font-weight="800" fill="var(--text)">${(s.val / 1e6).toFixed(2)} M</text>` : ''; })()
+    : `<text x="70" y="66" text-anchor="middle" font-size="10" fill="var(--text3)">Celkem</text><text x="70" y="82" text-anchor="middle" font-size="14" font-weight="800" fill="var(--text)">${(total / 1e6).toFixed(2)} M</text>`;
   return `<svg viewBox="0 0 140 140" width="150" height="150" style="flex-shrink:0">
-    <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="20"/>${arcs}
-    <text x="70" y="66" text-anchor="middle" font-size="10" fill="var(--text3)">Celkem</text>
-    <text x="70" y="82" text-anchor="middle" font-size="14" font-weight="800" fill="var(--text)">${(total / 1e6).toFixed(2)} M</text>
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="20"/>${arcs}${center}
   </svg>`;
 }
 
