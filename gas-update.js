@@ -359,9 +359,15 @@ function refreshNav() {
     }
     sheet.getDataRange().setValues(data);
 
-    // S&P 500 benchmark → list Trh (per provider: startDate, spStart, spCurrent)
-    var market = updateMarket(ss, data);
+    // S&P 500 + USD/CZK z Yahoo (jednou, sdíleno pro summary i historii)
+    var sp = fetchYahoo('%5EGSPC');       // ^GSPC
+    var fx = fetchYahoo('USDCZK%3DX');    // USDCZK=X
+    // Summary karta → list Trh (per provider, i v CZK přes USD/CZK)
+    var market = updateMarket(ss, data, sp, fx);
     if (!market.ok) { failed.push('S&P500'); log.push(market.err || 'S&P: nenačteno'); }
+    // Historie → listy TrhHist (denní S&P+FX) a FondyHist (řídké body fondů)
+    var hist = updateHistory(ss, data, sp, fx);
+    if (!hist.ok) log.push(hist.err || 'historie: nezapsána');
 
     // Upozornění e-mailem když scrape selže (funguje hlavně pro týdenní trigger;
     // při ručním volání z appky se stav vrací i v JSON logu).
@@ -374,14 +380,12 @@ function refreshNav() {
   }
 }
 
-// Stáhne S&P 500 z Yahoo Finance a zapíše do listu "Trh" per provider:
-// [provider, startDate, spStart, spCurrent, spCurrentDate]. Vrací {ok, err}.
-function updateMarket(ss, fondyData) {
+// Summary karta → list "Trh" per provider. Sloupce:
+// [provider, startDate, spStart, spCurrent, spCurrentDate, spStartCzk, spCurrentCzk]
+// CZK verze = S&P (USD) × USD/CZK k danému datu → devizově korigované srovnání.
+function updateMarket(ss, fondyData, sp, fx) {
   try {
-    var spR = fetchSP500();
-    if (!spR.pairs) return { ok: false, err: 'S&P: ' + (spR.err || 'nenačteno') };
-    var sp = spR;
-    // seskupit fondy dle providera → nejstarší datum nákupu
+    if (!sp || !sp.pairs) return { ok: false, err: 'S&P: ' + ((sp && sp.err) || 'nenačteno') };
     var byProv = {};
     for (var i = 1; i < fondyData.length; i++) {
       var prov = fondyData[i][0]; // FOND.provider = 0
@@ -392,21 +396,74 @@ function updateMarket(ss, fondyData) {
     var sheet = ss.getSheetByName('Trh');
     if (!sheet) sheet = ss.insertSheet('Trh');
     sheet.clear();
-    sheet.appendRow(['provider', 'startDate', 'spStart', 'spCurrent', 'spCurrentDate']);
+    sheet.appendRow(['provider', 'startDate', 'spStart', 'spCurrent', 'spCurrentDate', 'spStartCzk', 'spCurrentCzk']);
     var curDate = Utilities.formatDate(sp.currentDate, 'Europe/Prague', 'd.M.yyyy');
+    var fxCur = (fx && fx.pairs) ? fx.current : null;
     for (var prov in byProv) {
       var start = byProv[prov];
-      var spStart = spCloseOnOrBefore(sp, start);
+      var spStart = closeOnOrBefore(sp, start);
+      var fxStart = (fx && fx.pairs) ? closeOnOrBefore(fx, start) : null;
+      var spStartCzk = (spStart && fxStart) ? Math.round(spStart * fxStart) : '';
+      var spCurCzk = (fxCur) ? Math.round(sp.current * fxCur) : '';
       sheet.appendRow([prov, Utilities.formatDate(start, 'Europe/Prague', 'd.M.yyyy'),
-        spStart || '', sp.current, curDate]);
+        spStart || '', sp.current, curDate, spStartCzk, spCurCzk]);
     }
     return { ok: true };
   } catch (e) { return { ok: false, err: 'S&P zápis: ' + e.message }; }
 }
 
-function fetchSP500() {
+// Historie: TrhHist (denní S&P+FX, přepisuje se) + FondyHist (řídké body
+// fondů, append+dedup). Umožní graf vývoje rebasovaný na 100 v CZK.
+function updateHistory(ss, fondyData, sp, fx) {
   try {
-    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1y&interval=1d';
+    // --- TrhHist: plná denní řada S&P + USD/CZK + S&P v CZK (přepis) ---
+    if (sp && sp.pairs) {
+      var th = ss.getSheetByName('TrhHist');
+      if (!th) th = ss.insertSheet('TrhHist');
+      th.clear();
+      var rows = [['datum', 'spClose', 'usdCzk', 'spCzk']];
+      for (var i = 0; i < sp.pairs.length; i++) {
+        var d = sp.pairs[i].t;
+        var iso = Utilities.formatDate(d, 'Europe/Prague', 'yyyy-MM-dd');
+        var usd = (fx && fx.pairs) ? closeOnOrBefore(fx, d) : null;
+        rows.push([iso, sp.pairs[i].c, usd || '', usd ? Math.round(sp.pairs[i].c * usd) : '']);
+      }
+      th.getRange(1, 1, rows.length, 4).setValues(rows);
+    }
+
+    // --- FondyHist: řídké body fondů (nákupní kotva + dnešní snapshot) ---
+    var fh = ss.getSheetByName('FondyHist');
+    if (!fh) { fh = ss.insertSheet('FondyHist'); fh.appendRow(['datum', 'isin', 'provider', 'nav', 'hodnotaCZK']); }
+    var existing = {};
+    var have = fh.getDataRange().getValues();
+    for (var r = 1; r < have.length; r++) existing[have[r][1] + '|' + have[r][0]] = true; // isin|datum
+    var todayIso = Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd');
+    var append = [];
+    for (var k = 1; k < fondyData.length; k++) {
+      var row = fondyData[k];
+      var isin = row[FOND_C.isin]; if (!isin) continue;
+      var prov2 = row[0];
+      // nákupní kotva (jednorázově)
+      var pd = parseCzDate(row[6]); // nakupDatum
+      if (pd) {
+        var pIso = Utilities.formatDate(pd, 'Europe/Prague', 'yyyy-MM-dd');
+        if (!existing[isin + '|' + pIso]) { append.push([pIso, isin, prov2, numCz(row[5]), numCz(row[7])]); existing[isin + '|' + pIso] = true; }
+      }
+      // dnešní snapshot
+      if (!existing[isin + '|' + todayIso] && numCz(row[FOND_C.aktualNAV])) {
+        append.push([todayIso, isin, prov2, numCz(row[FOND_C.aktualNAV]), numCz(row[FOND_C.aktualHodnotaCZK])]);
+        existing[isin + '|' + todayIso] = true;
+      }
+    }
+    if (append.length) fh.getRange(fh.getLastRow() + 1, 1, append.length, 5).setValues(append);
+    return { ok: true };
+  } catch (e) { return { ok: false, err: 'historie: ' + e.message }; }
+}
+
+// Obecný fetch denní řady z Yahoo Finance (symbol už URL-enkódovaný).
+function fetchYahoo(symbol) {
+  try {
+    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol + '?range=1y&interval=1d';
     var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
     var code = resp.getResponseCode();
     if (code !== 200) return { err: 'HTTP ' + code };
@@ -421,11 +478,11 @@ function fetchSP500() {
   } catch (e) { return { err: e.message }; }
 }
 
-// S&P close k datu (poslední obchodní den na/před daným datem)
-function spCloseOnOrBefore(sp, date) {
+// close k datu (poslední bod na/před daným datem)
+function closeOnOrBefore(series, date) {
   var best = null;
-  for (var i = 0; i < sp.pairs.length; i++) {
-    if (sp.pairs[i].t <= date) best = sp.pairs[i].c; else break;
+  for (var i = 0; i < series.pairs.length; i++) {
+    if (series.pairs[i].t <= date) best = series.pairs[i].c; else break;
   }
   return best;
 }

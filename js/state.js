@@ -11,6 +11,8 @@ export const state = {
   recurring: [],
   investments: [],       // investiční fondy (list Fondy) — CODYA + CONSEQ
   market: [],            // S&P 500 benchmark per provider (list Trh)
+  invHist: [],           // historie hodnot fondů (list FondyHist)
+  trhHist: [],           // denní S&P + USD/CZK (list TrhHist)
   salary: [],            // parsované výplatní pásky (list Mzdy)
   _salaryParsed: null,   // aktuálně naparsovaná páska v preview modalu
   _salaryImportFile: null, // název souboru při importu z banneru (pro markPayslipImported)

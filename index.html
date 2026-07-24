@@ -306,10 +306,12 @@
       <div class="topbar"><h2>Investice</h2><div class="topbar-right"><button class="btn" id="invRefreshBtn" onclick="refreshInvNav()">🔄 Aktualizovat kurzy</button><button class="btnp" onclick="openInvImport()">📥 Nahrát výpis</button></div></div>
       <div class="content">
         <div class="inv-tabs" id="invTabs">
-          <button class="inv-tab active" onclick="invTab('codya',this)">CODYA</button>
+          <button class="inv-tab active" onclick="invTab('overview',this)">Přehled</button>
+          <button class="inv-tab" onclick="invTab('codya',this)">CODYA</button>
           <button class="inv-tab" onclick="invTab('conseq',this)">CONSEQ</button>
         </div>
-        <div id="inv-codya" class="inv-section active"></div>
+        <div id="inv-overview" class="inv-section active"></div>
+        <div id="inv-codya" class="inv-section"></div>
         <div id="inv-conseq" class="inv-section"></div>
       </div>
     </div>
