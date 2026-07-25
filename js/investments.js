@@ -246,11 +246,26 @@ function chartSelOptions() {
   return opts.map(([v, l]) => `<option value="${v}"${v === _chartSel ? ' selected' : ''}>${l}</option>`).join('');
 }
 
-// Časová řada hodnoty portfolia (součet hodnotaCZK) pro filtr, seřazená dle data
+const purchaseOf = isin => { const f = (state.investments || []).find(x => x.isin === isin); return f ? normDate(f.nakupDatum) : null; };
+
+// Časová řada hodnoty portfolia pro filtr. Fondy mají body na RŮZNÝCH
+// datech (nákup + měsíční přecenění) → hodnota k datu = součet posledních
+// známých hodnot jednotlivých fondů (forward-fill), ne jen bodů přesně
+// k tomu datu. Body před datem nákupu fondu se ignorují (chrání proti
+// datu zahájení úpisu, které scraper někdy zachytí — viz FIDUROCK 16.1.).
 function histSeries(filterFn) {
-  const byDate = {};
-  (state.invHist || []).filter(filterFn).forEach(h => { byDate[h.datum] = (byDate[h.datum] || 0) + h.hodnotaCZK; });
-  return Object.keys(byDate).sort().map(d => ({ t: d, v: byDate[d] }));
+  const rows = (state.invHist || []).filter(filterFn)
+    .filter(h => { const p = purchaseOf(h.isin); return !p || h.datum >= p; });
+  if (!rows.length) return [];
+  const byFund = {};
+  rows.forEach(h => { (byFund[h.isin] = byFund[h.isin] || []).push({ t: h.datum, v: h.hodnotaCZK }); });
+  Object.keys(byFund).forEach(k => byFund[k].sort((a, b) => a.t < b.t ? -1 : 1));
+  const dates = [...new Set(rows.map(h => h.datum))].sort();
+  return dates.map(d => {
+    let sum = 0;
+    for (const k in byFund) { let v = 0; for (const p of byFund[k]) { if (p.t <= d) v = p.v; else break; } sum += v; }
+    return { t: d, v: sum };
+  });
 }
 // Rebase řady na 100 v prvním bodě (raw = původní hodnota CZK)
 function rebase(pts) {
