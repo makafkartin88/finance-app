@@ -431,12 +431,15 @@ function updateHistory(ss, fondyData, sp, fx) {
       th.getRange(1, 1, rows.length, 4).setValues(rows);
     }
 
-    // --- FondyHist: řídké body fondů (nákupní kotva + dnešní snapshot) ---
+    // --- FondyHist: řídké body fondů (nákupní kotva + bod k datu platnosti NAV) ---
+    // Bod se ukládá k DATU PLATNOSTI NAV (měsíční přecenění), ne k dnešku —
+    // fondy se oceňují měsíčně, takže série tak přirozeně roste měsíc po měsíci
+    // se správnými daty. Dedup je odolný vůči tomu, že Sheets datum převede na Date.
     var fh = ss.getSheetByName('FondyHist');
     if (!fh) { fh = ss.insertSheet('FondyHist'); fh.appendRow(['datum', 'isin', 'provider', 'nav', 'hodnotaCZK']); }
     var existing = {};
     var have = fh.getDataRange().getValues();
-    for (var r = 1; r < have.length; r++) existing[have[r][1] + '|' + have[r][0]] = true; // isin|datum
+    for (var r = 1; r < have.length; r++) existing[have[r][1] + '|' + histIso(have[r][0])] = true; // isin|datum
     var todayIso = Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd');
     var append = [];
     for (var k = 1; k < fondyData.length; k++) {
@@ -449,10 +452,12 @@ function updateHistory(ss, fondyData, sp, fx) {
         var pIso = Utilities.formatDate(pd, 'Europe/Prague', 'yyyy-MM-dd');
         if (!existing[isin + '|' + pIso]) { append.push([pIso, isin, prov2, numCz(row[5]), numCz(row[7])]); existing[isin + '|' + pIso] = true; }
       }
-      // dnešní snapshot
-      if (!existing[isin + '|' + todayIso] && numCz(row[FOND_C.aktualNAV])) {
-        append.push([todayIso, isin, prov2, numCz(row[FOND_C.aktualNAV]), numCz(row[FOND_C.aktualHodnotaCZK])]);
-        existing[isin + '|' + todayIso] = true;
+      // bod k datu platnosti aktuálního NAV (fallback: dnešek)
+      var nd = parseCzDate(row[FOND_C.aktualNAVdatum]);
+      var snapIso = nd ? Utilities.formatDate(nd, 'Europe/Prague', 'yyyy-MM-dd') : todayIso;
+      if (!existing[isin + '|' + snapIso] && numCz(row[FOND_C.aktualNAV])) {
+        append.push([snapIso, isin, prov2, numCz(row[FOND_C.aktualNAV]), numCz(row[FOND_C.aktualHodnotaCZK])]);
+        existing[isin + '|' + snapIso] = true;
       }
     }
     if (append.length) fh.getRange(fh.getLastRow() + 1, 1, append.length, 5).setValues(append);
@@ -491,6 +496,18 @@ function closeOnOrBefore(series, date) {
 function parseCzDate(s) {
   var m = String(s).match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
   return m ? new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])) : null;
+}
+
+// Normalizace libovolného datumu (Date z coerce, ISO, D.M.YYYY) na "yyyy-MM-dd"
+// pro spolehlivý dedup ve FondyHist (Sheets si textové datum převede na Date).
+function histIso(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Europe/Prague', 'yyyy-MM-dd');
+  var s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.indexOf('T') > 0) { try { return Utilities.formatDate(new Date(s), 'Europe/Prague', 'yyyy-MM-dd'); } catch (e) {} }
+  var m = s.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  return s;
 }
 
 // Upozornění na selhání scrapu (jen když umíme zjistit adresu — bez PII v repu)

@@ -312,16 +312,20 @@ function lineChartSVG(series) {
     grid += `<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="var(--border)" stroke-width="${gv === 100 ? 1.5 : 1}"${gv === 100 ? '' : ' stroke-dasharray="3 3"'}/>
       <text x="${padL - 5}" y="${y(gv) + 3}" text-anchor="end" font-size="9" fill="var(--text3)">${Math.round(gv)}</text>`;
   });
-  // osa X: svislé rysky na začátku každého měsíce + popisek M/RR
-  let prevMon = '';
+  // osa X: svislé rysky na začátku každého měsíce + popisek M/RR.
+  // Popisky se nesmí překrývat → min. rozestup + zarovnání u okrajů.
+  let prevMon = '', lastLabelX = -999;
   allDates.forEach((d, i) => {
     const mon = d.slice(0, 7); // YYYY-MM
-    if (mon !== prevMon) {
-      prevMon = mon;
-      const p = d.split('-');
-      grid += `<line x1="${x(i).toFixed(1)}" y1="${padT}" x2="${x(i).toFixed(1)}" y2="${H - padB}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 4" opacity="0.5"/>
-        <text x="${x(i).toFixed(1)}" y="${H - padB + 15}" text-anchor="middle" font-size="9" fill="var(--text3)">${+p[1]}/${p[0].slice(2)}</text>`;
-    }
+    if (mon === prevMon) return;
+    prevMon = mon;
+    const p = d.split('-'), xi = x(i);
+    grid += `<line x1="${xi.toFixed(1)}" y1="${padT}" x2="${xi.toFixed(1)}" y2="${H - padB}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 4" opacity="0.5"/>`;
+    if (xi - lastLabelX < 30) return;                 // moc blízko → popisek vynech
+    lastLabelX = xi;
+    const anchor = xi < padL + 14 ? 'start' : (xi > W - padR - 14 ? 'end' : 'middle');
+    const tx = anchor === 'start' ? padL : (anchor === 'end' ? W - padR : xi);
+    grid += `<text x="${tx.toFixed(1)}" y="${H - padB + 15}" text-anchor="${anchor}" font-size="9" fill="var(--text3)">${+p[1]}/${p[0].slice(2)}</text>`;
   });
 
   const lines = withPts.map(s => {

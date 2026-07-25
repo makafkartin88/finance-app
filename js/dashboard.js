@@ -29,8 +29,10 @@ export function renderDash() {
   const m3 = document.getElementById('m3');
   m3.textContent = (sav >= 0 ? '+' : '')+czk(sav); m3.className = 'mv '+(sav >= 0 ? 'green' : 'red');
   document.getElementById('m3s').textContent = sr+'% míra úspor';
+  // Prům. bilance/měs. — reaguje na filtr z cash flow grafu (drill na měsíc),
+  // stejně jako příjmy/výdaje/úspora výše (počítá z 'b', ne z celého rozsahu).
   const monthMap = {};
-  base(null, null).forEach(t => {
+  b.forEach(t => {
     if (!t.mesic) return;
     if (!monthMap[t.mesic]) monthMap[t.mesic] = { inc: 0, exp: 0 };
     if (t.typ === 'Příjem') monthMap[t.mesic].inc += t.castka;
