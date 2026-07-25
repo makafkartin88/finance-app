@@ -312,11 +312,12 @@ function handleUpsertFund(body) {
 // Sloupce listu Fondy musí odpovídat FOND v js/config.js.
 var FOND_C = { isin: 1, mena: 3, pocetCP: 4, aktualNAV: 8, aktualNAVdatum: 9, aktualHodnotaCZK: 10, kurzEUR: 12 };
 
-// CODYA nemá jednotný popisek napříč fondy — třídy stále v upisovacím
-// období ("Zahájeno/Zahájení upisovací(ho) období") mají jiný text než
-// již obchodované třídy ("Aktuální hodnota/kurz investiční akcie").
-// Zkouší se v pořadí, první nalezená kotva vyhrává. Ověřeno 2026-07-24.
-var CODYA_ANCHORS = ['Aktuální hodnota investiční akcie', 'Aktuální kurz investiční akcie',
+// CODYA nemá jednotný popisek napříč fondy — obchodované třídy mají
+// "Aktuální kurz/hodnota …", třídy v úpisu "Zahájeno/Zahájení upisovací(ho)
+// období". Kotvy jsou ZKRÁCENÉ (bez "investiční akcie"), protože na některé
+// stránce je to slovo s překlepem ("investíční" u Axelor E) → shoda by
+// selhala. Zkouší se v pořadí, první nalezená vyhrává. Ověřeno 2026-07-25.
+var CODYA_ANCHORS = ['Aktuální kurz', 'Aktuální hodnota',
   'Zahájeno upisovací období', 'Zahájení upisovacího období', 'Zahájení upisovací období'];
 
 // ISIN → veřejná stránka fondu + textová kotva/kotvy NAV.
@@ -539,7 +540,8 @@ function scrapeNav(url, anchor) {
       var start = anchors[a] ? text.indexOf(anchors[a]) : 0;
       if (start < 0) continue;
       var scope = text.substring(start, start + 400); // hledej hned za kotvou
-      var navM = scope.match(/(\d{1,3},\d{4})/);       // NAV = X,XXXX
+      // NAV = X,XXXX — preferuj číslo navázané na měnu (přesnější), jinak první
+      var navM = scope.match(/(\d{1,3},\d{4})\s*(?:CZK|EUR)/) || scope.match(/(\d{1,3},\d{4})/);
       var nav = navM ? parseFloat(navM[1].replace(',', '.')) : null;
       if (nav !== null && (nav <= 0.1 || nav >= 1000)) nav = null; // sanity
       if (nav === null) continue;
