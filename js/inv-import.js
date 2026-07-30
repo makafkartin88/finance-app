@@ -155,10 +155,11 @@ function parseCodyaTransactions(lines) {
         const pocetCP = parseInt(m[1].replace(/\s/g, ''), 10);
         const nakupNAV = parseNum(m[2]);
         const poplatek = parseNum(m[3]);
+        const castka = parseNum(m[4]); // skutečně zaplacená částka (vč. poplatku), v měně `mena`
         const mena = m[5];
         const kurzEUR = m[6] ? parseNum(m[6]) : (mena === 'EUR' ? DEFAULT_EUR : 1);
         const nakupDatum = parseDate(line);
-        out.push({ isin: curIsin, nazev: curName, mena, pocetCP, nakupNAV, nakupDatum, poplatek, kurzEUR });
+        out.push({ isin: curIsin, nazev: curName, mena, pocetCP, nakupNAV, nakupDatum, poplatek, kurzEUR, castka });
       }
       curIsin = '';
     }
@@ -210,7 +211,7 @@ function parseConseq(lines) {
   const investM = investLine ? [...investLine.matchAll(/(-?\d[\d\s]*,\d{2})/g)].pop() : null;
   const feeM = feeLine ? [...feeLine.matchAll(/(-?\d[\d\s]*,\d{2})/g)].pop() : null;
   const poplatek = feeM ? Math.abs(parseNum(feeM[1])) : 0;
-  void investM; // investovanoCZK se dopočítá v confirmInvImport z pocetCP × nakupNAV
+  const castka = investM ? Math.abs(parseNum(investM[1])) : 0; // skutečně zaplaceno (vč. poplatku), v CZK
 
   // Hotovost — jednoznačný řádek "Konečný zůstatek: X CZK"
   const cashLine = lines.find(l => /Konečný zůstatek:/i.test(l));
@@ -223,7 +224,7 @@ function parseConseq(lines) {
 
   return [{
     isin, nazev: nazev || 'Conseq fond', mena: 'CZK', pocetCP,
-    nakupNAV, nakupDatum, poplatek,
+    nakupNAV, nakupDatum, poplatek, castka,
     aktualNAV, aktualNAVdatum,
     kurzEUR: 1,
     _aktualNativni: aktualHodnotaCZK,
@@ -270,7 +271,10 @@ export async function confirmInvImport() {
     const kurzEUR = parseFloat(g('if-kurz-')?.value) || (mena === 'EUR' ? DEFAULT_EUR : 1);
     const hotovostCZK = parseFloat(g('if-hotovost-')?.value) || f.hotovostCZK || 0;
     const fx = mena === 'EUR' ? kurzEUR : 1;
-    const investovanoCZK = nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '';
+    // Investováno = skutečně zaplacená částka (vč. poplatku), pokud ji výpis uvádí;
+    // jinak dopočet z počtu × NAV (bez poplatku, jen záchranná síť).
+    const castka = f.castka || 0;
+    const investovanoCZK = castka ? Math.round(castka * fx) : (nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '');
     const aktualHodnotaCZK = aktualNAV ? Math.round(pocetCP * aktualNAV * fx) : '';
 
     // Řádek pro sheet — prázdné hodnoty ('') se při upsertu nepřepíšou.

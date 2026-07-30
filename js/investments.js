@@ -1,13 +1,14 @@
-import { GAS_URL, FOND, FUND_FOCUS } from './config.js';
+import { GAS_URL, FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
 import { czk } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 
 /* ============================================================
-   Stránka Investice — dva pohledy: CODYA a CONSEQ.
-   Data z privátního listu "Fondy" (klíč = ISIN). Pro každý fond
-   nákupní vs. aktuální NAV, rozdíl v % i absolutně, hodnota v CZK.
+   Stránka Investice — pohledy CODYA, CONSEQ (fondy, klíč ISIN) a
+   Trading 212 (brokerské pozice, klíč ticker). Data z privátního
+   listu "Fondy". CODYA/CONSEQ: nákupní vs. aktuální NAV v CZK.
+   T212: pozice v měně účtu (headline z /account/cash, ne rekonstrukce).
    ============================================================ */
 
 const DEFAULT_EUR = 25;
@@ -44,13 +45,24 @@ export async function refreshInvNav() {
   const btn = document.getElementById('invRefreshBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Aktualizuji…'; }
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) });
+    // T212 se aktualizuje ve stejném kliknutí, ale nezávisle — chybějící
+    // T212_API_KEY nesmí shodit refresh CODYA/CONSEQ (fetch se nikdy nezamítne).
+    const [r, rt] = await Promise.all([
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) }),
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshT212' }) }).catch(() => null)
+    ]);
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     // odfiltruj S&P500 z failed → to je benchmark, ne fond
     const failedFunds = (d.failed || []).filter(x => /^CZ\d{10}$/.test(x));
+    let t212Msg = '';
+    if (rt) {
+      const dt = await rt.json().catch(() => null);
+      if (dt && dt.error) t212Msg = ` · T212: ${dt.error}`;
+      else if (dt && dt.success) t212Msg = ` · T212 ${dt.updated} pozic`;
+    }
     _lastRefresh = { updated: d.updated || 0, failed: failedFunds, eur: d.eur, when: new Date() };
-    const okMsg = `Aktualizováno ${d.updated} kurzů${d.eur ? ` · EUR ${d.eur.toFixed(2)}` : ''}`;
+    const okMsg = `Aktualizováno ${d.updated} kurzů${d.eur ? ` · EUR ${d.eur.toFixed(2)}` : ''}${t212Msg}`;
     toast(failedFunds.length ? `${okMsg} · ${failedFunds.length} selhalo` : okMsg, failedFunds.length ? 'err' : 'ok');
     await loadInvestmentData();
   } catch (e) {
@@ -76,7 +88,7 @@ export async function loadInvestmentData() {
       fetch(GAS_URL + '?sheet=TrhHist').then(r => r.json()).catch(() => ({ values: [] }))
     ]);
     if (fR.error) { state.investments = []; state.market = []; renderInv(); return; }
-    state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin));
+    state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin) || f.provider === 'T212');
     const pn = v => parseFloat(String(v).replace(',', '.')) || 0;
     state.market = (tR.values || []).slice(1).filter(r => r[0]).map(r => ({
       provider: r[0], startDate: r[1],
@@ -87,8 +99,8 @@ export async function loadInvestmentData() {
       datum: normDate(r[0]), isin: String(r[1]), provider: r[2], nav: pn(r[3]), hodnotaCZK: pn(r[4])
     }));
     state.trhHist = (thR.values || []).slice(1).filter(r => r[0]).map(r => ({
-      datum: normDate(r[0]), spCzk: pn(r[3]) || pn(r[1])   // preferuj CZK; fallback USD
-    })).filter(r => r.spCzk > 0);
+      datum: normDate(r[0]), spUsd: pn(r[1]), fx: pn(r[2]), spCzk: pn(r[3])
+    })).filter(r => r.spCzk > 0); // bez FX páru za ten den je bod nedůvěryhodný — raději díra v grafu než mix měn
     renderInv();
   } catch (e) { /* investice jsou volitelné — neshodit boot */ }
 }
@@ -121,14 +133,20 @@ function parseFundRow(r) {
     poplatek: num(FOND.poplatek),
     kurzEUR: num(FOND.kurzEUR),
     hotovostCZK: num(FOND.hotovostCZK),
-    poznamka: r[FOND.poznamka] || ''
+    poznamka: r[FOND.poznamka] || '',
+    pplNative: num(FOND.pplNative),
+    fxPplNative: num(FOND.fxPplNative)
   };
 }
 
-/* ── VÝPOČTY ── */
+/* ── VÝPOČTY ──
+   T212 pozice nemají spolehlivou CZK hodnotu (quantity×cena je v měně
+   NÁSTROJE, ne nutně účtu) → u nich se NEDOPOČÍTÁVÁ fallback, jen se vezme
+   uložené pole (prázdné pro pozice, vyplněné pro souhrnný řádek T212_CASH).
+   Jinak by se do CZK součtů (donut, karty) přimíchala špatná měna. */
 const fx = f => f.mena === 'EUR' ? (f.kurzEUR || DEFAULT_EUR) : 1;
-const invCZK = f => f.investovanoCZK || Math.round(f.pocetCP * f.nakupNAV * fx(f));
-const curCZK = f => f.aktualHodnotaCZK || Math.round(f.pocetCP * f.aktualNAV * fx(f));
+const invCZK = f => f.provider === 'T212' ? (f.investovanoCZK || 0) : (f.investovanoCZK || Math.round(f.pocetCP * f.nakupNAV * fx(f)));
+const curCZK = f => f.provider === 'T212' ? (f.aktualHodnotaCZK || 0) : (f.aktualHodnotaCZK || Math.round(f.pocetCP * f.aktualNAV * fx(f)));
 const navPct = f => f.nakupNAV ? (f.aktualNAV / f.nakupNAV - 1) * 100 : 0;
 const pctTxt = p => (p >= 0 ? '+' : '') + p.toFixed(1).replace('.', ',') + ' %';
 
@@ -137,6 +155,7 @@ export function renderInv() {
   renderOverview();
   renderProviderView('codya', 'CODYA');
   renderProviderView('conseq', 'CONSEQ');
+  renderT212View();
 }
 
 /* ── PŘEHLED: alokace + graf vývoje vs S&P ── */
@@ -187,11 +206,8 @@ function renderOverview() {
   } else {
     const provVal = {}; let cash = 0;
     funds.forEach(f => { provVal[f.provider] = (provVal[f.provider] || 0) + curCZK(f); cash += (f.hotovostCZK || 0); });
-    segs = [
-      { label: 'CODYA', key: 'CODYA', val: provVal['CODYA'] || 0, color: 'var(--blue)' },
-      { label: 'CONSEQ', key: 'CONSEQ', val: provVal['CONSEQ'] || 0, color: 'var(--green)' },
-      { label: 'Volná hotovost', key: 'Volná hotovost', val: cash, color: 'var(--text3)' }
-    ];
+    segs = INV_PROVIDERS.map(p => ({ label: p.label, key: p.key, val: provVal[p.key] || 0, color: p.color }));
+    segs.push({ label: 'Volná hotovost', key: 'Volná hotovost', val: cash, color: 'var(--text3)' });
   }
   segs = segs.filter(s => s.val > 0);
   const totAlloc = segs.reduce((s, x) => s + x.val, 0) || 1;
@@ -241,7 +257,9 @@ function donutSVG(segs, total, selKey) {
 }
 
 function chartSelOptions() {
-  const opts = [['all', 'CODYA + CONSEQ + S&P'], ['CODYA', 'CODYA celkem vs S&P'], ['CONSEQ', 'CONSEQ celkem vs S&P']];
+  const present = INV_PROVIDERS.filter(p => (state.investments || []).some(f => f.provider === p.key));
+  const opts = [['all', present.map(p => p.label).join(' + ') + (present.length ? ' + S&P' : 'S&P')]];
+  present.forEach(p => opts.push([p.key, p.label + ' celkem vs S&P']));
   (state.investments || []).forEach(f => opts.push(['isin:' + f.isin, (f.nazev || f.isin).slice(0, 40) + ' vs S&P']));
   return opts.map(([v, l]) => `<option value="${v}"${v === _chartSel ? ' selected' : ''}>${l}</option>`).join('');
 }
@@ -253,6 +271,9 @@ const purchaseOf = isin => { const f = (state.investments || []).find(x => x.isi
 // známých hodnot jednotlivých fondů (forward-fill), ne jen bodů přesně
 // k tomu datu. Body před datem nákupu fondu se ignorují (chrání proti
 // datu zahájení úpisu, které scraper někdy zachytí — viz FIDUROCK 16.1.).
+// Vrací i `flow` = hodnota fondů, které se v daném bodě objevují PRVNÍ ROK
+// (= počáteční vklad, ne výnos) — potřebné pro unitizovaný rebase níže,
+// jinak by nový nákup do portfolia vypadal jako skok performance.
 function histSeries(filterFn) {
   const rows = (state.invHist || []).filter(filterFn)
     .filter(h => { const p = purchaseOf(h.isin); return !p || h.datum >= p; });
@@ -261,17 +282,41 @@ function histSeries(filterFn) {
   rows.forEach(h => { (byFund[h.isin] = byFund[h.isin] || []).push({ t: h.datum, v: h.hodnotaCZK }); });
   Object.keys(byFund).forEach(k => byFund[k].sort((a, b) => a.t < b.t ? -1 : 1));
   const dates = [...new Set(rows.map(h => h.datum))].sort();
+  const firstDate = {};
+  Object.keys(byFund).forEach(k => { firstDate[k] = byFund[k][0].t; });
   return dates.map(d => {
-    let sum = 0;
-    for (const k in byFund) { let v = 0; for (const p of byFund[k]) { if (p.t <= d) v = p.v; else break; } sum += v; }
-    return { t: d, v: sum };
+    let sum = 0, flow = 0;
+    for (const k in byFund) {
+      let v = 0; for (const p of byFund[k]) { if (p.t <= d) v = p.v; else break; }
+      sum += v;
+      if (firstDate[k] === d) flow += byFund[k][0].v;
+    }
+    return { t: d, v: sum, flow };
   });
 }
-// Rebase řady na 100 v prvním bodě (raw = původní hodnota CZK)
+// Rebase na 100 v prvním bodě — UNITIZOVANĚ (contribution-adjusted): nový
+// vklad (fond, který se objeví poprvé) se vyloučí z výnosu toho dne, jen
+// posune hodnotu v Kč (raw). Bez toho by nový nákup do portfolia vypadal
+// jako skok performance, i když je to jen přírůstek kapitálu.
 function rebase(pts) {
   if (!pts.length || !pts[0].v) return [];
-  const base = pts[0].v;
-  return pts.map(p => ({ t: p.t, v: p.v / base * 100, raw: p.v }));
+  let idx = 100, prevV = pts[0].v;
+  return pts.map((p, i) => {
+    if (i === 0) return { t: p.t, v: 100, raw: p.v };
+    const ret = prevV > 0 ? (p.v - (p.flow || 0)) / prevV - 1 : 0;
+    idx = idx * (1 + ret);
+    prevV = p.v;
+    return { t: p.t, v: idx, raw: p.v };
+  });
+}
+// Nejnovější bod TrhHist k danému datu (nebo dřív) — pro srovnání "S&P k datu X",
+// ne k dnešku. Fallback na první dostupný bod, pokud je datum před historií.
+function trhAtDate(iso) {
+  const th = (state.trhHist || []).slice().sort((a, b) => a.datum < b.datum ? -1 : 1);
+  if (!th.length) return null;
+  let row = null;
+  for (const r of th) { if (r.datum <= iso) row = r; else break; }
+  return row || th[0];
 }
 // S&P (CZK) rebasovaná na 100 k danému startovnímu datu
 function spSeries(startISO) {
@@ -285,18 +330,21 @@ function spSeries(startISO) {
 
 function buildChart() {
   const series = [];
-  const codya = rebase(histSeries(h => h.provider === 'CODYA'));
-  const conseq = rebase(histSeries(h => h.provider === 'CONSEQ'));
+  const byProvider = {
+    CODYA: rebase(histSeries(h => h.provider === 'CODYA')),
+    CONSEQ: rebase(histSeries(h => h.provider === 'CONSEQ')),
+    T212: rebase(histSeries(h => h.provider === 'T212'))
+  };
   const startOf = s => s.length ? s[0].t : null;
 
   if (_chartSel === 'all') {
-    if (codya.length) series.push({ label: 'CODYA', color: 'var(--blue)', pts: codya, money: true });
-    if (conseq.length) series.push({ label: 'CONSEQ', color: 'var(--green)', pts: conseq, money: true });
-    const earliest = [startOf(codya), startOf(conseq)].filter(Boolean).sort()[0];
+    INV_PROVIDERS.forEach(p => { if (byProvider[p.key].length) series.push({ label: p.label, color: p.color, pts: byProvider[p.key], money: true }); });
+    const earliest = INV_PROVIDERS.map(p => startOf(byProvider[p.key])).filter(Boolean).sort()[0];
     if (earliest) series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(earliest) });
-  } else if (_chartSel === 'CODYA' || _chartSel === 'CONSEQ') {
-    const s = _chartSel === 'CODYA' ? codya : conseq;
-    if (s.length) { series.push({ label: _chartSel, color: 'var(--blue)', pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
+  } else if (byProvider[_chartSel]) {
+    const s = byProvider[_chartSel];
+    const meta = INV_PROVIDERS.find(p => p.key === _chartSel);
+    if (s.length) { series.push({ label: meta.label, color: meta.color, pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
   } else if (_chartSel.startsWith('isin:')) {
     const isin = _chartSel.slice(5);
     const s = rebase(histSeries(h => h.isin === isin));
@@ -448,14 +496,15 @@ function renderProviderView(tabId, provider) {
     const p = navPct(f);
     const dCZK = curCZK(f) - invCZK(f);
     const focus = FUND_FOCUS[f.isin] || '';
-    const col = p >= 0 ? 'ap' : 'an';
+    const navCol = p >= 0 ? 'ap' : 'an';       // NAV % — barva dle vlastního znaménka
+    const czkCol = dCZK >= 0 ? 'ap' : 'an';    // Δ CZK (po kurzu) — může mít jiné znaménko než NAV %
     return `<tr>
       <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${focus}${f.mena === 'EUR' ? ' · EUR' : ''}</div></td>
       <td style="color:var(--text2);white-space:nowrap">${f.pocetCP.toLocaleString('cs-CZ')}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
       <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
-      <td class="${col}" style="white-space:nowrap;font-weight:700">${f.nakupNAV && f.aktualNAV ? pctTxt(p) : '—'}</td>
-      <td class="${col}" style="white-space:nowrap">${f.nakupNAV && f.aktualNAV ? (dCZK >= 0 ? '+' : '') + czk(dCZK) : '—'}</td>
+      <td class="${navCol}" style="white-space:nowrap;font-weight:700">${f.nakupNAV && f.aktualNAV ? pctTxt(p) : '—'}</td>
+      <td class="${czkCol}" style="white-space:nowrap">${f.nakupNAV && f.aktualNAV ? (dCZK >= 0 ? '+' : '') + czk(dCZK) : '—'}</td>
       <td style="white-space:nowrap;font-weight:600">${czk(curCZK(f))}</td>
     </tr>`;
   }).join('');
@@ -464,10 +513,12 @@ function renderProviderView(tabId, provider) {
 
   // ── VÝKONNOST & SROVNÁNÍ (období, anualizace, S&P 500) ──
   const SAVINGS_PA = 4; // referenční spořák % p.a. (orientační)
-  const startDates = funds.map(f => czDate(f.nakupDatum)).filter(Boolean);
-  const navDates = funds.map(f => czDate(f.aktualNAVdatum)).filter(Boolean);
-  const startDate = startDates.length ? new Date(Math.min(...startDates)) : null;
-  const navDate = navDates.length ? new Date(Math.max(...navDates)) : new Date();
+  const startIsos = funds.map(f => normDate(f.nakupDatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const navIsos = funds.map(f => normDate(f.aktualNAVdatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const startIso = startIsos[0] || null;
+  const navIso = navIsos.length ? navIsos[navIsos.length - 1] : null;
+  const startDate = startIso ? czDate(startIso) : null;
+  const navDate = navIso ? czDate(navIso) : new Date();
   let compCard = '';
   if (startDate && invested > 0) {
     const days = Math.max(Math.round((navDate - startDate) / 864e5), 1);
@@ -477,10 +528,12 @@ function renderProviderView(tabId, provider) {
     const perLabel = months >= 1.5 ? `${months.toFixed(1).replace('.', ',')} měsíce` : `${days} dní`;
     const mkt = (state.market || []).find(m => m.provider === provider);
     let mktRows = '';
-    // Preferuj devizově korigované (CZK) hodnoty; fallback na USD
-    const useCzk = mkt && mkt.spStartCzk > 0 && mkt.spCurrentCzk > 0;
-    const spA = useCzk ? (mkt && mkt.spStartCzk) : (mkt && mkt.spStart);
-    const spB = useCzk ? (mkt && mkt.spCurrentCzk) : (mkt && mkt.spCurrent);
+    // S&P se srovnává k datu NAV fondu (ne k dnešku) — jinak se do srovnání
+    // přimíchá pohyb trhu za dny, které fond ještě nezažil.
+    const navRow = navIso ? trhAtDate(navIso) : null;
+    const useCzk = mkt && mkt.spStartCzk > 0 && navRow && navRow.spCzk > 0 && navRow.fx > 0;
+    const spA = useCzk ? mkt.spStartCzk : (mkt && mkt.spStart);
+    const spB = useCzk ? navRow.spCzk : (navRow && navRow.spUsd);
     if (mkt && spA > 0 && spB > 0) {
       const mDays = Math.max(days, 1);
       const mktRet = spB / spA - 1;
@@ -488,18 +541,18 @@ function renderProviderView(tabId, provider) {
       const diffPP = (periodRet - mktRet) * 100;    // procentní body za období
       // Debug rozklad: index v USD × pohyb kurzu USD/CZK = výsledek v CZK
       let debug = '';
-      if (useCzk && mkt.spStart > 0) {
-        const idxUsdPct = (mkt.spCurrent / mkt.spStart - 1) * 100;
-        const fxStart = mkt.spStartCzk / mkt.spStart, fxCur = mkt.spCurrentCzk / mkt.spCurrent;
+      if (useCzk && mkt.spStart > 0 && navRow.spUsd > 0) {
+        const idxUsdPct = (navRow.spUsd / mkt.spStart - 1) * 100;
+        const fxStart = mkt.spStartCzk / mkt.spStart, fxCur = navRow.fx;
         const fxPct = (fxCur / fxStart - 1) * 100;
         debug = `<div style="font-size:11px;color:var(--text3);margin:2px 0 0 12px;line-height:1.6">
           ↳ index ${idxUsdPct >= 0 ? '+' : ''}${idxUsdPct.toFixed(1).replace('.', ',')} % (USD) × kurz USD/CZK ${fxStart.toFixed(2).replace('.', ',')}→${fxCur.toFixed(2).replace('.', ',')} (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(1).replace('.', ',')} %) = ${pctTxt(mktRet * 100)} v CZK</div>`;
       }
       mktRows = `
-        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh${useCzk ? ' (v CZK)' : ''} · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>${debug}
-        <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500${useCzk ? ' (korigováno kurzem USD/CZK)' : ''} za ${perLabel}.</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
+        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh${useCzk ? ' (v CZK)' : ''} · k datu NAV ${czFromIso(navIso)} · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>${debug}
+        <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500${useCzk ? ' (korigováno kurzem USD/CZK)' : ''} za ${perLabel} (${czFromIso(startIso)} → ${czFromIso(navIso)}).</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
     } else {
-      mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po kliknutí na „🔄 Aktualizovat kurzy".</div>`;
+      mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po kliknutí na „🔄 Aktualizovat kurzy" (chybí historie k datu NAV).</div>`;
     }
     compCard = `<div class="card" style="margin-top:16px">
       <div class="card-hdr"><div class="ct">Výkonnost &amp; srovnání</div></div>
@@ -515,4 +568,68 @@ function renderProviderView(tabId, provider) {
     ${cashRow}
     <div style="font-size:11px;color:var(--text3);margin-top:12px">Aktuální NAV k datu ${funds[0].aktualNAVdatum || '—'}${_lastRefresh && !_lastRefresh.error ? ` · 🔄 staženo z webu ${_lastRefresh.when.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}. Tyto fondy se oceňují měsíčně, nejde o realtime kurz.</div>
   </div>`;
+}
+
+/* ── TRADING 212: brokerské pozice, samostatný pohled ──
+   Odlišné od CODYA/CONSEQ: pozice nemají spolehlivou CZK hodnotu (cena
+   nástroje může být v jiné měně než účet), takže headline čísla (investováno,
+   hodnota, zisk) se NEČTOU sečtením pozic, ale přímo z autoritativního
+   souhrnného řádku T212_CASH (naplněného z T212 /account/cash v GAS). Tabulka
+   pozic ukazuje P/L a kurzový vliv (fxPpl) — ty T212 počítá už v měně účtu,
+   takže je lze bezpečně převést jedním kurzem (kurzEUR = kurz měny účtu/CZK). */
+function renderT212View() {
+  const el = document.getElementById('inv-t212');
+  if (!el) return;
+  const all = (state.investments || []).filter(f => f.provider === 'T212');
+  const cashRow = all.find(f => f.isin === 'T212_CASH');
+  const positions = all.filter(f => f.isin !== 'T212_CASH');
+
+  if (!cashRow && !positions.length) {
+    el.innerHTML = `<div class="empty" style="padding:48px 0">Zatím žádná data z Trading 212.<br>
+      Nastav <code>T212_API_KEY</code> ve Script Properties (script.google.com) — read-only klíč,
+      scopes „Portfolio" + „Account data" — a klikni na „🔄 Aktualizovat kurzy".</div>`;
+    return;
+  }
+
+  const mena = (cashRow && cashRow.mena) || 'EUR';
+  const kurz = (cashRow && cashRow.kurzEUR) || 0;
+  const invested = (cashRow && cashRow.investovanoCZK) || 0;
+  const posValue = (cashRow && cashRow.aktualHodnotaCZK) || 0;
+  const cash = (cashRow && cashRow.hotovostCZK) || 0;
+  const gain = posValue - invested;
+  const gainPct = invested ? (gain / invested) * 100 : 0;
+  const totalWithCash = posValue + cash;
+
+  const cards = `<div class="mgrid">
+    <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${czk(invested)}</div><div class="ms">${positions.length} ${positions.length === 1 ? 'pozice' : positions.length < 5 ? 'pozice' : 'pozic'} · účet v ${mena}</div></div>
+    <div class="mc" style="border-left-color:var(--green)"><div class="ml">Aktuální hodnota pozic</div><div class="mv">${czk(posValue)}</div><div class="ms">${cash ? 'volná hotovost ' + czk(cash) : 'k dnešku'}</div></div>
+    <div class="mc" style="border-left-color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="ml">Zisk / ztráta</div><div class="mv ${gain >= 0 ? 'green' : 'red'}">${gain >= 0 ? '+' : ''}${czk(gain)}</div><div class="ms">dle T212 /account/cash</div></div>
+    <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${gainPct >= 0 ? 'green' : 'red'}">${pctTxt(gainPct)}</div><div class="ms">celkem u T212 ${czk(totalWithCash)}</div></div>
+  </div>`;
+
+  const cashInfo = cash ? `<div class="metric-row" style="margin-top:12px"><div><strong>Volná hotovost</strong><span>nezainvestováno u Trading 212</span></div><strong>${czk(cash)}</strong></div>` : '';
+
+  const rows = positions.slice().sort((a, b) => (b.pplNative || 0) - (a.pplNative || 0)).map(f => {
+    const pplCzk = Math.round((f.pplNative || 0) * kurz);
+    const fxCzk = Math.round((f.fxPplNative || 0) * kurz);
+    const pplCol = pplCzk >= 0 ? 'ap' : 'an';
+    const fxCol = fxCzk >= 0 ? 'ap' : 'an';
+    return `<tr>
+      <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${mena}</div></td>
+      <td style="color:var(--text2);white-space:nowrap">${(f.pocetCP || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 4 })}</td>
+      <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>
+      <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>
+      <td class="${pplCol}" style="white-space:nowrap;font-weight:700">${pplCzk >= 0 ? '+' : ''}${czk(pplCzk)}</td>
+      <td class="${fxCol}" style="white-space:nowrap">${fxCzk >= 0 ? '+' : ''}${czk(fxCzk)}</td>
+    </tr>`;
+  }).join('');
+
+  const table = positions.length ? `<div class="card" style="margin-top:16px">
+    <div class="card-hdr"><div class="ct">Pozice</div></div>
+    <div class="tw"><table><thead><tr><th>Ticker</th><th>Počet ks</th><th>Nákup. cena (${mena})</th><th>Aktuál. cena (${mena})</th><th>P/L</th><th>Kurzový vliv</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${cashInfo}
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Ceny live z Trading 212 (účet v ${mena}, kurz ${kurz ? kurz.toFixed(2).replace('.', ',') : '—'} ${mena}/CZK). Nákup./aktuál. cena jsou v měně nástroje (nemusí být stejná jako účet) — proto se nepočítá jejich CZK hodnota; P/L a kurzový vliv jsou od T212 už v měně účtu, ty na CZK bezpečně převedeny jsou.</div>
+  </div>` : cashInfo;
+
+  el.innerHTML = cards + table;
 }

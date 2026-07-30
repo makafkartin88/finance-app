@@ -83,6 +83,11 @@ function doPost(e) {
       return refreshNav();
     }
 
+    // ── REFRESH TRADING 212 (čtení pozic + hotovosti přes T212 API, read-only) ──
+    if (body.action === 'refreshT212') {
+      return refreshT212();
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -261,49 +266,172 @@ function handleMarkPayslipImported(body) {
   }
 }
 
-// ── UPSERT FUND (list Fondy, klíč = ISIN, sloupec B/index 1) ──
-// body.values = pole řádků; každý řádek se sloučí do existujícího dle ISIN.
-// Prázdné buňky ('' nebo null) NEPŘEPISUJÍ existující hodnotu → dvě CODYA PDF
-// (majetkový výpis + transakce) se sloučí do jednoho řádku fondu.
+// Hlavička listu "Fondy" — musí odpovídat FOND v js/config.js. `pplNative`/
+// `fxPplNative` (17., 18. sloupec) jsou nové kvůli Trading 212 — u CODYA/CONSEQ
+// zůstávají prázdné.
+var FOND_HEADER = ['provider','isin','nazev','mena','pocetCP','nakupNAV','nakupDatum','investovanoCZK','aktualNAV','aktualNAVdatum','aktualHodnotaCZK','poplatek','kurzEUR','hotovostCZK','poznamka','pplNative','fxPplNative'];
+
+// Rozšíří hlavičku existujícího listu Fondy o nové sloupce, pokud tam ještě
+// nejsou (list vznikl před Trading 212 integrací) — nedestruktivní.
+function ensureFondyHeader(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < FOND_HEADER.length) {
+    sheet.getRange(1, lastCol + 1, 1, FOND_HEADER.length - lastCol).setValues([FOND_HEADER.slice(lastCol)]);
+  }
+}
+
+// Upsert řádků do listu dle ISIN (sloupec B/index 1). Prázdné buňky ('' nebo
+// null) NEPŘEPISUJÍ existující hodnotu → dvě CODYA PDF (majetkový výpis +
+// transakce), nebo opakovaný T212 refresh, se sloučí do jednoho řádku fondu.
+function upsertFundRows(sheet, rows) {
+  var ISIN_COL = 1;
+  var data = sheet.getDataRange().getValues();
+  for (var r = 0; r < rows.length; r++) {
+    var incoming = rows[r];
+    var isin = incoming[ISIN_COL];
+    if (!isin) continue;
+    var foundRow = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][ISIN_COL] === isin) { foundRow = i; break; }
+    }
+    if (foundRow === -1) {
+      sheet.appendRow(incoming);
+      data.push(incoming);
+    } else {
+      var existing = data[foundRow];
+      for (var c = 0; c < incoming.length; c++) {
+        var v = incoming[c];
+        if (v !== '' && v !== null && v !== undefined) existing[c] = v;
+      }
+      sheet.getRange(foundRow + 1, 1, 1, existing.length).setValues([existing]);
+    }
+  }
+}
+
+// ── UPSERT FUND (list Fondy, klíč = ISIN) — akce z appky (PDF import) ──
 function handleUpsertFund(body) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Fondy');
-    if (!sheet) {
-      sheet = ss.insertSheet('Fondy');
-      sheet.appendRow(['provider','isin','nazev','mena','pocetCP','nakupNAV','nakupDatum','investovanoCZK','aktualNAV','aktualNAVdatum','aktualHodnotaCZK','poplatek','kurzEUR','hotovostCZK','poznamka']);
-    }
-    var ISIN_COL = 1; // index sloupce isin
-    var data = sheet.getDataRange().getValues();
-    var rows = body.values || [];
-    for (var r = 0; r < rows.length; r++) {
-      var incoming = rows[r];
-      var isin = incoming[ISIN_COL];
-      if (!isin) continue;
-      var foundRow = -1;
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][ISIN_COL] === isin) { foundRow = i; break; }
-      }
-      if (foundRow === -1) {
-        // nový fond → append
-        sheet.appendRow(incoming);
-        data.push(incoming);
-      } else {
-        // merge: přepiš jen neprázdná příchozí pole
-        var existing = data[foundRow];
-        for (var c = 0; c < incoming.length; c++) {
-          var v = incoming[c];
-          if (v !== '' && v !== null && v !== undefined) existing[c] = v;
-        }
-        sheet.getRange(foundRow + 1, 1, 1, existing.length).setValues([existing]);
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ success: true }))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
+    ensureFondyHeader(sheet);
+    upsertFundRows(sheet, body.values || []);
+    return jsonOut({ success: true });
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonOut({ error: err.message });
   }
+}
+
+// ── TRADING 212: čtení pozic + hotovosti přes veřejné (read-only) API ──
+// Klíč + secret se čtou ze Script Properties (script.google.com → Project
+// Settings → Script Properties → T212_API_KEY, T212_API_SECRET) — NIKDY
+// v appce/kódu (repo je veřejné, appka běží v prohlížeči). Musí mít jen
+// scopes "Portfolio" + "Account data" (čtení) — bez orders/pies, appka
+// nepotřebuje obchodovat. Nový typ klíče vyžaduje HTTP Basic auth
+// (base64 klíč:secret) — starší "jen klíč v Authorization" formát u něj
+// vrací 401.
+var T212_BASE = 'https://live.trading212.com/api/v0/equity';
+
+function refreshT212() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = props.getProperty('T212_API_KEY');
+    var secret = props.getProperty('T212_API_SECRET');
+    if (!key) return jsonOut({ error: 'T212_API_KEY není nastaven ve Script Properties.' });
+    if (!secret) return jsonOut({ error: 'T212_API_SECRET není nastaven ve Script Properties (nový typ klíče v T212 appce vydává API Key + API Secret Key společně — je potřeba obojí).' });
+    // Nový T212 klíč (API Key + API Secret Key) se autentizuje HTTP Basic
+    // auth: Authorization: Basic base64(apiKey:apiSecret). Starší "jen
+    // klíč" formát (Authorization: <key>) u tohoto typu klíče nefunguje.
+    var authHeader = 'Basic ' + Utilities.base64Encode(key + ':' + secret);
+
+    var info = t212Fetch('/account/info', authHeader);
+    if (info.err) return jsonOut({ error: 'T212 account/info: ' + info.err });
+    var cash = t212Fetch('/account/cash', authHeader);
+    if (cash.err) return jsonOut({ error: 'T212 account/cash: ' + cash.err });
+    var portfolio = t212Fetch('/portfolio', authHeader);
+    if (portfolio.err) return jsonOut({ error: 'T212 portfolio: ' + portfolio.err });
+
+    var currency = (info.data && info.data.currencyCode) || 'EUR';
+    var rate = 1;
+    if (currency !== 'CZK') {
+      var rateR = fetchCnbRate(currency);
+      if (!rateR.v) return jsonOut({ error: 'Kurz ' + currency + '/CZK (ČNB) nenalezen: ' + (rateR.err || '') });
+      rate = rateR.v;
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Fondy');
+    if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
+    ensureFondyHeader(sheet);
+
+    var todayIso = Utilities.formatDate(new Date(), 'Europe/Prague', 'd.M.yyyy');
+    var rows = [];
+    var c = cash.data || {};
+
+    // Souhrnný řádek — autoritativní čísla z /account/cash (invested/ppl/
+    // total/free jsou v měně účtu, T212 je počítá sám). Žádná rekonstrukce
+    // z jednotlivých pozic, aby se do CZK součtu nepřimíchala měna nástroje.
+    // aktualHodnotaCZK = jen hodnota POZIC (total − free), aby se volná
+    // hotovost nezapočítala dvakrát (jednou tady, jednou v hotovostCZK) —
+    // stejná konvence jako u CODYA/CONSEQ (curCZK fondu ≠ volná hotovost).
+    rows.push(fondRow({
+      provider: 'T212', isin: 'T212_CASH', nazev: 'Trading 212 — souhrn účtu', mena: currency,
+      investovanoCZK: Math.round((c.invested || 0) * rate),
+      aktualNAVdatum: todayIso,
+      aktualHodnotaCZK: Math.round(((c.total || 0) - (c.free || 0)) * rate),
+      kurzEUR: rate, hotovostCZK: Math.round((c.free || 0) * rate),
+      poznamka: 'ppl ' + Math.round(c.ppl || 0) + ' ' + currency,
+      pplNative: c.ppl, fxPplNative: ''
+    }));
+
+    // Pozice — ppl/fxPpl jsou od T212 už v měně účtu (bezpečně převeditelné
+    // na CZK jedním kurzem výše). quantity×averagePrice/currentPrice NEJSOU
+    // spolehlivě v měně účtu (nástroj může být obchodován v jiné měně) →
+    // necháváme syrové, jen informativní, NEPŘEVÁDÍME na CZK (žádný tichý
+    // mix měn — raději chybějící číslo než špatné).
+    var positions = portfolio.data || [];
+    for (var i = 0; i < positions.length; i++) {
+      var p = positions[i];
+      if (!p.ticker) continue;
+      rows.push(fondRow({
+        provider: 'T212', isin: p.ticker, nazev: p.ticker, mena: currency,
+        pocetCP: p.quantity, nakupNAV: p.averagePrice, nakupDatum: t212DateToCz(p.initialFillDate),
+        aktualNAV: p.currentPrice, aktualNAVdatum: todayIso,
+        kurzEUR: rate, pplNative: p.ppl, fxPplNative: p.fxPpl
+      }));
+    }
+
+    upsertFundRows(sheet, rows);
+    return jsonOut({ success: true, updated: rows.length, currency: currency, rate: rate });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  }
+}
+
+function t212Fetch(path, key) {
+  try {
+    var resp = UrlFetchApp.fetch(T212_BASE + path, { muteHttpExceptions: true, headers: { 'Authorization': key } });
+    var code = resp.getResponseCode();
+    if (code !== 200) return { err: 'HTTP ' + code + ' — ' + resp.getContentText().slice(0, 200) };
+    return { data: JSON.parse(resp.getContentText()) };
+  } catch (e) { return { err: e.message }; }
+}
+
+function t212DateToCz(iso) {
+  if (!iso) return '';
+  try { return Utilities.formatDate(new Date(iso), 'Europe/Prague', 'd.M.yyyy'); } catch (e) { return ''; }
+}
+
+// Řádek pole dle FOND_HEADER — chybějící pole zůstanou '' (upsert je nepřepíše).
+function fondRow(o) {
+  var r = new Array(FOND_HEADER.length).fill('');
+  r[0] = o.provider || ''; r[1] = o.isin || ''; r[2] = o.nazev || ''; r[3] = o.mena || '';
+  r[4] = o.pocetCP != null ? o.pocetCP : ''; r[5] = o.nakupNAV != null ? o.nakupNAV : ''; r[6] = o.nakupDatum || '';
+  r[7] = o.investovanoCZK != null ? o.investovanoCZK : ''; r[8] = o.aktualNAV != null ? o.aktualNAV : ''; r[9] = o.aktualNAVdatum || '';
+  r[10] = o.aktualHodnotaCZK != null ? o.aktualHodnotaCZK : ''; r[11] = o.poplatek != null ? o.poplatek : '';
+  r[12] = o.kurzEUR != null ? o.kurzEUR : ''; r[13] = o.hotovostCZK != null ? o.hotovostCZK : ''; r[14] = o.poznamka || '';
+  r[15] = o.pplNative != null ? o.pplNative : ''; r[16] = o.fxPplNative != null ? o.fxPplNative : '';
+  return r;
 }
 
 // ── REFRESH NAV: scrape aktuálních kurzů fondů z webů CODYA/CONSEQ ──
@@ -553,25 +681,27 @@ function scrapeNav(url, anchor) {
   } catch (e) { return { nav: null, err: e.message }; }
 }
 
-// EUR/CZK z oficiálního denního kurzu ČNB (textový feed, bez CORS/klíče)
-// Vrací { v, err } — v = kurz nebo null, err = důvod selhání.
-function fetchCnbEur() {
+// Kurz libovolné měny/CZK z oficiálního denního kurzu ČNB (textový feed,
+// bez CORS/klíče). Vrací { v, err } — v = kurz za 1 jednotku dané měny.
+function fetchCnbRate(code) {
   try {
     var resp = UrlFetchApp.fetch('https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt',
       { muteHttpExceptions: true });
-    var code = resp.getResponseCode();
-    if (code !== 200) return { v: null, err: 'HTTP ' + code };
+    var respCode = resp.getResponseCode();
+    if (respCode !== 200) return { v: null, err: 'HTTP ' + respCode };
     var lines = resp.getContentText().split('\n');
     for (var i = 0; i < lines.length; i++) {
       var p = lines[i].split('|'); // země|měna|množství|kód|kurz
-      if (p.length >= 5 && p[3] === 'EUR') {
+      if (p.length >= 5 && p[3] === code) {
         var amount = numCz(p[2]) || 1;
         return { v: numCz(p[4]) / amount, err: null };
       }
     }
-    return { v: null, err: 'EUR řádek nenalezen' };
+    return { v: null, err: code + ' řádek nenalezen' };
   } catch (e) { return { v: null, err: e.message }; }
 }
+// EUR/CZK — zpětně kompatibilní wrapper (refreshNav volá jen EUR).
+function fetchCnbEur() { return fetchCnbRate('EUR'); }
 
 function numCz(v) { var n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; }
 function jsonOut(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
