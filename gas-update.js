@@ -350,13 +350,33 @@ function refreshT212() {
     if (cash.err) return jsonOut({ error: 'T212 account/cash: ' + cash.err });
     var portfolio = t212Fetch('/portfolio', authHeader);
     if (portfolio.err) return jsonOut({ error: 'T212 portfolio: ' + portfolio.err });
+    // Metadata (jméno + SKUTEČNÁ měna nástroje) — volitelné, ne kritické.
+    // Pozice bez ní zůstanou jen s tickerem a bez CZK hodnoty (bezpečný
+    // fallback), pokud klíč nemá scope "Metadata" nebo endpoint selže.
+    var meta = t212Fetch('/metadata/instruments', authHeader);
+    var instrByTicker = {};
+    var metaOk = !meta.err && Object.prototype.toString.call(meta.data) === '[object Array]';
+    if (metaOk) {
+      for (var mi = 0; mi < meta.data.length; mi++) {
+        if (meta.data[mi] && meta.data[mi].ticker) instrByTicker[meta.data[mi].ticker] = meta.data[mi];
+      }
+    }
 
     var currency = (info.data && info.data.currencyCode) || 'EUR';
-    var rate = 1;
+    var rateCache = {};
+    rateCache[currency] = 1;
     if (currency !== 'CZK') {
-      var rateR = fetchCnbRate(currency);
-      if (!rateR.v) return jsonOut({ error: 'Kurz ' + currency + '/CZK (ČNB) nenalezen: ' + (rateR.err || '') });
-      rate = rateR.v;
+      var acctRateR = fetchCnbRate(currency);
+      if (!acctRateR.v) return jsonOut({ error: 'Kurz ' + currency + '/CZK (ČNB) nenalezen: ' + (acctRateR.err || '') });
+      rateCache[currency] = acctRateR.v;
+    }
+    rateCache['CZK'] = 1;
+    var rate = rateCache[currency]; // kurz měny ÚČTU/CZK — pro ppl/fxPpl (ty T212 počítá v měně účtu)
+    function rateFor(code) {
+      if (rateCache[code] != null) return rateCache[code];
+      var r = fetchCnbRate(code);
+      rateCache[code] = r.v || null;
+      return rateCache[code];
     }
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -364,45 +384,54 @@ function refreshT212() {
     if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
     ensureFondyHeader(sheet);
 
-    var todayIso = Utilities.formatDate(new Date(), 'Europe/Prague', 'd.M.yyyy');
+    // Přesný čas refreshe (ne jen datum) — ceny jsou volatilní, uživatel
+    // potřebuje vědět, jak stará je tahle snímka, ne jen "dnes".
+    var nowStamp = Utilities.formatDate(new Date(), 'Europe/Prague', 'd.M.yyyy HH:mm');
     var rows = [];
     var c = cash.data || {};
+    var unresolved = 0;
 
-    // Souhrnný řádek — autoritativní čísla z /account/cash (invested/ppl/
-    // total/free jsou v měně účtu, T212 je počítá sám). Žádná rekonstrukce
-    // z jednotlivých pozic, aby se do CZK součtu nepřimíchala měna nástroje.
-    // aktualHodnotaCZK = jen hodnota POZIC (total − free), aby se volná
-    // hotovost nezapočítala dvakrát (jednou tady, jednou v hotovostCZK) —
-    // stejná konvence jako u CODYA/CONSEQ (curCZK fondu ≠ volná hotovost).
-    rows.push(fondRow({
-      provider: 'T212', isin: 'T212_CASH', nazev: 'Trading 212 — souhrn účtu', mena: currency,
-      investovanoCZK: Math.round((c.invested || 0) * rate),
-      aktualNAVdatum: todayIso,
-      aktualHodnotaCZK: Math.round(((c.total || 0) - (c.free || 0)) * rate),
-      kurzEUR: rate, hotovostCZK: Math.round((c.free || 0) * rate),
-      poznamka: 'ppl ' + Math.round(c.ppl || 0) + ' ' + currency,
-      pplNative: c.ppl, fxPplNative: ''
-    }));
-
-    // Pozice — ppl/fxPpl jsou od T212 už v měně účtu (bezpečně převeditelné
-    // na CZK jedním kurzem výše). quantity×averagePrice/currentPrice NEJSOU
-    // spolehlivě v měně účtu (nástroj může být obchodován v jiné měně) →
-    // necháváme syrové, jen informativní, NEPŘEVÁDÍME na CZK (žádný tichý
-    // mix měn — raději chybějící číslo než špatné).
+    // Pozice — pro každou dohledáme SKUTEČNOU měnu nástroje v metadatech
+    // (ne měnu účtu!) a tou přepočteme hodnotu do CZK. Bez metadat necháváme
+    // hodnotu prázdnou (raději chybějící číslo než špatná měna). ppl/fxPpl
+    // jsou od T212 už v měně účtu → převádí se kurzem účtu (rate) výše.
     var positions = portfolio.data || [];
+    var posInvestedCzk = 0, posValueCzk = 0;
     for (var i = 0; i < positions.length; i++) {
       var p = positions[i];
       if (!p.ticker) continue;
+      var instr = instrByTicker[p.ticker];
+      var instrCcy = instr && instr.currencyCode;
+      var instrRate = instrCcy ? rateFor(instrCcy) : null;
+      var investCzk = instrRate != null ? Math.round(p.quantity * p.averagePrice * instrRate) : '';
+      var curCzk = instrRate != null ? Math.round(p.quantity * p.currentPrice * instrRate) : '';
+      if (investCzk === '') unresolved++;
+      else { posInvestedCzk += investCzk; posValueCzk += curCzk; }
       rows.push(fondRow({
-        provider: 'T212', isin: p.ticker, nazev: p.ticker, mena: currency,
+        provider: 'T212', isin: p.ticker, nazev: (instr && (instr.name || instr.shortname)) || p.ticker,
+        mena: instrCcy || currency,
         pocetCP: p.quantity, nakupNAV: p.averagePrice, nakupDatum: t212DateToCz(p.initialFillDate),
-        aktualNAV: p.currentPrice, aktualNAVdatum: todayIso,
-        kurzEUR: rate, pplNative: p.ppl, fxPplNative: p.fxPpl
+        investovanoCZK: investCzk,
+        aktualNAV: p.currentPrice, aktualNAVdatum: nowStamp,
+        aktualHodnotaCZK: curCzk,
+        kurzEUR: instrRate != null ? instrRate : rate, pplNative: p.ppl, fxPplNative: p.fxPpl
       }));
     }
 
+    // Souhrnný řádek — hotovost + celkový ppl z /account/cash (autoritativní,
+    // T212 vlastní číslo). Investováno/hodnota se NEČTOU odsud, ale sečtou
+    // z pozic výše (teď máme spolehlivou měnu nástroje) — jinak by se
+    // portfolio počítalo dvakrát (jednou tady, jednou per pozice).
+    rows.push(fondRow({
+      provider: 'T212', isin: 'T212_CASH', nazev: 'Trading 212 — souhrn účtu', mena: currency,
+      aktualNAVdatum: nowStamp,
+      kurzEUR: rate, hotovostCZK: Math.round((c.free || 0) * rate),
+      poznamka: 'ppl ' + Math.round(c.ppl || 0) + ' ' + currency + (unresolved ? (' · ' + unresolved + ' pozic bez metadat') : ''),
+      pplNative: c.ppl, fxPplNative: ''
+    }));
+
     upsertFundRows(sheet, rows);
-    return jsonOut({ success: true, updated: rows.length, currency: currency, rate: rate });
+    return jsonOut({ success: true, updated: rows.length, currency: currency, rate: rate, metaOk: metaOk, unresolved: unresolved });
   } catch (err) {
     return jsonOut({ error: err.message });
   }

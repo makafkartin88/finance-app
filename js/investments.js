@@ -593,9 +593,18 @@ function renderT212View() {
 
   const mena = (cashRow && cashRow.mena) || 'EUR';
   const kurz = (cashRow && cashRow.kurzEUR) || 0;
-  const invested = (cashRow && cashRow.investovanoCZK) || 0;
-  const posValue = (cashRow && cashRow.aktualHodnotaCZK) || 0;
   const cash = (cashRow && cashRow.hotovostCZK) || 0;
+  const lastUpdate = (cashRow && cashRow.aktualNAVdatum) || '';
+  // Investováno/hodnota se počítají ze SOUČTU pozic (curCZK/invCZK), ne
+  // z cash-řádku — GAS teď dohledá skutečnou měnu každého nástroje přes
+  // T212 metadata, takže per-pozice CZK hodnota je spolehlivá. Pozice, kde
+  // se metadata nedohledala, mají prázdné pole (invCZK/curCZK vrátí 0) a
+  // počítají se do `unresolved`, ne do součtu — číslo je tak nezkreslené,
+  // jen případně nekompletní (viz poznámka pod tabulkou).
+  const resolved = positions.filter(f => f.aktualHodnotaCZK !== '' && f.aktualHodnotaCZK != null);
+  const unresolved = positions.length - resolved.length;
+  const invested = resolved.reduce((s, f) => s + invCZK(f), 0);
+  const posValue = resolved.reduce((s, f) => s + curCZK(f), 0);
   const gain = posValue - invested;
   const gainPct = invested ? (gain / invested) * 100 : 0;
   const totalWithCash = posValue + cash;
@@ -603,32 +612,39 @@ function renderT212View() {
   const cards = `<div class="mgrid">
     <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${czk(invested)}</div><div class="ms">${positions.length} ${positions.length === 1 ? 'pozice' : positions.length < 5 ? 'pozice' : 'pozic'} · účet v ${mena}</div></div>
     <div class="mc" style="border-left-color:var(--green)"><div class="ml">Aktuální hodnota pozic</div><div class="mv">${czk(posValue)}</div><div class="ms">${cash ? 'volná hotovost ' + czk(cash) : 'k dnešku'}</div></div>
-    <div class="mc" style="border-left-color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="ml">Zisk / ztráta</div><div class="mv ${gain >= 0 ? 'green' : 'red'}">${gain >= 0 ? '+' : ''}${czk(gain)}</div><div class="ms">dle T212 /account/cash</div></div>
+    <div class="mc" style="border-left-color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="ml">Zisk / ztráta</div><div class="mv ${gain >= 0 ? 'green' : 'red'}">${gain >= 0 ? '+' : ''}${czk(gain)}</div><div class="ms">ze součtu pozic</div></div>
     <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${gainPct >= 0 ? 'green' : 'red'}">${pctTxt(gainPct)}</div><div class="ms">celkem u T212 ${czk(totalWithCash)}</div></div>
   </div>`;
 
   const cashInfo = cash ? `<div class="metric-row" style="margin-top:12px"><div><strong>Volná hotovost</strong><span>nezainvestováno u Trading 212</span></div><strong>${czk(cash)}</strong></div>` : '';
 
-  const rows = positions.slice().sort((a, b) => (b.pplNative || 0) - (a.pplNative || 0)).map(f => {
+  const rows = positions.slice().sort((a, b) => curCZK(b) - curCZK(a)).map(f => {
+    const hasVal = f.aktualHodnotaCZK !== '' && f.aktualHodnotaCZK != null;
+    const dCZK = hasVal ? curCZK(f) - invCZK(f) : 0;
+    const czkCol = dCZK >= 0 ? 'ap' : 'an';
     const pplCzk = Math.round((f.pplNative || 0) * kurz);
     const fxCzk = Math.round((f.fxPplNative || 0) * kurz);
     const pplCol = pplCzk >= 0 ? 'ap' : 'an';
     const fxCol = fxCzk >= 0 ? 'ap' : 'an';
     return `<tr>
-      <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${mena}</div></td>
+      <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${f.isin} · ${f.mena || mena}</div></td>
       <td style="color:var(--text2);white-space:nowrap">${(f.pocetCP || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 4 })}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>
       <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>
-      <td class="${pplCol}" style="white-space:nowrap;font-weight:700">${pplCzk >= 0 ? '+' : ''}${czk(pplCzk)}</td>
+      <td class="${czkCol}" style="white-space:nowrap;font-weight:700">${hasVal ? czk(curCZK(f)) : '—'}</td>
+      <td class="${czkCol}" style="white-space:nowrap">${hasVal ? (dCZK >= 0 ? '+' : '') + czk(dCZK) : '—'}</td>
+      <td class="${pplCol}" style="white-space:nowrap">${pplCzk >= 0 ? '+' : ''}${czk(pplCzk)}</td>
       <td class="${fxCol}" style="white-space:nowrap">${fxCzk >= 0 ? '+' : ''}${czk(fxCzk)}</td>
     </tr>`;
   }).join('');
 
+  const unresolvedNote = unresolved ? `<div style="font-size:11px;color:var(--amber);margin-top:8px">⚠️ U ${unresolved} ${unresolved === 1 ? 'pozice' : 'pozic'} se nedohledala měna nástroje (T212 metadata) — nepočítá se do součtu výše, cena/počet jsou vidět v tabulce.</div>` : '';
+
   const table = positions.length ? `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Pozice</div></div>
-    <div class="tw"><table><thead><tr><th>Ticker</th><th>Počet ks</th><th>Nákup. cena (${mena})</th><th>Aktuál. cena (${mena})</th><th>P/L</th><th>Kurzový vliv</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${cashInfo}
-    <div style="font-size:11px;color:var(--text3);margin-top:12px">Ceny live z Trading 212 (účet v ${mena}, kurz ${kurz ? kurz.toFixed(2).replace('.', ',') : '—'} ${mena}/CZK). Nákup./aktuál. cena jsou v měně nástroje (nemusí být stejná jako účet) — proto se nepočítá jejich CZK hodnota; P/L a kurzový vliv jsou od T212 už v měně účtu, ty na CZK bezpečně převedeny jsou.</div>
+    <div class="tw"><table><thead><tr><th>Nástroj</th><th>Počet ks</th><th>Nákup. cena</th><th>Aktuál. cena</th><th>Hodnota</th><th>Zisk/ztráta CZK</th><th>P/L (kurz)</th><th>Kurzový vliv</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${cashInfo}${unresolvedNote}
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Ceny live z Trading 212${lastUpdate ? ` · staženo ${lastUpdate}` : ''} (účet v ${mena}, kurz ${kurz ? kurz.toFixed(2).replace('.', ',') : '—'} ${mena}/CZK). Nákup./aktuál. cena jsou v měně nástroje (viz sloupec u jména) — Hodnota/Zisk-ztráta jsou dopočítané kurzem té měny k CZK. „P/L (kurz)" a Kurzový vliv jsou T212 vlastní číslo v měně účtu, přepočtené na CZK.</div>
   </div>` : cashInfo;
 
   el.innerHTML = cards + table;
