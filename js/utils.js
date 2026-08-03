@@ -1,6 +1,27 @@
 import { C } from './config.js';
 import { state } from './state.js';
 
+/* Fetch listu z GAS s opakováním. Apps Script občas místo JSON vrátí HTML
+   chybovou stránku (redirect na script.googleusercontent.com skončí 404),
+   typicky když je skript vytížený. Jeden takový zásah dřív shodil celý load
+   do DEMO dat — proto se to párkrát zkusí znovu s prodlevou. Vrací
+   naparsovaný JSON, nebo hodí chybu po vyčerpání pokusů. */
+export async function fetchSheet(url, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url);
+      const t = await r.text();
+      if (t.trim().startsWith('<')) throw new Error(`Apps Script vrátil HTML (HTTP ${r.status}) místo dat`);
+      return JSON.parse(t);
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await new Promise(res => setTimeout(res, 600 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export function parseRow(r) {
   const raw = (r[C.castka]||'0').toString().replace(/[^\d.-]/g,'');
   let d = r[C.datum];

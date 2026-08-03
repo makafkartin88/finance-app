@@ -1,6 +1,6 @@
 import { GAS_URL, FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
-import { czk } from './utils.js';
+import { czk, fetchSheet } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 
@@ -45,17 +45,21 @@ export async function refreshInvNav() {
   const btn = document.getElementById('invRefreshBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Aktualizuji…'; }
   try {
-    // T212 se aktualizuje ve stejném kliknutí, ale nezávisle — chybějící
-    // T212_API_KEY nesmí shodit refresh CODYA/CONSEQ (fetch se nikdy nezamítne).
-    const [r, rt] = await Promise.all([
-      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) }),
-      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshT212' }) }).catch(() => null)
-    ]);
+    // POZOR: refreshNav a refreshT212 musí běžet POSTUPNĚ, ne paralelně.
+    // Oba přepisují list Fondy a refreshNav zapisuje celý rozsah ze snímku
+    // pořízeného na svém začátku — kdyby mezitím T212 zapsalo své řádky,
+    // refreshNav by je tím blanket-zápisem přemazal zpět na stará data.
+    // Paralelní běh navíc pouštěl dvě těžké GAS exekuce naráz (scrape 8 webů
+    // + stahování metadat T212), což přetěžovalo skript a shazovalo i běžné
+    // čtení listů (Google vracel HTML 404 místo JSON).
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     // odfiltruj S&P500 z failed → to je benchmark, ne fond
     const failedFunds = (d.failed || []).filter(x => /^CZ\d{10}$/.test(x));
+    // T212 až potom a nezávisle — chybějící klíč nesmí shodit CODYA/CONSEQ.
     let t212Msg = '';
+    const rt = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshT212' }) }).catch(() => null);
     if (rt) {
       const dt = await rt.json().catch(() => null);
       if (dt && dt.error) t212Msg = ` · T212: ${dt.error}`;
@@ -81,12 +85,13 @@ function fundName(isin) { const f = (state.investments || []).find(x => x.isin =
 export async function loadInvestmentData() {
   if (!isInvestmentsAllowed()) { state.investments = []; renderInv(); return; }
   try {
-    const [fR, tR, fhR, thR] = await Promise.all([
-      fetch(GAS_URL + '?sheet=Fondy').then(r => r.json()).catch(() => ({ error: 1 })),
-      fetch(GAS_URL + '?sheet=Trh').then(r => r.json()).catch(() => ({ values: [] })),
-      fetch(GAS_URL + '?sheet=FondyHist').then(r => r.json()).catch(() => ({ values: [] })),
-      fetch(GAS_URL + '?sheet=TrhHist').then(r => r.json()).catch(() => ({ values: [] }))
-    ]);
+    // Postupně, ne paralelně: čtyři souběžné požadavky na tentýž Apps Script
+    // ho vytěžují natolik, že část z nich skončí HTML chybovou stránkou
+    // (404 na redirectu) místo dat. fetchSheet navíc každý pokus opakuje.
+    const fR = await fetchSheet(GAS_URL + '?sheet=Fondy').catch(() => ({ error: 1 }));
+    const tR = await fetchSheet(GAS_URL + '?sheet=Trh').catch(() => ({ values: [] }));
+    const fhR = await fetchSheet(GAS_URL + '?sheet=FondyHist').catch(() => ({ values: [] }));
+    const thR = await fetchSheet(GAS_URL + '?sheet=TrhHist').catch(() => ({ values: [] }));
     if (fR.error) { state.investments = []; state.market = []; renderInv(); return; }
     state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin) || f.provider === 'T212');
     const pn = v => parseFloat(String(v).replace(',', '.')) || 0;
@@ -177,7 +182,11 @@ const CZK_COLORS = ['var(--blue)', 'var(--green)', 'var(--amber)', 'var(--purple
 function renderOverview() {
   const el = document.getElementById('inv-overview');
   if (!el) return;
-  const funds = state.investments || [];
+  // T212 do celkové alokace vstupuje JEN souhrnným řádkem (autoritativní
+  // total z /account/cash). Jednotlivé pozice se vynechají, jinak by se
+  // Trading 212 v koláči započítal dvakrát — a součet by navíc tiše klesl
+  // pokaždé, když by se u některé pozice nedohledala měna nástroje.
+  const funds = (state.investments || []).filter(f => !(f.provider === 'T212' && f.isin !== 'T212_CASH'));
   if (!funds.length) {
     el.innerHTML = `<div class="empty" style="padding:48px 0">Zatím žádná data. Nahraj výpis přes „📥 Nahrát výpis".</div>`;
     return;
@@ -595,25 +604,23 @@ function renderT212View() {
   const kurz = (cashRow && cashRow.kurzEUR) || 0;
   const cash = (cashRow && cashRow.hotovostCZK) || 0;
   const lastUpdate = (cashRow && cashRow.aktualNAVdatum) || '';
-  // Hodnota pozic = počet × aktuální cena × kurz měny NÁSTROJE (GAS ji
-  // dohledá přes T212 metadata — např. VUAG/VWRP se obchodují v GBP, ne
-  // v měně účtu). Pozice, kde se měna nedohledala, mají v sheetu prázdnou
-  // buňku; parseFundRow ji převede na 0, proto se „nevyřešeno" pozná podle
-  // nulové hodnoty (reálná pozice ji má vždy > 0) — ty se do součtu
-  // nezapočítají (viz upozornění pod tabulkou).
+  // Headline bere AUTORITATIVNÍ čísla ze souhrnného řádku (T212 je počítá
+  // samo z /account/cash v měně účtu) — ne součet pozic. Součet pozic totiž
+  // závisí na dohledání měny nástroje přes metadata, takže by se headline
+  // rozbil pokaždé, když by metadata selhala. Takhle platí vždy.
   //
-  // Zisk NEDOPOČÍTÁVÁME jako hodnota − (počet × nákupní cena × dnešní kurz):
+  // Zisk se NEDOPOČÍTÁVÁ jako hodnota − (počet × nákupní cena × dnešní kurz):
   // T212 drží investovanou částku v kurzu K DATU NÁKUPU, takže dnešním
   // kurzem by se do „investováno" propašoval kurzový pohyb (u VUAG rozdíl
-  // ~220 Kč). Autoritativní je `ppl` od T212 (v měně účtu, vč. kurzové
-  // složky, kterou zvlášť vyčísluje `fxPpl`) → z něj se dopočítá investováno.
-  const resolved = positions.filter(f => curCZK(f) > 0);
-  const unresolved = positions.length - resolved.length;
-  const posValue = resolved.reduce((s, f) => s + curCZK(f), 0);
-  const gain = Math.round(resolved.reduce((s, f) => s + (f.pplNative || 0), 0) * kurz);
-  const invested = posValue - gain;
+  // ~220 Kč). `ppl` od T212 už tohle řeší (kurzovou složku vyčísluje `fxPpl`).
+  const invested = (cashRow && cashRow.investovanoCZK) || 0;
+  const posValue = (cashRow && cashRow.aktualHodnotaCZK) || 0;
+  const gain = posValue - invested;
   const gainPct = invested ? (gain / invested) * 100 : 0;
   const totalWithCash = posValue + cash;
+  // Pozice bez dohledané měny nemají hodnotu — sheet tam má prázdnou buňku,
+  // kterou parseFundRow převede na 0 (reálná pozice má vždy > 0).
+  const unresolved = positions.filter(f => curCZK(f) <= 0).length;
 
   const cards = `<div class="mgrid">
     <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${czk(invested)}</div><div class="ms">${positions.length} ${positions.length === 1 ? 'pozice' : positions.length < 5 ? 'pozice' : 'pozic'} · účet v ${mena}</div></div>
@@ -648,7 +655,7 @@ function renderT212View() {
     <div class="card-hdr"><div class="ct">Pozice</div></div>
     <div class="tw"><table><thead><tr><th>Nástroj</th><th>Počet ks</th><th>Nákup. cena</th><th>Aktuál. cena</th><th>Hodnota</th><th>Zisk / ztráta</th><th>z toho kurz</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${cashInfo}${unresolvedNote}
-    <div style="font-size:11px;color:var(--text3);margin-top:12px">Ceny live z Trading 212${lastUpdate ? ` · <strong>staženo ${lastUpdate}</strong>` : ''}. Nákup./aktuál. cena jsou v měně nástroje (uvedena u jména) — <strong>Hodnota</strong> je přepočtená kurzem té měny k CZK. <strong>Zisk/ztráta</strong> je vlastní číslo T212 (v měně účtu ${mena}, kurz ${kurz ? kurz.toFixed(2).replace('.', ',') : '—'}), počítané kurzem k datu nákupu — proto sedí na T212 appku; „z toho kurz" je jeho kurzová složka. Ceny se hýbou průběžně, čísla platí k času stažení výše.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Ceny live z Trading 212${lastUpdate ? ` · <strong>staženo ${lastUpdate}</strong>` : ''}. Nákup./aktuál. cena jsou v měně nástroje (uvedena u jména) — <strong>Hodnota</strong> je přepočtená kurzem té měny k CZK. <strong>Zisk/ztráta</strong> je vlastní číslo T212 (v měně účtu ${mena}, kurz ${kurz ? kurz.toFixed(2).replace('.', ',') : '—'}), počítané kurzem k datu nákupu — proto sedí na T212 appku; „z toho kurz" je jeho kurzová složka. Součet sloupce Hodnota se může o pár set korun lišit od „Aktuální hodnoty pozic" v kartě výše: karta je celková částka od T212 (jejich vlastní kurz), sloupec je přepočet kurzem ČNB. Ceny se hýbou průběžně, čísla platí k času stažení výše.</div>
   </div>` : cashInfo;
 
   el.innerHTML = cards + table;

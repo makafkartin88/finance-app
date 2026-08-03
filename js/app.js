@@ -1,6 +1,6 @@
 import { GAS_URL, DEMO, VERSION } from './config.js';
 import { state } from './state.js';
-import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths } from './utils.js';
+import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
 import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
@@ -34,8 +34,7 @@ function setAuth(ok) {
 export async function loadSheets() {
   toast('Načítám data z Tabulky...');
   try {
-    const r = await fetch(GAS_URL + '?sheet=Transakce');
-    const d = await r.json();
+    const d = await fetchSheet(GAS_URL + '?sheet=Transakce');
     if (d.error) throw new Error(d.error);
     const rows = (d.values || []).slice(1);
     state.txs = rows.filter(r => r.length > 2 && r[0]).map(parseRow);

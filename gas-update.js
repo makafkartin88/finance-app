@@ -350,15 +350,33 @@ function refreshT212() {
     if (cash.err) return jsonOut({ error: 'T212 account/cash: ' + cash.err });
     var portfolio = t212Fetch('/portfolio', authHeader);
     if (portfolio.err) return jsonOut({ error: 'T212 portfolio: ' + portfolio.err });
+
     // Metadata (jméno + SKUTEČNÁ měna nástroje) — volitelné, ne kritické.
-    // Pozice bez ní zůstanou jen s tickerem a bez CZK hodnoty (bezpečný
-    // fallback), pokud klíč nemá scope "Metadata" nebo endpoint selže.
-    var meta = t212Fetch('/metadata/instruments', authHeader);
+    // Pozice bez nich zůstanou bez CZK hodnoty (bezpečný fallback), pokud
+    // klíč nemá scope "Metadata" nebo endpoint selže.
+    // Seznam nástrojů má ~13 tisíc položek (několik MB) — stahovat ho při
+    // KAŽDÉM refreshi je pomalé a přetěžuje skript, proto se z něj uloží
+    // jen mapa pro tickery, které skutečně držíme, a příště se sáhne po ní.
+    // Nový nákup = neznámý ticker → jednorázově se seznam stáhne znovu.
+    var heldTickers = [];
+    var pf = portfolio.data || [];
+    for (var ti = 0; ti < pf.length; ti++) if (pf[ti] && pf[ti].ticker) heldTickers.push(pf[ti].ticker);
+
     var instrByTicker = {};
-    var metaOk = !meta.err && Object.prototype.toString.call(meta.data) === '[object Array]';
-    if (metaOk) {
-      for (var mi = 0; mi < meta.data.length; mi++) {
-        if (meta.data[mi] && meta.data[mi].ticker) instrByTicker[meta.data[mi].ticker] = meta.data[mi];
+    try { instrByTicker = JSON.parse(props.getProperty('T212_INSTR_CACHE') || '{}'); } catch (e) { instrByTicker = {}; }
+    var missing = heldTickers.filter(function (t) { return !instrByTicker[t]; });
+    var metaOk = missing.length === 0; // vše už v cache → metadata netřeba
+    if (missing.length) {
+      var meta = t212Fetch('/metadata/instruments', authHeader);
+      metaOk = !meta.err && Object.prototype.toString.call(meta.data) === '[object Array]';
+      if (metaOk) {
+        for (var mi = 0; mi < meta.data.length; mi++) {
+          var it = meta.data[mi];
+          if (it && it.ticker && missing.indexOf(it.ticker) !== -1) {
+            instrByTicker[it.ticker] = { currencyCode: it.currencyCode, name: it.name || it.shortname || '' };
+          }
+        }
+        props.setProperty('T212_INSTR_CACHE', JSON.stringify(instrByTicker));
       }
     }
 
@@ -379,11 +397,6 @@ function refreshT212() {
       return rateCache[code];
     }
 
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Fondy');
-    if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
-    ensureFondyHeader(sheet);
-
     // Přesný čas refreshe (ne jen datum) — ceny jsou volatilní, uživatel
     // potřebuje vědět, jak stará je tahle snímka, ne jen "dnes".
     var nowStamp = Utilities.formatDate(new Date(), 'Europe/Prague', 'd.M.yyyy HH:mm');
@@ -395,8 +408,7 @@ function refreshT212() {
     // (ne měnu účtu!) a tou přepočteme hodnotu do CZK. Bez metadat necháváme
     // hodnotu prázdnou (raději chybějící číslo než špatná měna). ppl/fxPpl
     // jsou od T212 už v měně účtu → převádí se kurzem účtu (rate) výše.
-    var positions = portfolio.data || [];
-    var posInvestedCzk = 0, posValueCzk = 0;
+    var positions = pf;
     for (var i = 0; i < positions.length; i++) {
       var p = positions[i];
       if (!p.ticker) continue;
@@ -406,7 +418,6 @@ function refreshT212() {
       var investCzk = instrRate != null ? Math.round(p.quantity * p.averagePrice * instrRate) : '';
       var curCzk = instrRate != null ? Math.round(p.quantity * p.currentPrice * instrRate) : '';
       if (investCzk === '') unresolved++;
-      else { posInvestedCzk += investCzk; posValueCzk += curCzk; }
       rows.push(fondRow({
         provider: 'T212', isin: p.ticker, nazev: (instr && (instr.name || instr.shortname)) || p.ticker,
         mena: instrCcy || currency,
@@ -418,19 +429,34 @@ function refreshT212() {
       }));
     }
 
-    // Souhrnný řádek — hotovost + celkový ppl z /account/cash (autoritativní,
-    // T212 vlastní číslo). Investováno/hodnota se NEČTOU odsud, ale sečtou
-    // z pozic výše (teď máme spolehlivou měnu nástroje) — jinak by se
-    // portfolio počítalo dvakrát (jednou tady, jednou per pozice).
+    // Souhrnný řádek = AUTORITATIVNÍ čísla přímo z /account/cash. T212 je
+    // počítá samo v měně účtu (invested/ppl/total/free), takže platí i když
+    // se metadata nástrojů nedohledají — headline se pak nikdy nerozbije.
+    // aktualHodnotaCZK = total − free (jen pozice, bez volné hotovosti, aby
+    // se nezapočítala dvakrát). Souhrn je zároveň JEDINÝ zdroj pro celkovou
+    // alokaci na Přehledu; jednotlivé T212 pozice se tam nesčítají (viz
+    // renderOverview), aby portfolio nevyšlo dvojnásobně.
     rows.push(fondRow({
       provider: 'T212', isin: 'T212_CASH', nazev: 'Trading 212 — souhrn účtu', mena: currency,
+      investovanoCZK: Math.round((c.invested || 0) * rate),
       aktualNAVdatum: nowStamp,
+      aktualHodnotaCZK: Math.round(((c.total || 0) - (c.free || 0)) * rate),
       kurzEUR: rate, hotovostCZK: Math.round((c.free || 0) * rate),
       poznamka: 'ppl ' + Math.round(c.ppl || 0) + ' ' + currency + (unresolved ? (' · ' + unresolved + ' pozic bez metadat') : ''),
       pplNative: c.ppl, fxPplNative: ''
     }));
 
-    upsertFundRows(sheet, rows);
+    // Zápis pod zámkem — refreshNav přepisuje list Fondy celý naráz ze
+    // svého snímku, takže souběžný běh obou by si navzájem přemazal data.
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(60000)) return jsonOut({ error: 'List Fondy je právě aktualizován jiným během — zkus to za chvíli.' });
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName('Fondy');
+      if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
+      ensureFondyHeader(sheet);
+      upsertFundRows(sheet, rows);
+    } finally { lock.releaseLock(); }
     return jsonOut({ success: true, updated: rows.length, currency: currency, rate: rate, metaOk: metaOk, unresolved: unresolved });
   } catch (err) {
     return jsonOut({ error: err.message });
@@ -499,23 +525,40 @@ function refreshNav() {
     var eur = eurR.v;
     var updated = 0, log = [], failed = [];
     if (!eur) log.push('ČNB EUR: ' + (eurR.err || 'nenačteno'));
+    // Scrape (dlouhý, běží BEZ zámku) → výsledky se odkládají do mapy dle
+    // ISIN. Zápis se pak provede pod zámkem nad ČERSTVĚ načteným listem a
+    // dotkne se jen polí, která scrape opravdu mění. Dřív se list přepisoval
+    // celý naráz ze snímku pořízeného před scrapem, takže cokoliv, co mezitím
+    // zapsal refreshT212 (řádky T212), se tím vrátilo na stará data.
+    var navUpdates = {};
     for (var i = 1; i < data.length; i++) {
       var isin = String(data[i][FOND_C.isin] || '');
       var src = NAV_SOURCES[isin];
       if (!src) continue;
       var res = scrapeNav(src.url, src.anchor);
       if (!res || !res.nav) { log.push(isin + ': ' + ((res && res.err) || 'nenačteno')); failed.push(isin); continue; }
-      data[i][FOND_C.aktualNAV] = res.nav;
-      if (res.datum) data[i][FOND_C.aktualNAVdatum] = res.datum;
-      var mena = data[i][FOND_C.mena];
-      var kurz = (mena === 'EUR') ? (eur || numCz(data[i][FOND_C.kurzEUR]) || 25) : 1;
-      if (mena === 'EUR' && eur) data[i][FOND_C.kurzEUR] = eur;
-      var pocet = numCz(data[i][FOND_C.pocetCP]);
-      data[i][FOND_C.aktualHodnotaCZK] = Math.round(pocet * res.nav * kurz);
+      navUpdates[isin] = { nav: res.nav, datum: res.datum || '' };
       updated++;
       log.push(isin + ': ' + res.nav + (res.datum ? ' (' + res.datum + ')' : ''));
     }
-    sheet.getDataRange().setValues(data);
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(60000)) return jsonOut({ error: 'List Fondy je právě aktualizován jiným během — zkus to za chvíli.' });
+    try {
+      data = sheet.getDataRange().getValues(); // čerstvý stav (může obsahovat nové T212 řádky)
+      for (var j = 1; j < data.length; j++) {
+        var jIsin = String(data[j][FOND_C.isin] || '');
+        var u = navUpdates[jIsin];
+        if (!u) continue;
+        data[j][FOND_C.aktualNAV] = u.nav;
+        if (u.datum) data[j][FOND_C.aktualNAVdatum] = u.datum;
+        var mena = data[j][FOND_C.mena];
+        var kurz = (mena === 'EUR') ? (eur || numCz(data[j][FOND_C.kurzEUR]) || 25) : 1;
+        if (mena === 'EUR' && eur) data[j][FOND_C.kurzEUR] = eur;
+        data[j][FOND_C.aktualHodnotaCZK] = Math.round(numCz(data[j][FOND_C.pocetCP]) * u.nav * kurz);
+      }
+      sheet.getDataRange().setValues(data);
+    } finally { lock.releaseLock(); }
 
     // S&P 500 + USD/CZK z Yahoo (jednou, sdíleno pro summary i historii)
     var sp = fetchYahoo('%5EGSPC');       // ^GSPC
