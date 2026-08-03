@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
-import { yrChartSVG } from './charts.js';
+import { yrChartSVG, mountScrollChart } from './charts.js';
 
 const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
@@ -45,8 +45,11 @@ export function renderDash() {
   m4el.className = 'mv ' + (avgBalance >= 0 ? 'green' : 'red');
   document.getElementById('m4s').textContent = `průměr za ${monthBalances.length} měs.`;
 
-  // Cash flow — čitelný SVG graf (sdílený s Grafy), klikací (Ctrl = multi-select)
-  const months = getMonths(base(null,null)).slice(-6);
+  // Cash flow — čitelný SVG graf (sdílený s Grafy), klikací (Ctrl = multi-select).
+  // Celá historie (ne jen posledních 6 měsíců) — perMonthPx=85 cílí na ~6
+  // viditelných měsíců výchozně (užší karta než na stránce Grafy), starší
+  // měsíce jsou doscrollovatelné (mountScrollChart přiscrolluje na konec).
+  const months = getMonths(base(null,null));
   const allF = base(null,null);
   const monthStats = months.map(m => {
     const mt = allF.filter(t => t.mesic === m);
@@ -56,7 +59,7 @@ export function renderDash() {
       expense: mt.filter(t => t.typ === 'Výdaj').reduce((s,t) => s+t.castka, 0),
     };
   });
-  document.getElementById('cfChart').innerHTML = yrChartSVG(monthStats, state.drill.months, kFmt, 'drillM');
+  mountScrollChart('cfChart', yrChartSVG(monthStats, state.drill.months, kFmt, 'drillM', 85));
 
   // Cat bars
   const cats = {};

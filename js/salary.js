@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { czk } from './utils.js';
 import { cumulativeInflation } from './inflation-data.js';
+import { mountScrollChart, yearAxisMarks } from './charts.js';
 
 const MONTH_NAMES = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const ymLabel = s => `${s.mesic}/${String(s.rok).slice(2)}`;
@@ -37,9 +38,13 @@ function filtered() {
     (!_salRange.from || s.id >= _salRange.from) && (!_salRange.to || s.id <= _salRange.to));
 }
 
-/* ── SVG graf vývoje mzdy ── */
+/* ── SVG graf vývoje mzdy ──
+   Fixní šířka na pásku (perMonthPx) — graf ROSTE s počtem pásek (neztiskne
+   se), takže nad rámec šířky karty vznikne scroll (mountScrollChart), cíl
+   je ~12 viditelných měsíců výchozně, starší historie doscrollovatelná. */
 function salChartSVG(data, selectedId) {
-  const W = 720, H = 240, padL = 44, padR = 8, padT = 30, padB = 24;
+  const padL = 44, padR = 8, padT = 30, padB = 34;
+  const W = padL + padR + data.length * 72, H = 250;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const maxRaw = Math.max(...data.map(s => Math.max(s.hrubaMzda, s.cistaMzda)), 1);
   const step = maxRaw > 40000 ? 20000 : 10000;
@@ -62,18 +67,19 @@ function salChartSVG(data, selectedId) {
     const hY = y(s.hrubaMzda), cY = y(s.cistaMzda);
     const lblFs = data.length > 9 ? 8 : 10;
     return `<g onclick="salSelect('${s.id}')" style="cursor:pointer">
-      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 34}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="${padT - 16}" width="${groupW - 4}" height="${plotH + 30}" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
       <rect x="${cx - barW - 1.5}" y="${hY}" width="${barW}" height="${padT + plotH - hY}" rx="3" fill="var(--green)"/>
       <rect x="${cx + 1.5}" y="${cY}" width="${barW}" height="${padT + plotH - cY}" rx="3" fill="var(--blue)"/>
       <text x="${cx - barW / 2 - 1.5}" y="${hY - 4}" text-anchor="middle" font-size="${lblFs}" font-weight="700" fill="var(--green)">${kFmt(s.hrubaMzda)}</text>
       <text x="${cx + barW / 2 + 1.5}" y="${cY - 4}" text-anchor="middle" font-size="${lblFs}" font-weight="700" fill="var(--blue)">${kFmt(s.cistaMzda)}</text>
       ${bonus > 100 ? `<circle cx="${cx}" cy="${padT - 8}" r="3.5" fill="var(--amber)"/>
         <text x="${cx + 6}" y="${padT - 5}" font-size="${lblFs}" font-weight="700" fill="var(--amber)">+${kFmt(bonus)}</text>` : ''}
-      <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${ymLabel(s)}</text>
+      <text x="${cx}" y="${H - 20}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${ymLabel(s)}</text>
     </g>`;
   }).join('');
+  const years = yearAxisMarks(data, padL, groupW, s => s.rok, H - 6);
 
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${groups}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${groups}${years}</svg>`;
 }
 
 export function renderSalary() {
@@ -148,7 +154,7 @@ export function renderSalary() {
     : `${usedH} h v rozsahu · zůstatek ${last.dovolenaZustatek} h = ${days(last.dovolenaZustatek)} dní`;
 
   /* ── GRAF ── */
-  document.getElementById('salChart').innerHTML = salChartSVG(data, _salSelected);
+  mountScrollChart('salChart', salChartSVG(data, _salSelected));
 
   /* ── DETAIL PÁSKY (vybraný měsíc, jinak poslední) ── */
   document.getElementById('salDetailTitle').textContent = `Detail pásky — ${MONTH_NAMES[focus.mesic]} ${focus.rok}${sel ? '' : ' (poslední)'}`;

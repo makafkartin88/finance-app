@@ -58,10 +58,44 @@ window.selectCatFilter = function(cat) {
   renderCatBars(cat);
 };
 
+// Namontuje graf do elementu s nativním horizontálním posuvníkem — objeví
+// se automaticky jen když je graf širší než karta (víc měsíců, než se
+// vejde), jinak žádný posuvník není. Přiscrolluje na konec, takže výchozí
+// pohled jsou nejnovější měsíce (starší historie je vlevo, dá se doscrollovat).
+export function mountScrollChart(elId, svgHtml) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = `<div style="overflow-x:auto;overflow-y:hidden">${svgHtml}</div>`;
+  const wrap = el.firstElementChild;
+  if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+}
+
+// Skupinové popisky roku pod měsíčními labely — JEDEN štítek na celý rok,
+// vycentrovaný nad jeho měsíci (ne u každého měsíce), ať osa X při více
+// letech historie nepřehltí. `items` musí být chronologicky seřazené.
+export function yearAxisMarks(items, startX, groupW, getYear, y) {
+  let out = '', curYear = null, i0 = 0;
+  const flush = (year, from, to) => {
+    if (year == null) return '';
+    const cx = startX + groupW * ((from + to + 1) / 2);
+    return `<text x="${cx.toFixed(1)}" y="${y}" text-anchor="middle" font-size="9" fill="var(--text3)" opacity="0.65">${year}</text>`;
+  };
+  items.forEach((it, i) => {
+    const yr = getYear(it);
+    if (curYear === null) { curYear = yr; i0 = i; }
+    else if (yr !== curYear) { out += flush(curYear, i0, i - 1); curYear = yr; i0 = i; }
+  });
+  out += flush(curYear, i0, items.length - 1);
+  return out;
+}
+
 // SVG sloupcový graf příjmy/výdaje — čitelné hodnoty nad bary, klikací (Ctrl = multi-select)
 // onclickFn: název window funkce volané jako fn('<month>', event) — sdíleno mezi Grafy (chartDrillMonth) a Přehledem (drillM)
-export function yrChartSVG(monthStats, selected, kFmt, onclickFn = 'chartDrillMonth') {
-  const W = Math.max(560, monthStats.length * 64), H = 200, padT = 30, padB = 24, padX = 6;
+// perMonthPx: fixní šířka měsíce v px — graf ROSTE s počtem měsíců (neztiskne
+// se), takže nad rámec šířky karty vznikne scroll. Vyšší = méně měsíců
+// výchozně viditelných (Přehled chce ~6, Grafy ~12 — proto jde nastavit).
+export function yrChartSVG(monthStats, selected, kFmt, onclickFn = 'chartDrillMonth', perMonthPx = 64) {
+  const W = Math.max(perMonthPx, monthStats.length * perMonthPx), H = 210, padT = 30, padB = 34, padX = 6;
   const plotH = H - padT - padB;
   const maxRaw = Math.max(...monthStats.map(m => Math.max(m.income, m.expense)), 1);
   const step = maxRaw > 80000 ? 40000 : maxRaw > 40000 ? 20000 : 10000;
@@ -87,16 +121,17 @@ export function yrChartSVG(monthStats, selected, kFmt, onclickFn = 'chartDrillMo
       <rect x="${cx + 1.5}" y="${eY}" width="${barW}" height="${padT + plotH - eY}" rx="3" fill="var(--red)"/>
       <text x="${cx - barW / 2 - 1.5}" y="${iY - 4}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--green)">${kFmt(m.income)}</text>
       <text x="${cx + barW / 2 + 1.5}" y="${eY - 4}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--red)">${kFmt(m.expense)}</text>
-      <text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
+      <text x="${cx}" y="${H - 20}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
     </g>`;
   }).join('');
+  const years = yearAxisMarks(monthStats, padX, groupW, m => m.month.split(' ')[1], H - 6);
 
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${groups}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${grid}${groups}${years}</svg>`;
 }
 
 // SVG diverging graf salda — nulová osa uprostřed, čitelné hodnoty, klikací (Ctrl = multi-select)
-function netChartSVG(monthStats, selected, kFmt) {
-  const W = Math.max(560, monthStats.length * 64), H = 200, midY = 88, maxBar = 54, padX = 6;
+function netChartSVG(monthStats, selected, kFmt, perMonthPx = 64) {
+  const W = Math.max(perMonthPx, monthStats.length * perMonthPx), H = 210, midY = 88, maxBar = 54, padX = 6;
   const maxAbs = Math.max(...monthStats.map(m => Math.abs(m.income - m.expense)), 1);
   const groupW = (W - padX * 2) / monthStats.length;
   const barW = Math.min(28, groupW * 0.4);
@@ -112,14 +147,15 @@ function netChartSVG(monthStats, selected, kFmt) {
     const barY = net >= 0 ? midY - h : midY;
     const lblY = net >= 0 ? midY - h - 6 : midY + h + 14;
     return `<g onclick="chartDrillMonth('${m.month}', event)" style="cursor:pointer">
-      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="8" width="${groupW - 4}" height="160" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
+      ${isSel ? `<rect x="${cx - groupW / 2 + 2}" y="8" width="${groupW - 4}" height="170" rx="6" fill="var(--blue-bg, rgba(55,138,221,.10))" stroke="var(--blue)" stroke-width="1"/>` : ''}
       <rect x="${cx - barW / 2}" y="${barY}" width="${barW}" height="${h || 1}" rx="3" fill="${color}"/>
       <text x="${cx}" y="${lblY}" text-anchor="middle" font-size="10" font-weight="700" fill="${color}">${netFmt(net)}</text>
-      <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
+      <text x="${cx}" y="${H - 20}" text-anchor="middle" font-size="10" fill="${isSel ? 'var(--blue)' : 'var(--text3)'}" font-weight="${isSel ? 700 : 400}">${m.month.split(' ')[0]}</text>
     </g>`;
   }).join('');
+  const years = yearAxisMarks(monthStats, padX, groupW, m => m.month.split(' ')[1], H - 6);
 
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${zero}${groups}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${zero}${groups}${years}</svg>`;
 }
 
 // Voláno z onclick baru v ročním/saldo grafu — lokální drill (NEovlivňuje globální rozsah)
@@ -152,9 +188,11 @@ export function renderCharts() {
   // Detail data — filtrovat na vybraný měsíc(e), nebo celý rozsah
   const detail = _chartMonths.size ? base(_chartMonths, null) : all;
 
-  // Roční přehled + Saldo měsíce — čitelné SVG grafy, klikací (Ctrl = multi-select)
-  document.getElementById('yrChart').innerHTML = yrChartSVG(monthStats, _chartMonths, kFmt);
-  document.getElementById('srChart').innerHTML = netChartSVG(monthStats, _chartMonths, kFmt);
+  // Roční přehled + Saldo měsíce — čitelné SVG grafy, klikací (Ctrl = multi-select).
+  // perMonthPx=72 cílí na ~12 viditelných měsíců výchozně, zbytek historie
+  // je doscrollovatelný (mountScrollChart automaticky přiscrolluje na konec).
+  mountScrollChart('yrChart', yrChartSVG(monthStats, _chartMonths, kFmt, 'chartDrillMonth', 72));
+  mountScrollChart('srChart', netChartSVG(monthStats, _chartMonths, kFmt, 72));
 
   // Drill label v topbaru — zobrazit vybraný měsíc nebo celý rozsah
   const cTxt = document.getElementById('chRangeTxt');
