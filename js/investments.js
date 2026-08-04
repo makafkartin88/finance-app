@@ -81,9 +81,43 @@ export async function refreshInvNav() {
 // Název fondu z ISIN (pro feedback o selhání)
 function fundName(isin) { const f = (state.investments || []).find(x => x.isin === isin); return f ? f.nazev : isin; }
 
-/* ── LOAD ── */
+/* ── LOAD ──
+   GAS je pomalý (čtyři sekvenční požadavky na Apps Script, viz komentář
+   níže) — appka proto nejdřív okamžitě zobrazí POSLEDNÍ známý stav
+   z localStorage (bez čekání na síť) a teprve pak na pozadí doběhne
+   skutečný fetch, který zobrazení i cache přepíše, jakmile dorazí. Příště
+   se tak hned ukáže tahle (aktuálnější) verze, ne prázdno/spinner. */
+const INV_CACHE_KEY = 'invCacheV1';
+function loadInvCache() {
+  try { return JSON.parse(localStorage.getItem(INV_CACHE_KEY) || 'null'); } catch (e) { return null; }
+}
+function saveInvCache(payload) {
+  try { localStorage.setItem(INV_CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+}
+
+// Naplní state z {fR,tR,fhR,thR} — stejný tvar, ať přijde ze sítě, nebo z cache.
+function applySheets(fR, tR, fhR, thR) {
+  state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin) || f.provider === 'T212');
+  const pn = v => parseFloat(String(v).replace(',', '.')) || 0;
+  state.market = (tR.values || []).slice(1).filter(r => r[0]).map(r => ({
+    provider: r[0], startDate: r[1],
+    spStart: pn(r[2]), spCurrent: pn(r[3]), spCurrentDate: r[4] || '',
+    spStartCzk: pn(r[5]), spCurrentCzk: pn(r[6])   // devizově korigované (CZK)
+  }));
+  state.invHist = (fhR.values || []).slice(1).filter(r => r[0] && r[1]).map(r => ({
+    datum: normDate(r[0]), isin: String(r[1]), provider: r[2], nav: pn(r[3]), hodnotaCZK: pn(r[4])
+  }));
+  state.trhHist = (thR.values || []).slice(1).filter(r => r[0]).map(r => ({
+    datum: normDate(r[0]), spUsd: pn(r[1]), fx: pn(r[2]), spCzk: pn(r[3])
+  })).filter(r => r.spCzk > 0); // bez FX páru za ten den je bod nedůvěryhodný — raději díra v grafu než mix měn
+}
+
 export async function loadInvestmentData() {
   if (!isInvestmentsAllowed()) { state.investments = []; renderInv(); return; }
+
+  const cached = loadInvCache();
+  if (cached) { applySheets(cached.fR, cached.tR, cached.fhR, cached.thR); renderInv(); }
+
   try {
     // Postupně, ne paralelně: čtyři souběžné požadavky na tentýž Apps Script
     // ho vytěžují natolik, že část z nich skončí HTML chybovou stránkou
@@ -92,22 +126,11 @@ export async function loadInvestmentData() {
     const tR = await fetchSheet(GAS_URL + '?sheet=Trh').catch(() => ({ values: [] }));
     const fhR = await fetchSheet(GAS_URL + '?sheet=FondyHist').catch(() => ({ values: [] }));
     const thR = await fetchSheet(GAS_URL + '?sheet=TrhHist').catch(() => ({ values: [] }));
-    if (fR.error) { state.investments = []; state.market = []; renderInv(); return; }
-    state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin) || f.provider === 'T212');
-    const pn = v => parseFloat(String(v).replace(',', '.')) || 0;
-    state.market = (tR.values || []).slice(1).filter(r => r[0]).map(r => ({
-      provider: r[0], startDate: r[1],
-      spStart: pn(r[2]), spCurrent: pn(r[3]), spCurrentDate: r[4] || '',
-      spStartCzk: pn(r[5]), spCurrentCzk: pn(r[6])   // devizově korigované (CZK)
-    }));
-    state.invHist = (fhR.values || []).slice(1).filter(r => r[0] && r[1]).map(r => ({
-      datum: normDate(r[0]), isin: String(r[1]), provider: r[2], nav: pn(r[3]), hodnotaCZK: pn(r[4])
-    }));
-    state.trhHist = (thR.values || []).slice(1).filter(r => r[0]).map(r => ({
-      datum: normDate(r[0]), spUsd: pn(r[1]), fx: pn(r[2]), spCzk: pn(r[3])
-    })).filter(r => r.spCzk > 0); // bez FX páru za ten den je bod nedůvěryhodný — raději díra v grafu než mix měn
+    if (fR.error) { if (!cached) { state.investments = []; state.market = []; renderInv(); } return; }
+    applySheets(fR, tR, fhR, thR);
+    saveInvCache({ fR, tR, fhR, thR });
     renderInv();
-  } catch (e) { /* investice jsou volitelné — neshodit boot */ }
+  } catch (e) { /* investice jsou volitelné — necháme zobrazenou cache (pokud byla), jinak neshodit boot */ }
 }
 
 // datum (D.M.YYYY nebo ISO) → Date (pro výpočet délky držby)
