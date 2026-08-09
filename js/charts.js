@@ -37,7 +37,9 @@ function renderCatBars(cat) {
     // Title-case bez domény jako display name (Mujkoberec, Alza, Billa…)
     cpDisplay[norm] = norm.charAt(0).toUpperCase() + norm.slice(1);
   });
-  const sorted = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,10);
+  // Víc protistran než dřív (10) — delší seznam se odscrolluje uvnitř karty
+  // (.hbar-scroll), takže kartu neroztáhne.
+  const sorted = Object.entries(cpTotals).sort((a,b) => b[1]-a[1]).slice(0,30);
   const maxV = sorted[0]?.[1] || 1;
   const color = CATEGORY_COLORS[cat] || 'var(--text3)';
   el.innerHTML = sorted.map(([norm, val]) => {
@@ -259,11 +261,14 @@ export function renderCharts() {
   const incomeSel = detail.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
   const reserve = incomeSel - totalExpense;
   const scopeLabel = _chartMonths.size ? [..._chartMonths].join(', ') : 'celý rozsah';
+  // Stejná vizuální podoba jako sousední karty (Měsíce s největší útratou /
+  // Nejvyšší jednotlivé výdaje) → .insight.insight-badged, ne .metric-row
+  // (ten nemá orámování, takže karta vedle nich vypadala jinak).
   const balEl = document.getElementById('chartInsights');
   if (balEl) balEl.innerHTML = `
-    <div class="metric-row"><div><strong>Celkové příjmy</strong><span>${scopeLabel}</span></div><strong class="ap">+${czk(incomeSel)}</strong></div>
-    <div class="metric-row"><div><strong>Celkové výdaje</strong><span>${scopeLabel}</span></div><strong class="an">−${czk(totalExpense)}</strong></div>
-    <div class="metric-row"><div><strong>Čistá rezerva</strong><span>příjmy − výdaje</span></div><strong class="${reserve >= 0 ? 'ap' : 'an'}">${reserve >= 0 ? '+' : '−'}${czk(Math.abs(reserve))}</strong></div>`;
+    <div class="insight insight-badged"><div><strong>Celkové příjmy</strong><span>${scopeLabel}</span></div><strong class="insight-badge" style="color:var(--green)">+${czk(incomeSel)}</strong></div>
+    <div class="insight insight-badged"><div><strong>Celkové výdaje</strong><span>${scopeLabel}</span></div><strong class="insight-badge" style="color:var(--red)">−${czk(totalExpense)}</strong></div>
+    <div class="insight insight-badged"><div><strong>Čistá rezerva</strong><span>příjmy − výdaje</span></div><strong class="insight-badge" style="color:${reserve >= 0 ? 'var(--green)' : 'var(--red)'}">${reserve >= 0 ? '+' : '−'}${czk(Math.abs(reserve))}</strong></div>`;
 }
 
 // Bilance společných příspěvků (kladné = Martin přispěl víc).

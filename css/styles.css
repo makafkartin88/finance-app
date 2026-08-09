@@ -113,6 +113,8 @@ tbody tr.sel td{background:var(--blue-bg)}
 .cat-chip.active{background:var(--text);color:#fff;border-color:var(--text)}
 .hbar-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)}
 .hbar-row:last-child{border-bottom:none}
+/* Delší seznam protistran se neroztahuje donekonečna — od ~9 řádků scroll */
+.hbar-scroll{max-height:330px;overflow-y:auto;padding-right:6px}
 .hbar-name{width:130px;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 .hbar-track{flex:1;height:18px;background:var(--surface2);border-radius:4px;overflow:hidden}
 .hbar-fill{height:100%;border-radius:4px;min-width:3px;transition:width .25s ease}

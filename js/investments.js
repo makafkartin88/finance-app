@@ -320,6 +320,11 @@ const purchaseOf = isin => { const f = (state.investments || []).find(x => x.isi
 // jinak by nový nákup do portfolia vypadal jako skok performance.
 function histSeries(filterFn) {
   const rows = (state.invHist || []).filter(filterFn)
+    // hodnotaCZK == 0 znamená „hodnota nebyla známa" (např. T212 pozice
+    // zapsané dřív, než GAS uměl dohledat měnu nástroje), ne „nulová
+    // hodnota". Kdyby se braly, stáhly by součet k nule a rebase by celou
+    // řadu zahodil — poskytovatel by pak ze srovnání i grafu zmizel.
+    .filter(h => h.hodnotaCZK > 0)
     .filter(h => { const p = purchaseOf(h.isin); return !p || h.datum >= p; });
   if (!rows.length) return [];
   const byFund = {};
@@ -398,28 +403,32 @@ function spSeries(startISO) {
 function comparisonCard() {
   const byProvider = providerSeries();
   const rows = [];
+  const thin = []; // poskytovatelé, kteří v tomhle okně nemají dost bodů
 
   INV_PROVIDERS.forEach(p => {
     const s = byProvider[p.key];
-    if (!s || s.length < 2) return;
+    const held = (state.investments || []).some(f => f.provider === p.key);
+    if (!s || s.length < 2) { if (held) thin.push(p.label); return; }
     const first = s[0], last = s[s.length - 1];
     rows.push({
       label: p.label, color: p.color, ret: last.v / 100 - 1,
       from: first.t, to: last.t, valFrom: first.raw, valTo: last.raw
     });
   });
-  if (!rows.length) return '';
+  if (!rows.length && !thin.length) return '';
 
   // S&P za stejné okno. Konec se ZAROVNÁVÁ na nejnovější ocenění fondů —
   // S&P má denní data, fondy měsíční, takže bez toho by benchmark dostal
   // dny navíc, které portfolio vůbec nezažilo (stejná chyba, jaká se
   // opravovala v kartě Výkonnost u jednotlivých poskytovatelů).
-  const anchorIso = _cmpFrom || rows.map(r => r.from).sort()[0];
-  const endIso = rows.map(r => r.to).sort().pop();
-  const a = trhAtDate(anchorIso), b = trhAtDate(endIso);
-  if (a && b && a.spCzk > 0 && a.datum !== b.datum) {
-    rows.push({ label: 'S&P 500 (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
-      from: a.datum, to: b.datum, bench: true });
+  if (rows.length) {
+    const anchorIso = _cmpFrom || rows.map(r => r.from).sort()[0];
+    const endIso = rows.map(r => r.to).sort().pop();
+    const a = trhAtDate(anchorIso), b = trhAtDate(endIso);
+    if (a && b && a.spCzk > 0 && a.datum !== b.datum) {
+      rows.push({ label: 'S&P 500 (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
+        from: a.datum, to: b.datum, bench: true });
+    }
   }
 
   // Fondy se oceňují měsíčně → kotva může být znatelně před zvoleným datem
@@ -428,14 +437,14 @@ function comparisonCard() {
   let skewed = false;
   if (_cmpFrom) rows.forEach(r => { r.skew = dayDiff(r.from, _cmpFrom) > 7; if (r.skew) skewed = true; });
 
-  const best = Math.max(...rows.map(r => r.ret));
+  const best = rows.length ? Math.max(...rows.map(r => r.ret)) : null;
   const presets = [['all', 'Celá historie'], ['ytd', 'Letos (1.1.)'], ['lastytd', 'Od loňského 1.1.'],
     ['12', '12 měsíců'], ['6', '6 měsíců'], ['3', '3 měsíce']];
 
   const body = rows.sort((x, y) => y.ret - x.ret).map(r => `
     <div class="metric-row">
       <div><strong><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.color};margin-right:6px"></span>${r.label}</strong>
-      <span>${r.skew ? '⚠️ ' : ''}${czFromIso(r.from)} → ${czFromIso(r.to)}${r.bench ? '' : ` · ${czk(r.valFrom)} → ${czk(r.valTo)}`}</span></div>
+      <span>${r.skew ? `⚠️ poslední ocenění ${czFromIso(r.from)}` : czFromIso(r.from)} → ${czFromIso(r.to)}${r.bench ? '' : ` · ${czk(r.valFrom)} → ${czk(r.valTo)}`}</span></div>
       <strong class="${r.ret >= 0 ? 'ap' : 'an'}">${pctTxt(r.ret * 100)}${r.ret === best && rows.length > 1 ? ' 🏆' : ''}</strong>
     </div>`).join('');
 
@@ -449,7 +458,8 @@ function comparisonCard() {
       </div>
     </div>
     ${body}
-    ${skewed ? `<div style="font-size:11px;color:var(--amber-text);background:var(--amber-bg);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">⚠️ Řádky s výstrahou nezačínají přesně ${czFromIso(_cmpFrom)} — fond k tomu dni neměl ocenění, použil se poslední předchozí. Jejich období je tím pádem o něco delší, ber to při srovnání v potaz.</div>` : ''}
+    ${thin.length ? `<div style="font-size:11px;color:var(--text2);background:var(--surface2);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">${thin.join(', ')} — v tomhle období zatím není dost historie na spočítání výnosu (potřeba aspoň dvě ocenění). Historie se sbírá při každé aktualizaci kurzů.</div>` : ''}
+    ${skewed ? `<div style="font-size:11px;color:var(--amber-text);background:var(--amber-bg);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">⚠️ Řádky s výstrahou nezačínají přesně ${czFromIso(_cmpFrom)} — fond k tomu dni neměl ocenění, použilo se poslední předchozí (datum je u řádku). Jejich období je tím pádem o něco delší, ber to při srovnání v potaz.</div>` : ''}
     <div style="font-size:11px;color:var(--text3);margin-top:10px">Výnos je očištěný o vklady (dokup v průběhu období se nepočítá jako zhodnocení), takže jde poměřovat mezi sebou. Fondy CODYA/CONSEQ se oceňují měsíčně — kotvou je poslední skutečné ocenění k zvolenému datu, proto se u každého řádku zobrazuje, z jakých dat se počítá. S&P je zarovnané na stejný konec jako fondy.</div>
   </div>`;
 }
