@@ -5,6 +5,12 @@ import { fmtD, czk, getMonths, base } from './utils.js';
 // Interní stav pro výběr kategorie v protistrany-grafu
 let _catFilter = null;
 let _catExpenses = null;
+// Změna šířky okna může přelomit řádky v levé kartě (jiná výška) → přeměřit.
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => syncCatCardHeights(), 150);
+});
 // Lokální drill stav pro výběr měsíce v grafech (NEovlivňuje globální state._range)
 let _chartMonths = new Set();
 
@@ -51,6 +57,26 @@ function renderCatBars(cat) {
       <div class="hbar-val">${czk(val)}</div>
     </div>`;
   }).join('') || '<div class="empty" style="padding:24px 0">Žádné transakce</div>';
+  syncCatCardHeights();
+}
+
+// Karta „Protistrany" se výškou přizpůsobí kartě „Průměrná měsíční útrata"
+// vlevo — ta je referenční (počet kategorií se překlikáváním nemění, takže
+// je stabilní). Míň řádků protistran = prázdný prostor dole, víc řádků =
+// scroll uvnitř (.hbar-scroll) — žádná karta neroste a nehoupe layout.
+function syncCatCardHeights() {
+  const wrap = document.querySelector('.split-13');
+  const bars = document.getElementById('chartCatBars');
+  if (!wrap || !bars) return;
+  const cards = wrap.querySelectorAll(':scope > .card');
+  if (cards.length < 2) return;
+  const [leftCard, rightCard] = cards;
+  rightCard.style.minHeight = '';
+  bars.style.maxHeight = '';
+  const targetH = leftCard.offsetHeight;
+  rightCard.style.minHeight = targetH + 'px';
+  const above = bars.getBoundingClientRect().top - rightCard.getBoundingClientRect().top;
+  bars.style.maxHeight = Math.max(80, targetH - above - 16) + 'px';
 }
 
 // Voláno z onclick chipu i z řádku „Průměrná měsíční útrata" — obě karty
