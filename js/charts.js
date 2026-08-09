@@ -51,10 +51,12 @@ function renderCatBars(cat) {
   }).join('') || '<div class="empty" style="padding:24px 0">Žádné transakce</div>';
 }
 
-// Voláno z onclick chipu v HTML — přepne kategorii
+// Voláno z onclick chipu i z řádku „Průměrná měsíční útrata" — obě karty
+// sdílí stejný výběr kategorie, takže klik vlevo přefiltruje protistrany vpravo.
 window.selectCatFilter = function(cat) {
   _catFilter = cat;
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('active', c.textContent === cat));
+  document.querySelectorAll('.avg-cat-row').forEach(r => r.classList.toggle('sel', r.dataset.cat === cat));
   renderCatBars(cat);
 };
 
@@ -217,18 +219,23 @@ export function renderCharts() {
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 
 
-  // Průměrná měsíční útrata — jen kategorie + průměr/měsíc
-  const avgEl = document.getElementById('avgCats');
-  avgEl.innerHTML = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]).slice(0,6).map(([cat,val]) => {
-    const color = CATEGORY_COLORS[cat] || 'var(--text3)';
-    return `<div class="avg-cat-row"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${cat}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
-  }).join('') || '<div class="empty">Žádné kategorie</div>';
-
-  // Protistrany dle kategorie — interaktivní kombinovaná karta
+  // Vybraná kategorie je společná pro obě karty (útrata i protistrany),
+  // proto se určí PŘED vykreslením té první — jinak by se zvýraznění
+  // v „Průměrné měsíční útratě" při prvním renderu neprojevilo.
   _catExpenses = expenses;
   const catsSorted = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1]);
   // Pokud je uložená kategorie stále v datech, zachovat výběr; jinak přepnout na top
   if (!_catFilter || !categoryTotals[_catFilter]) _catFilter = catsSorted[0]?.[0] || null;
+
+  // Průměrná měsíční útrata — klik na řádek přefiltruje protistrany vpravo
+  const avgEl = document.getElementById('avgCats');
+  avgEl.innerHTML = catsSorted.slice(0,6).map(([cat,val]) => {
+    const color = CATEGORY_COLORS[cat] || 'var(--text3)';
+    const esc = cat.replace(/'/g, "\\'");
+    return `<div class="avg-cat-row${cat === _catFilter ? ' sel' : ''}" data-cat="${cat}" onclick="selectCatFilter('${esc}')" title="Zobrazit protistrany: ${cat}"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${cat}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
+  }).join('') || '<div class="empty">Žádné kategorie</div>';
+
+  // Protistrany dle kategorie — interaktivní kombinovaná karta
   const chipsEl = document.getElementById('catChips');
   if (chipsEl) {
     chipsEl.innerHTML = catsSorted.map(([cat]) =>

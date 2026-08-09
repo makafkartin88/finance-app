@@ -191,8 +191,19 @@ let _chartSel = 'all';
 let _allocView = 'provider';   // 'provider' | 'funds'
 let _allocSel = null;          // vybraný výsek koláče (klíč: 'CODYA'|'CONSEQ'|'Volná hotovost'|'isin:...')
 let _lineCtx = null;           // kontext grafu pro hover
+let _cmpFrom = '';             // ISO datum, od kterého se poměřuje výkonnost ('' = celá historie)
 window.invChartSel = function (v) { _chartSel = v; _allocSel = (v === 'all') ? null : v; renderOverview(); };
 window.invAllocView = function (v) { _allocView = v; renderOverview(); };
+// Přepínač období srovnání — presety počítané k dnešku, nebo vlastní datum.
+window.invCmpPreset = function (v) {
+  const d = new Date();
+  if (v === 'all') _cmpFrom = '';
+  else if (v === 'ytd') _cmpFrom = `${d.getFullYear()}-01-01`;
+  else if (v === 'lastytd') _cmpFrom = `${d.getFullYear() - 1}-01-01`;
+  else { d.setMonth(d.getMonth() - parseInt(v, 10)); _cmpFrom = d.toLocaleDateString('sv-SE'); }
+  renderOverview();
+};
+window.invCmpDate = function (v) { _cmpFrom = v || ''; renderOverview(); };
 // Klik na výsek/řádek alokace → zvýraznění + filtr grafu (druhý klik zruší)
 window.invAllocPick = function (key) {
   _allocSel = (_allocSel === key) ? null : key;
@@ -255,9 +266,10 @@ function renderOverview() {
     </div>
   </div>`;
 
-  // --- Graf vývoje vs S&P ---
-  el.innerHTML = fb + allocCard + `<div class="card" style="margin-top:16px">
-    <div class="card-hdr"><div class="ct">Vývoj vs. S&amp;P 500 (rebasováno na 100, v CZK)</div>
+  // --- Srovnání výkonnosti za společné období + graf vývoje vs S&P ---
+  const cmpCard = comparisonCard();
+  el.innerHTML = fb + allocCard + cmpCard + `<div class="card" style="margin-top:16px">
+    <div class="card-hdr"><div class="ct">Vývoj vs. S&amp;P 500 (rebasováno na 100${_cmpFrom ? ' k datu srovnání' : ''}, v CZK)</div>
       <select class="sel" onchange="invChartSel(this.value)">${chartSelOptions()}</select></div>
     <div id="invChart"></div>
   </div>`;
@@ -341,6 +353,21 @@ function rebase(pts) {
     return { t: p.t, v: idx, raw: p.v };
   });
 }
+/* Přepočet unitizovaného indexu tak, aby 100 bylo k VYBRANÉMU DATU srovnání.
+   Fondy se oceňují měsíčně, takže k libovolnému datu (1.1.) typicky žádný bod
+   neexistuje — kotvou je proto poslední SKUTEČNÝ bod k tomu datu (jeho datum
+   se pak i zobrazuje, ať je jasné, k čemu se poměřuje). Když je zvolené datum
+   před začátkem řady, kotvou je první dostupný bod. */
+function rebaseFrom(pts, fromIso) {
+  if (!fromIso || !pts.length) return pts;
+  let ai = -1;
+  for (let i = 0; i < pts.length; i++) { if (pts[i].t <= fromIso) ai = i; else break; }
+  const start = ai >= 0 ? ai : 0;
+  const v0 = pts[start].v;
+  if (!v0) return [];
+  return pts.slice(start).map(p => ({ ...p, v: p.v / v0 * 100 }));
+}
+
 // Nejnovější bod TrhHist k danému datu (nebo dřív) — pro srovnání "S&P k datu X",
 // ne k dnešku. Fallback na první dostupný bod, pokud je datum před historií.
 function trhAtDate(iso) {
@@ -360,13 +387,85 @@ function spSeries(startISO) {
   return th.filter(r => r.datum >= startISO).map(r => ({ t: r.datum, v: r.spCzk / base * 100, raw: r.spCzk }));
 }
 
+/* ── SROVNÁNÍ VÝKONNOSTI ZA SPOLEČNÉ OBDOBÍ ──
+   Bez tohohle měl každý poskytovatel „výnos" za jiné období (od svého data
+   nákupu), takže se čísla nedala postavit vedle sebe. Tady mají všichni —
+   včetně S&P — stejné okno.
+
+   Výnos je TIME-WEIGHTED z unitizovaného indexu, ne (hodnota_teď / hodnota_tehdy − 1):
+   ten druhý by u dokupů v průběhu období ukázal nesmysl (přírůstek vkladu
+   by vypadal jako výnos). Hodnoty v Kč jsou vedle jen informativně. */
+function comparisonCard() {
+  const byProvider = providerSeries();
+  const rows = [];
+
+  INV_PROVIDERS.forEach(p => {
+    const s = byProvider[p.key];
+    if (!s || s.length < 2) return;
+    const first = s[0], last = s[s.length - 1];
+    rows.push({
+      label: p.label, color: p.color, ret: last.v / 100 - 1,
+      from: first.t, to: last.t, valFrom: first.raw, valTo: last.raw
+    });
+  });
+  if (!rows.length) return '';
+
+  // S&P za stejné okno. Konec se ZAROVNÁVÁ na nejnovější ocenění fondů —
+  // S&P má denní data, fondy měsíční, takže bez toho by benchmark dostal
+  // dny navíc, které portfolio vůbec nezažilo (stejná chyba, jaká se
+  // opravovala v kartě Výkonnost u jednotlivých poskytovatelů).
+  const anchorIso = _cmpFrom || rows.map(r => r.from).sort()[0];
+  const endIso = rows.map(r => r.to).sort().pop();
+  const a = trhAtDate(anchorIso), b = trhAtDate(endIso);
+  if (a && b && a.spCzk > 0 && a.datum !== b.datum) {
+    rows.push({ label: 'S&P 500 (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
+      from: a.datum, to: b.datum, bench: true });
+  }
+
+  // Fondy se oceňují měsíčně → kotva může být znatelně před zvoleným datem
+  // a okna pak nejsou stejně dlouhá. Neschovávat to — označit.
+  const dayDiff = (x, y) => Math.abs((new Date(x) - new Date(y)) / 864e5);
+  let skewed = false;
+  if (_cmpFrom) rows.forEach(r => { r.skew = dayDiff(r.from, _cmpFrom) > 7; if (r.skew) skewed = true; });
+
+  const best = Math.max(...rows.map(r => r.ret));
+  const presets = [['all', 'Celá historie'], ['ytd', 'Letos (1.1.)'], ['lastytd', 'Od loňského 1.1.'],
+    ['12', '12 měsíců'], ['6', '6 měsíců'], ['3', '3 měsíce']];
+
+  const body = rows.sort((x, y) => y.ret - x.ret).map(r => `
+    <div class="metric-row">
+      <div><strong><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.color};margin-right:6px"></span>${r.label}</strong>
+      <span>${r.skew ? '⚠️ ' : ''}${czFromIso(r.from)} → ${czFromIso(r.to)}${r.bench ? '' : ` · ${czk(r.valFrom)} → ${czk(r.valTo)}`}</span></div>
+      <strong class="${r.ret >= 0 ? 'ap' : 'an'}">${pctTxt(r.ret * 100)}${r.ret === best && rows.length > 1 ? ' 🏆' : ''}</strong>
+    </div>`).join('');
+
+  return `<div class="card" style="margin-top:16px">
+    <div class="card-hdr"><div class="ct">Srovnání výkonnosti${_cmpFrom ? ` od ${czFromIso(_cmpFrom)}` : ' — celá historie'}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select class="sel" onchange="invCmpPreset(this.value)">
+          ${presets.map(([v, l]) => `<option value="${v}"${(v === 'all' && !_cmpFrom) ? ' selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <input type="date" class="sel" value="${_cmpFrom}" onchange="invCmpDate(this.value)" title="Vlastní datum od"/>
+      </div>
+    </div>
+    ${body}
+    ${skewed ? `<div style="font-size:11px;color:var(--amber-text);background:var(--amber-bg);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">⚠️ Řádky s výstrahou nezačínají přesně ${czFromIso(_cmpFrom)} — fond k tomu dni neměl ocenění, použil se poslední předchozí. Jejich období je tím pádem o něco delší, ber to při srovnání v potaz.</div>` : ''}
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">Výnos je očištěný o vklady (dokup v průběhu období se nepočítá jako zhodnocení), takže jde poměřovat mezi sebou. Fondy CODYA/CONSEQ se oceňují měsíčně — kotvou je poslední skutečné ocenění k zvolenému datu, proto se u každého řádku zobrazuje, z jakých dat se počítá. S&P je zarovnané na stejný konec jako fondy.</div>
+  </div>`;
+}
+
+// Unitizované řady per poskytovatel, ukotvené k vybranému období srovnání.
+function providerSeries() {
+  const out = {};
+  INV_PROVIDERS.forEach(p => {
+    out[p.key] = rebaseFrom(rebase(histSeries(h => h.provider === p.key)), _cmpFrom);
+  });
+  return out;
+}
+
 function buildChart() {
   const series = [];
-  const byProvider = {
-    CODYA: rebase(histSeries(h => h.provider === 'CODYA')),
-    CONSEQ: rebase(histSeries(h => h.provider === 'CONSEQ')),
-    T212: rebase(histSeries(h => h.provider === 'T212'))
-  };
+  const byProvider = providerSeries();
   const startOf = s => s.length ? s[0].t : null;
 
   if (_chartSel === 'all') {
@@ -379,7 +478,7 @@ function buildChart() {
     if (s.length) { series.push({ label: meta.label, color: meta.color, pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
   } else if (_chartSel.startsWith('isin:')) {
     const isin = _chartSel.slice(5);
-    const s = rebase(histSeries(h => h.isin === isin));
+    const s = rebaseFrom(rebase(histSeries(h => h.isin === isin)), _cmpFrom);
     if (s.length) { series.push({ label: (state.investments.find(f => f.isin === isin) || {}).nazev || isin, color: 'var(--purple)', pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
   }
   return lineChartSVG(series);

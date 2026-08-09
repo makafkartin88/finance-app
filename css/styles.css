@@ -117,9 +117,13 @@ tbody tr.sel td{background:var(--blue-bg)}
 .hbar-track{flex:1;height:18px;background:var(--surface2);border-radius:4px;overflow:hidden}
 .hbar-fill{height:100%;border-radius:4px;min-width:3px;transition:width .25s ease}
 .hbar-val{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;min-width:85px;text-align:right}
+/* Průměrná útrata (1/3) vedle protistran (2/3) — na desktopu vedle sebe */
+.split-13{display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;align-items:start}
 .avg-cat-wrap{display:flex;justify-content:center}
 .avg-cat-list{display:grid;gap:8px;max-width:420px;width:100%}
-.avg-cat-row{display:flex;align-items:center;gap:10px;padding:12px;border-radius:var(--rsm);background:var(--surface2);border:1px solid var(--border)}
+.avg-cat-row{display:flex;align-items:center;gap:10px;padding:12px;border-radius:var(--rsm);background:var(--surface2);border:1px solid var(--border);cursor:pointer;transition:background .1s,border-color .1s}
+.avg-cat-row:hover{background:var(--surface)}
+.avg-cat-row.sel{background:var(--blue-bg);border-color:var(--blue)}
 .avg-cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .avg-cat-name{flex:1;font-size:13px;color:var(--text)}
 .avg-cat-val{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap}
@@ -280,7 +284,7 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 }
 /* ── TABLET ── */
 @media (max-width: 900px) and (min-width: 641px){
-  .two,.three{grid-template-columns:1fr}
+  .two,.three,.split-13{grid-template-columns:1fr}
   .fgrid{grid-template-columns:1fr}
   .mgrid{grid-template-columns:repeat(2,1fr)}
   .topbar{padding:14px 16px;flex-wrap:wrap}
@@ -350,7 +354,7 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
   .dash-add{width:100%}
   .content{padding:12px 16px}
   .mgrid{grid-template-columns:repeat(2,1fr)}
-  .two,.three,.fgrid{grid-template-columns:1fr}
+  .two,.three,.split-13,.fgrid{grid-template-columns:1fr}
   .budrow{align-items:flex-start;flex-wrap:wrap}
   .budtrack,.budpct,.cname,.cval{width:auto}
   .modal{padding:18px;margin:8px}
