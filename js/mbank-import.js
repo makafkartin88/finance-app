@@ -443,19 +443,21 @@ export async function loadMbankNotification() {
     const newRows = d.values.slice(1).filter(r => r[4] === 'new');
     if (newRows.length) {
       const latest = newRows[newRows.length - 1];
-      showMbankBanner(latest[1], latest[2]); // [filename, driveUrl]
+      showMbankBanner(latest[1], latest[2]); // [filename, file_id (starší řádky: celá Drive URL)]
     }
   } catch(e) {}
 }
 
-function showMbankBanner(filename, driveUrl) {
+function showMbankBanner(filename, driveRef) {
   const banner = document.getElementById('mbankBanner');
   if (!banner) return;
   state._mbankImportFile = filename;
-  // Z Drive URL ("…/file/d/<ID>/view") si vytáhneme fileId, aby šel soubor
-  // stáhnout přes GAS (action getDriveFile) — bez ručního stahování
-  // a přetahování. Když se ID nepodaří získat, zůstane starý ruční postup.
-  const fileId = (String(driveUrl || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+  // Nové řádky ukládají rovnou fileId (soubor je privátní, čte ho jen GAS).
+  // Starší řádky (před opravou sdílení) mají celou Drive URL — z ní se
+  // fileId vytáhne stejně jako dřív, ať staré položky v banneru nezůstanou
+  // nefunkční.
+  const fileId = /^[A-Za-z0-9_-]{20,}$/.test(driveRef) ? driveRef
+    : (String(driveRef || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
   const esc = s => String(s).replace(/'/g, "\\'");
   banner.style.display = 'flex';
   banner.innerHTML = `
@@ -469,8 +471,7 @@ function showMbankBanner(filename, driveUrl) {
     <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
       ${fileId
         ? `<button class="btnp btnsm" onclick="importMbankFromDrive('${esc(fileId)}','${esc(filename)}')">Načíst a zobrazit návrh →</button>`
-        : `${driveUrl ? `<a href="${driveUrl}" target="_blank" class="btn btnsm">⬇ Stáhnout</a>` : ''}
-           <button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>`}
+        : `<button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>`}
       <button class="btn btnsm" onclick="hideMbankBanner()">✕</button>
     </div>`;
 }

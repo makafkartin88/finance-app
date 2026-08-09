@@ -834,7 +834,7 @@ function checkMbankEmail() {
   var sheet = ss.getSheetByName('MbankImport');
   if (!sheet) {
     sheet = ss.insertSheet('MbankImport');
-    sheet.appendRow(['datum_detekce', 'soubor', 'drive_url', 'datum_emailu', 'status']);
+    sheet.appendRow(['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status']);
   }
 
   // Získej existující soubory (aby se nepřidávaly duplicity)
@@ -857,13 +857,12 @@ function checkMbankEmail() {
         var name = att.getName();
         if (existing[name]) return; // už bylo zpracováno
 
-        var file = folder.createFile(att);
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        var file = folder.createFile(att); // záměrně BEZ setSharing — jsou to bankovní výpisy, čte je jen GAS
 
         sheet.appendRow([
           new Date(),      // datum_detekce
           name,            // soubor
-          file.getUrl(),   // drive_url
+          file.getId(),    // file_id (pro akci getDriveFile)
           msg.getDate(),   // datum_emailu
           'new'            // status
         ]);
