@@ -10,7 +10,7 @@ import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confi
 import { reloadSheets, saveSettings, initSettings } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
-import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail } from './mbank-import.js';
+import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
 import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive } from './salary-import.js';
@@ -193,6 +193,7 @@ window.onMbankFile = onMbankFile;
 window.confirmMbankImport = confirmMbankImport;
 window.hideMbankBanner = hideMbankBanner;
 window.toggleMbankDupDetail = toggleMbankDupDetail;
+window.importMbankFromDrive = importMbankFromDrive;
 window.renderSalary = renderSalary;
 window.salApplyRange = salApplyRange;
 window.salResetRange = salResetRange;

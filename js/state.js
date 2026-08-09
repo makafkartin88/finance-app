@@ -4,7 +4,10 @@ export const state = {
   txs: [],
   person: 'Oba',
   editIdx: null,
-  cfg: { apiKey: '', bilanceOffset: 20000, bilanceUcet: '670100-2230152615/6210' },
+  // uctyMartin / uctySarka — čísla účtů (jedno na řádek, klidně víc variant).
+  // Při importu z mBank se podle protistrany pozná převod mezi Martinem
+  // a Šárkou a automaticky se označí „do bilance" (viz mbank-import.js).
+  cfg: { apiKey: '', bilanceOffset: 20000, bilanceUcet: '670100-2230152615/6210', uctyMartin: '', uctySarka: '' },
   limits: { ...DEFAULT_LIMITS },
   drill: { months: new Set(), cat: null },
   _range: null,

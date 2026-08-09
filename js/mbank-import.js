@@ -3,6 +3,9 @@ import { state } from './state.js';
 import { parseRow } from './utils.js';
 import { toast, boot } from './app.js';
 
+// Heslo k PDF výpisu — jen localStorage, nikdy v kódu (repo je veřejné)
+const MBANK_PWD_KEY = 'mbankPdfPwd';
+
 /* ── MODAL CONTROL ── */
 export function openMbankImport() {
   document.getElementById('mbankResults').style.display = 'none';
@@ -19,8 +22,10 @@ export function mbankDol()  { document.getElementById('mbankZone').classList.rem
 export function mbankDod(e) { e.preventDefault(); mbankDol(); const f = e.dataTransfer.files[0]; if (f) procMbankFile(f); }
 export function onMbankFile(e) { const f = e.target.files[0]; if (f) procMbankFile(f); }
 
-/* ── MAIN PROCESSOR ── */
-async function procMbankFile(file) {
+/* ── MAIN PROCESSOR ──
+   `src` je buď File (drag-drop / výběr souboru), nebo ArrayBuffer
+   (stažení z Disku přes GAS — viz importMbankFromDrive). */
+async function procMbankFile(src, srcName) {
   const status  = document.getElementById('mbankStatus');
   const results = document.getElementById('mbankResults');
   status.style.display = 'block';
@@ -30,27 +35,34 @@ async function procMbankFile(file) {
     Čtu PDF výpis…
   </div>`;
 
-  if (!state._mbankImportFile) state._mbankImportFile = file.name;
+  const fname = srcName || src.name;
+  if (!state._mbankImportFile) state._mbankImportFile = fname;
 
   try {
     if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js se nepodařilo načíst — zkontroluj internetové připojení');
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    const password = document.getElementById('mbankPassword')?.value || '';
+    // Heslo: z pole v modalu, jinak zapamatované z minula (localStorage —
+    // repo je veřejné, heslo tedy NIKDY do kódu). Po úspěchu se uloží,
+    // takže další výpisy už heslo nevyžadují.
+    const password = document.getElementById('mbankPassword')?.value
+      || localStorage.getItem(MBANK_PWD_KEY) || '';
     const osoba    = document.getElementById('mbankOsoba')?.value || state.person || 'Martin';
 
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = src instanceof ArrayBuffer ? src : await src.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password: password || undefined });
 
+    let usedPwd = password;
     loadingTask.onPassword = (updateCallback, reason) => {
       const msg = reason === 2 ? 'Nesprávné heslo, zadej znovu:' : 'Zadej heslo k PDF výpisu:';
       const pwd = prompt(msg);
-      if (pwd !== null) updateCallback(pwd);
+      if (pwd !== null) { usedPwd = pwd; updateCallback(pwd); }
       else throw new Error('Import zrušen — heslo nebylo zadáno');
     };
 
     const pdf = await loadingTask.promise;
+    if (usedPwd) localStorage.setItem(MBANK_PWD_KEY, usedPwd);
 
     // Collect all text items with position and page info
     const allItems = [];
@@ -68,7 +80,7 @@ async function procMbankFile(file) {
     if (!rows.length) throw new Error('Nenalezeny žádné transakce. Ověř že nahráváš výpis z mBank (ne jiný dokument).');
 
     status.style.display = 'none';
-    showMbankPreview(rows, file.name);
+    showMbankPreview(rows, fname);
   } catch(e) {
     status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">
       <p style="color:var(--red);font-weight:600">Chyba: ${e.message}</p>
@@ -77,8 +89,24 @@ async function procMbankFile(file) {
   }
 }
 
-/* ── PDF PARSER ── */
-function parseMbankItems(items, osoba) {
+/* ── ČÍSLA ÚČTŮ (rozpoznání převodů Martin ↔ Šárka) ──
+   Výpis uvádí protistranu ve tvaru "000000-2379078011/3030", uživatel si
+   ale v nastavení může zapsat "2379078011/3030" — normalizace obojí srovná
+   (zahodí mezery a vedoucí nuly v předčíslí i čísle). */
+const ACCT_RE = /(?:(\d{1,6})-)?(\d{2,10})\/(\d{4})/;
+function normAccount(s) {
+  const m = String(s || '').replace(/\s/g, '').match(ACCT_RE);
+  if (!m) return '';
+  const pre = m[1] ? String(parseInt(m[1], 10)) : '0';
+  return (pre === '0' ? '' : pre + '-') + String(parseInt(m[2], 10)) + '/' + m[3];
+}
+// "účty z nastavení" (jeden na řádek / oddělené čárkou) → Set normalizovaných
+function acctSet(raw) {
+  return new Set(String(raw || '').split(/[\n,;]+/).map(normAccount).filter(Boolean));
+}
+
+/* ── PDF PARSER ── (exportováno kvůli ověřitelnosti bez reálného PDF) */
+export function parseMbankItems(items, osoba) {
   // Sort: page asc → Y desc (top of page = high Y in pdf.js) → X asc
   items.sort((a, b) => {
     if (a.page !== b.page) return a.page - b.page;
@@ -113,6 +141,7 @@ function parseMbankItems(items, osoba) {
   const stopRe = /^(Konečný|Počáteční|Strana|Přehled|mBank\s+S\.|Prosíme|Č\.\s+Datum|Datum\s+za)/i;
 
   const transactions = [];
+  const mAcc = acctSet(state.cfg.uctyMartin), sAcc = acctSet(state.cfg.uctySarka);
   let i = 0;
 
   while (i < lines.length) {
@@ -163,6 +192,17 @@ function parseMbankItems(items, osoba) {
         : cont.slice(2).join(' ').replace(/\b[A-Z]{2}:\d+\b/g, '').trim();
 
       const txTyp = amt < 0 ? 'Výdaj' : 'Příjem';
+
+      // Bilance Martin ↔ Šárka — pozná se podle účtu protistrany (kdekoli
+      // v podřádcích, ne jen na fixní pozici). „osoba" = KDO POSLAL peníze,
+      // což odpovídá konvenci u typu Vyrovnání (převod od Martina bilanci
+      // zvyšuje, od Šárky snižuje) — u příjmu tedy majitel protiúčtu,
+      // u výdaje majitel výpisu.
+      const cpAcc = normAccount(cont.find(c => ACCT_RE.test(c)) || '');
+      const cpOwner = cpAcc && (mAcc.has(cpAcc) ? 'Martin' : sAcc.has(cpAcc) ? 'Šárka' : null);
+      const bilance = !!cpOwner;
+      const rowOsoba = bilance ? (txTyp === 'Příjem' ? cpOwner : osoba) : osoba;
+
       transactions.push({
         datum:       mbankDateToIso(dateStr),
         popis,
@@ -173,7 +213,9 @@ function parseMbankItems(items, osoba) {
         metoda:      metoda || 'Převod',
         protistrana,
         poznamka,
-        osoba,
+        osoba:       rowOsoba,
+        bilance,
+        _cpAcc:      cpAcc,
         _dupTx: findDuplicate(dateStr, Math.abs(amt), txTyp)
       });
     } else {
@@ -273,7 +315,7 @@ function showMbankPreview(rows, fname) {
       const openBtn = dup.id
         ? `<button onclick="openEdit('${dup.id}')" style="margin-left:10px;font-size:11px;padding:2px 8px;cursor:pointer;background:var(--amber-text);color:#fff;border:none;border-radius:4px;white-space:nowrap">Otevřít →</button>`
         : '';
-      dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="5" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
+      dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="6" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
     }
 
     return `<tr style="${dup ? 'opacity:.55' : ''}">
@@ -299,6 +341,10 @@ function showMbankPreview(rows, fname) {
       <option ${r.osoba==='Martin'?'selected':''}>Martin</option>
       <option ${r.osoba==='Šárka'?'selected':''}>Šárka</option>
     </select></td>
+    <td style="text-align:center">
+      <input type="checkbox" id="mbb-${i}" ${r.bilance ? 'checked' : ''} title="Počítat do bilance Martin ↔ Šárka"/>
+      ${r._cpAcc ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">${r._cpAcc}</div>` : ''}
+    </td>
     <td><input id="mbm-${i}" type="number" min="0" step="0.01" value="${r.castka}" style="min-width:90px"/></td>
   </tr>${dupDetailRow}`;
   }).join('');
@@ -313,7 +359,7 @@ function showMbankPreview(rows, fname) {
       </div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th style="width:36px">✓</th><th>Datum</th><th>Popis / protistrana</th><th>Typ / kategorie</th><th>Osoba</th><th>Částka</th></tr></thead>
+      <thead><tr><th style="width:36px">✓</th><th>Datum</th><th>Popis / protistrana</th><th>Typ / kategorie</th><th>Osoba</th><th style="width:44px" title="Počítat do bilance Martin ↔ Šárka">⇄</th><th>Částka</th></tr></thead>
       <tbody>${trs}</tbody>
     </table></div>
   </div>`;
@@ -346,6 +392,7 @@ export async function confirmMbankImport() {
     const kat     = document.getElementById('mbk-'+i)?.value || rows[i].kategorie;
     const osoba   = document.getElementById('mbp-'+i)?.value || rows[i].osoba || 'Martin';
     const metoda  = rows[i].metoda || 'Převod';
+    const bilance = document.getElementById('mbb-'+i)?.checked ? 'TRUE' : 'FALSE';
     const castka  = Math.abs(parseFloat(document.getElementById('mbm-'+i)?.value || rows[i].castka) || 0);
 
     if (!isoDate || !popis || !castka) continue;
@@ -356,9 +403,12 @@ export async function confirmMbankImport() {
     const sign      = typ === 'Příjem' ? castka : -castka;
     const id        = `${yp}${mp}${dp}-mb${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
 
+    // Pořadí musí odpovídat mapě C v config.js — poslední sloupec (index 19)
+    // je `bilance`; dřív se neposílal vůbec, takže se převody mezi Martinem
+    // a Šárkou z importu nikdy do bilance nezapočítaly.
     const row = [sheetDate, popis, castka, 'CZK', rows[i].ucet || 'Společný účet', typ, kat, osoba, metoda,
                  proti, rows[i].poznamka || '', sign, mesic, yp, id,
-                 typ==='Výdaj'?castka:0, typ==='Příjem'?castka:0, sign, ''];
+                 typ==='Výdaj'?castka:0, typ==='Příjem'?castka:0, sign, '', bilance];
     allRows.push(row);
   }
 
@@ -402,6 +452,11 @@ function showMbankBanner(filename, driveUrl) {
   const banner = document.getElementById('mbankBanner');
   if (!banner) return;
   state._mbankImportFile = filename;
+  // Z Drive URL ("…/file/d/<ID>/view") si vytáhneme fileId, aby šel soubor
+  // stáhnout přes GAS (action getDriveFile) — bez ručního stahování
+  // a přetahování. Když se ID nepodaří získat, zůstane starý ruční postup.
+  const fileId = (String(driveUrl || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+  const esc = s => String(s).replace(/'/g, "\\'");
   banner.style.display = 'flex';
   banner.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
@@ -412,10 +467,34 @@ function showMbankBanner(filename, driveUrl) {
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
-      ${driveUrl ? `<a href="${driveUrl}" target="_blank" class="btn btnsm">⬇ Stáhnout</a>` : ''}
-      <button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>
+      ${fileId
+        ? `<button class="btnp btnsm" onclick="importMbankFromDrive('${esc(fileId)}','${esc(filename)}')">Načíst a zobrazit návrh →</button>`
+        : `${driveUrl ? `<a href="${driveUrl}" target="_blank" class="btn btnsm">⬇ Stáhnout</a>` : ''}
+           <button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>`}
       <button class="btn btnsm" onclick="hideMbankBanner()">✕</button>
     </div>`;
+}
+
+/* ── IMPORT Z DRIVE (přes GAS, žádný CORS ani ruční stahování) ──
+   GAS vrátí PDF jako base64 → pdf.js ho rozparsuje se zapamatovaným heslem
+   → rovnou se zobrazí náhled navržených transakcí. */
+export async function importMbankFromDrive(fileId, filename) {
+  openMbankImport();
+  const status = document.getElementById('mbankStatus');
+  status.style.display = 'block';
+  status.innerHTML = `<div class="card" style="text-align:center;padding:20px;color:var(--text2)">Stahuji výpis z Disku…</div>`;
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'getDriveFile', fileId }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
+    state._mbankImportFile = filename;
+    await procMbankFile(bin.buffer, d.name || filename);
+  } catch (e) {
+    status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">
+      <p style="color:var(--red);font-weight:600">Chyba stažení: ${e.message}</p>
+      <p style="color:var(--text2);font-size:12px;margin-top:6px">Zkus výpis nahrát ručně přetažením do okna výše.</p></div>`;
+  }
 }
 
 export function hideMbankBanner() {

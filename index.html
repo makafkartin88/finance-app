@@ -410,6 +410,16 @@
             <input type="text" id="sBilanceUcet" placeholder="670100-2230152615/6210"/>
             <div class="fhint">Převody na/z tohoto účtu se přeskočí při importu PDF výpisů z mBank.</div>
           </div>
+          <div class="fg" style="margin-top:12px">
+            <label>Účty Martina</label>
+            <textarea id="sUctyMartin" rows="3" placeholder="123456-1234567890/0800&#10;2379078011/3030"></textarea>
+            <div class="fhint">Jedno číslo účtu na řádek (klidně víc variant).</div>
+          </div>
+          <div class="fg" style="margin-top:12px">
+            <label>Účty Šárky</label>
+            <textarea id="sUctySarka" rows="3" placeholder="000000-2379078011/3030"></textarea>
+            <div class="fhint">Při importu z mBank se převod na/z těchto účtů automaticky označí „do bilance" a přiřadí se odesílateli. Předvyplnění jde v náhledu přepnout.</div>
+          </div>
           <button class="btnp" style="margin-top:14px" onclick="saveSettings()">Uložit nastavení</button>
         </div>
 
