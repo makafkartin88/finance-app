@@ -106,7 +106,7 @@
   <div class="modal" style="max-width:600px">
     <h2>📥 Import výpisu z mBank</h2>
     <div class="fgrid" style="margin-bottom:12px">
-      <div class="fg"><label>Heslo k PDF (pokud je)</label><input type="password" id="mbankPassword" placeholder="Volitelné heslo"/></div>
+      <div class="fg"><label>Heslo k PDF (pokud je)</label><input type="password" id="mbankPassword" placeholder="Zapamatováno z minula"/></div>
       <div class="fg"><label>Osoba</label><select id="mbankOsoba"><option>Martin</option><option>Šárka</option></select></div>
     </div>
     <div id="mbankZone" class="upzone" style="margin-bottom:12px"
@@ -117,6 +117,8 @@
       <label class="btnp btnsm" style="cursor:pointer">Vybrat soubor
         <input type="file" accept=".pdf,application/pdf" style="display:none" onchange="onMbankFile(event)"/>
       </label>
+      <div style="font-size:12px;color:var(--text2);margin:12px 0 6px">nebo rovnou z e-mailu</div>
+      <button class="btn btnsm" onclick="mbankCheckMail()">✉ Zkontrolovat poštu</button>
     </div>
     <div id="mbankStatus" style="display:none"></div>
     <div id="mbankResults" style="display:none"></div>

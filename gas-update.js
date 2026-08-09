@@ -63,6 +63,11 @@ function doPost(e) {
       return handleMarkMbankImported(body);
     }
 
+    // ── ZKONTROLOVAT POŠTU HNED (nečekat na měsíční trigger) ──
+    if (body.action === 'checkMbankEmail') {
+      return jsonOut({ success: true, added: checkMbankEmail() });
+    }
+
     // ── GET DRIVE FILE (base64) ──
     if (body.action === 'getDriveFile') {
       return handleGetDriveFile(body);
@@ -825,10 +830,15 @@ function checkPayslipEmail() {
 }
 
 // ── GMAIL → DRIVE → SHEET NOTIFICATION ──
-// Spusť ručně nebo nastav time-trigger: Triggers → checkMbankEmail → Time-driven → Month timer
+// Spusť ručně, přes akci 'checkMbankEmail' z appky, nebo time-trigger:
+// Triggers → checkMbankEmail → Time-driven → Month timer.
+// Okno je záměrně roční (ne 35 dní): když trigger jednou nevyjde nebo se
+// appka delší dobu nepoužívá, jinak by se výpisy nenávratně přeskočily.
+// Dedup dle názvu souboru zajistí, že se nic nepřidá dvakrát.
+// Vrací počet nově přidaných souborů.
 function checkMbankEmail() {
-  var threads = GmailApp.search('from:wyciag@mbank.pl OR from:kontakt@mbank.cz newer_than:35d has:attachment', 0, 10);
-  if (!threads.length) return;
+  var threads = GmailApp.search('from:wyciag@mbank.pl OR from:kontakt@mbank.cz newer_than:400d has:attachment', 0, 30);
+  if (!threads.length) return 0;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('MbankImport');
@@ -848,6 +858,7 @@ function checkMbankEmail() {
   var folders = DriveApp.getFoldersByName('Finance-Vypisy');
   var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy');
 
+  var added = 0;
   threads.forEach(function(thread) {
     var messages = thread.getMessages();
     messages.forEach(function(msg) {
@@ -867,7 +878,9 @@ function checkMbankEmail() {
           'new'            // status
         ]);
         existing[name] = true;
+        added++;
       });
     });
   });
+  return added;
 }

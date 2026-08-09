@@ -1,6 +1,6 @@
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
-import { parseRow } from './utils.js';
+import { parseRow, fetchSheet } from './utils.js';
 import { toast, boot } from './app.js';
 
 // Heslo k PDF výpisu — jen localStorage, nikdy v kódu (repo je veřejné)
@@ -429,51 +429,112 @@ export async function confirmMbankImport() {
   const fname = state._mbankImportFile;
   if (fname) {
     try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markMbankImported', filename: fname }) }); } catch(e) {}
-    hideMbankBanner();
     state._mbankImportFile = null;
+    // Znovu načíst frontu — když čeká další měsíc, banner rovnou nabídne jeho.
+    await loadMbankNotification();
   }
 }
 
-/* ── NOTIFICATIONS (semi-automation) ── */
+/* ── NOTIFICATIONS (semi-automation) ──
+   Nabízí VŽDY nejnovější nevyřízený výpis. Pořadí se určuje podle období
+   z názvu souboru ("…_za_2026-07.pdf"), ne podle pořadí řádků v sheetu —
+   trigger totiž může výpisy zachytit v jiném pořadí, než v jakém přišly,
+   a pak by banner nabízel starý měsíc, i když už je k dispozici novější.
+   Seznam zůstává krátký sám od sebe: vyřízené výpisy mají status
+   'imported' a mizí z něj. */
+const MONTHS_CZ = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen',
+  'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+
+// "mKonto_nr_2607_za_2026-07.pdf" → { key: 202607, label: 'červenec 2026' }
+function statementPeriod(filename) {
+  const m = String(filename).match(/(\d{4})-(\d{2})/);
+  if (!m) return { key: 0, label: '' };
+  return { key: +m[1] * 100 + +m[2], label: `${MONTHS_CZ[+m[2]] || m[2]} ${m[1]}` };
+}
+// Název účtu z názvu souboru ("mKonto_nr_2607_za_2026-07.pdf" → "mKonto") —
+// za jeden měsíc chodí víc příloh (běžný + spořicí účet), takže samotné
+// období by je v nabídce nerozlišilo.
+function statementAccount(filename) {
+  return String(filename).replace(/\.pdf$/i, '').split(/_nr_|_za_/)[0].replace(/_/g, ' ').trim();
+}
+// Nové řádky mají rovnou fileId; starší (před opravou sdílení) celou Drive URL.
+function refToFileId(ref) {
+  return /^[A-Za-z0-9_-]{20,}$/.test(ref) ? ref
+    : (String(ref || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+}
+
 export async function loadMbankNotification() {
   try {
-    const r = await fetch(GAS_URL + '?sheet=MbankImport');
-    const d = await r.json();
-    if (!d.values || d.values.length < 2) return;
-    const newRows = d.values.slice(1).filter(r => r[4] === 'new');
-    if (newRows.length) {
-      const latest = newRows[newRows.length - 1];
-      showMbankBanner(latest[1], latest[2]); // [filename, file_id (starší řádky: celá Drive URL)]
-    }
+    const d = await fetchSheet(GAS_URL + '?sheet=MbankImport');
+    const rows = (d.values || []).slice(1).filter(r => r[4] === 'new');
+    state._mbankPending = rows.map(r => {
+      const p = statementPeriod(r[1]);
+      return { filename: r[1], fileId: refToFileId(r[2]), label: p.label, key: p.key, acct: statementAccount(r[1]) };
+    }).sort((a, b) => (b.key - a.key)
+      // Stejné období: hlavní účet (mKonto) má přednost před spořicím
+      || (/^mKonto/i.test(b.filename) ? 1 : 0) - (/^mKonto/i.test(a.filename) ? 1 : 0));
+    if (state._mbankPending.length) showMbankBanner(0);
+    else hideMbankBanner();
   } catch(e) {}
 }
 
-function showMbankBanner(filename, driveRef) {
+// Přepnutí na jiný čekající výpis v rozbalovátku
+export function mbankPickPending(idx) { showMbankBanner(Number(idx)); }
+
+function showMbankBanner(idx) {
   const banner = document.getElementById('mbankBanner');
-  if (!banner) return;
-  state._mbankImportFile = filename;
-  // Nové řádky ukládají rovnou fileId (soubor je privátní, čte ho jen GAS).
-  // Starší řádky (před opravou sdílení) mají celou Drive URL — z ní se
-  // fileId vytáhne stejně jako dřív, ať staré položky v banneru nezůstanou
-  // nefunkční.
-  const fileId = /^[A-Za-z0-9_-]{20,}$/.test(driveRef) ? driveRef
-    : (String(driveRef || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+  const list = state._mbankPending || [];
+  const cur = list[idx];
+  if (!banner || !cur) return;
+  state._mbankImportFile = cur.filename;
+  state._mbankPendingIdx = idx;
   const esc = s => String(s).replace(/'/g, "\\'");
+  // Rozbalovátko jen když je co vybírat; omezené na 12 nejnovějších, aby se
+  // z něj ani po letech nestal nekonečný seznam.
+  const picker = list.length > 1
+    ? `<select class="sel" style="font-size:11px;padding:3px 6px" onchange="mbankPickPending(this.value)">
+        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${[p.label, p.acct].filter(Boolean).join(' · ') || p.filename}</option>`).join('')}
+       </select>` : '';
+
   banner.style.display = 'flex';
   banner.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
       <span style="font-size:20px">📄</span>
       <div>
-        <div style="font-size:13px;font-weight:600">Nový výpis z mBank k importu</div>
-        <div style="font-size:11px;color:var(--text2)">${filename}</div>
+        <div style="font-size:13px;font-weight:600">Výpis z mBank k importu${cur.label ? ' — ' + cur.label : ''}${cur.acct ? ` (${cur.acct})` : ''}</div>
+        <div style="font-size:11px;color:var(--text2)">${cur.filename}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
-      ${fileId
-        ? `<button class="btnp btnsm" onclick="importMbankFromDrive('${esc(fileId)}','${esc(filename)}')">Načíst a zobrazit návrh →</button>`
+    <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap">
+      ${picker}
+      ${cur.fileId
+        ? `<button class="btnp btnsm" onclick="importMbankFromDrive('${esc(cur.fileId)}','${esc(cur.filename)}')">Načíst a zobrazit návrh →</button>`
         : `<button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>`}
-      <button class="btn btnsm" onclick="hideMbankBanner()">✕</button>
+      <button class="btn btnsm" onclick="mbankMarkDone('${esc(cur.filename)}')" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
+      <button class="btn btnsm" onclick="hideMbankBanner()" title="Skrýt jen teď">✕</button>
     </div>`;
+}
+
+// Označí výpis za vyřízený v sheetu → z nabídky zmizí natrvalo (jinak se
+// stejný měsíc připomíná po každém načtení appky).
+export async function mbankMarkDone(filename) {
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markMbankImported', filename }) });
+  } catch(e) {}
+  await loadMbankNotification();
+}
+
+// Ruční kontrola pošty — nečeká na měsíční trigger v GAS.
+export async function mbankCheckMail() {
+  toast('Kontroluji poštu…');
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'checkMbankEmail' }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    await loadMbankNotification();
+    const n = (state._mbankPending || []).length;
+    toast(d.added ? `Nalezeno ${d.added} nových výpisů · čeká ${n}` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové výpisy'), 'ok');
+  } catch(e) { toast('Kontrola pošty selhala: ' + e.message, 'err'); }
 }
 
 /* ── IMPORT Z DRIVE (přes GAS, žádný CORS ani ruční stahování) ──
