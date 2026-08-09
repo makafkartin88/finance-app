@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
-import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
+import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
 import { yrChartSVG, mountScrollChart } from './charts.js';
 
 const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
@@ -79,21 +79,17 @@ export function renderDash() {
   const head = document.getElementById('recentHead');
   if (head) {
     head.innerHTML = `<tr>
-      <th>Datum</th>
-      <th>Popis</th>
+      ${thSort('dash','datum','Datum')}
+      ${thSort('dash','popis','Popis')}
       ${thFilter('dash','kategorie','Kategorie')}
       <th style="text-align:center">Účtenka</th>
       ${thAmount('dash','Částka')}
     </tr>`;
   }
 
-  // Apply column filters and sort
+  // Apply column filters and sort (bez vybraného sloupce = výchozí, nejnovější nahoře)
   let list = applyColumnFilters([...shown], 'dash');
-  if (state.tableFilters.dash.castkaSort) {
-    list = applySort(list, 'dash');
-  } else {
-    list = list.sort((a,b) => new Date(b.datum)-new Date(a.datum));
-  }
+  list = applySort(list, 'dash');
   list = list.slice(0, 20);
 
   document.getElementById('recentBody').innerHTML = list.map(t => {

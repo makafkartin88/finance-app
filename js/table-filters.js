@@ -69,11 +69,29 @@ export function applyColumnFilters(list, tableKey) {
   return out;
 }
 
+// Hodnota pro porovnání per sloupec — texty se řadí česky (localeCompare),
+// datum jako skutečné datum (ne jako text — "9/1/2026" by se jinak řadilo
+// před "10/1/2026"), částka jako číslo. Účtenka se neřadí (nedává smysl).
+const SORT_GETTERS = {
+  datum: t => new Date(t.datum).getTime() || 0,
+  popis: t => (t.popis || '').toLowerCase(),
+  kategorie: t => (t.kategorie || '').toLowerCase(),
+  typ: t => (t.typ || '').toLowerCase(),
+  ucet: t => (t.ucet || '').toLowerCase(),
+  metoda: t => (t.metoda || '').toLowerCase(),
+  protistrana: t => (t.protistrana || '').toLowerCase(),
+  castka: t => t.castka || 0
+};
+
 export function applySort(list, tableKey) {
   const f = getTableState(tableKey);
-  if (f.castkaSort === 'asc')  return [...list].sort((a, b) => a.castka - b.castka);
-  if (f.castkaSort === 'desc') return [...list].sort((a, b) => b.castka - a.castka);
-  return list;
+  const get = f.sortCol && SORT_GETTERS[f.sortCol];
+  if (!get) return [...list].sort((a, b) => new Date(b.datum) - new Date(a.datum)); // výchozí: nejnovější nahoře
+  const dir = f.sortDir === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    const av = get(a), bv = get(b);
+    return typeof av === 'string' ? av.localeCompare(bv, 'cs') * dir : (av - bv) * dir;
+  });
 }
 
 /* ── HEADER INDICATOR ── */
@@ -84,15 +102,19 @@ export function isFilterActive(tableKey, col) {
   return false;
 }
 
-export function getSortDir(tableKey) {
-  return getTableState(tableKey).castkaSort;
+function sortState(tableKey, col) {
+  const f = getTableState(tableKey);
+  const active = f.sortCol === col;
+  return { active, dir: active ? f.sortDir : null };
 }
 
 /* ── POPOVER OPENERS ── */
 export function openColPopover(anchorEl, tableKey, col) {
   if (suppressClick) return;
-  // If user dblclicks Částka header, cancel the pending sort toggle
-  if (col === 'castka' && _amtTimer) { clearTimeout(_amtTimer); _amtTimer = null; }
+  // Sloupce s vlastním filtrem (Kategorie, Částka) mají na jednoklik řazení
+  // a na dvojklik filtr — dvojklik proto zruší čekající (odloženou) změnu
+  // řazení, ať se po otevření filtru netriskne ještě řazení navíc.
+  cancelPendingSort(tableKey, col);
   ensurePopover();
   popoverAnchor = anchorEl;
   if (col === 'kategorie' || col === 'osoba') {
@@ -187,34 +209,53 @@ export function cpApplyRange(tableKey) {
   rerender(tableKey);
 }
 
-/* ── AMOUNT SORT TOGGLE (single click) ── */
-let _amtTimer = null;
-export function toggleAmountSort(tableKey, ev) {
-  if (ev) ev.stopPropagation();
-  // Defer the toggle so a dblclick can cancel it (dblclick opens range popover instead)
-  if (_amtTimer) clearTimeout(_amtTimer);
-  _amtTimer = setTimeout(() => {
-    _amtTimer = null;
+/* ── ŘAZENÍ (klik na hlavičku) ──
+   Cyklus stejný pro všechny sloupce: bez řazení → sestupně → vzestupně →
+   bez řazení. U sloupců, které mají navíc vlastní filtr (Kategorie,
+   Částka), se přepnutí řazení odloží o 280 ms, aby dvojklik (otevře filtr)
+   mohl tu jednu odloženou změnu zrušit — stejný trik, jaký měla dřív jen
+   Částka, teď obecně přes `deferred`. */
+const _sortTimers = {};
+function cancelPendingSort(tableKey, col) {
+  const key = tableKey + '|' + col;
+  if (_sortTimers[key]) { clearTimeout(_sortTimers[key]); delete _sortTimers[key]; }
+}
+export function toggleSort(tableKey, col, deferred) {
+  const apply = () => {
     const f = getTableState(tableKey);
-    if (f.castkaSort === null) f.castkaSort = 'desc';
-    else if (f.castkaSort === 'desc') f.castkaSort = 'asc';
-    else f.castkaSort = null;
+    if (f.sortCol !== col) { f.sortCol = col; f.sortDir = 'desc'; }
+    else if (f.sortDir === 'desc') f.sortDir = 'asc';
+    else { f.sortCol = null; f.sortDir = null; }
     rerender(tableKey);
-  }, 280);
+  };
+  if (!deferred) { apply(); return; }
+  cancelPendingSort(tableKey, col);
+  _sortTimers[tableKey + '|' + col] = setTimeout(apply, 280);
 }
 
-/* ── HEADER HTML BUILDER ── */
+/* ── HEADER HTML BUILDERS ── */
+function caretHtml(tableKey, col) {
+  const { active, dir } = sortState(tableKey, col);
+  const cls = active ? `th-caret ${dir}` : 'th-caret';
+  return `<span class="${cls}">${dir === 'asc' ? '▴' : '▾'}</span>`;
+}
+
+// Prosté sloupce (Datum, Popis, Typ, Účet, Metoda, Protistrana) — jen
+// řazení, žádný vlastní filtr → jednoklik řadí hned, bez odkladu.
+export function thSort(tableKey, col, label) {
+  return `<th class="th-sort" data-col="${col}" onclick="toggleSort('${tableKey}','${col}')">${label} ${caretHtml(tableKey, col)}</th>`;
+}
+
+// Kategorie — jednoklik řadí, dvojklik otevře multi-select filtr.
 export function thFilter(tableKey, col, label) {
   const active = isFilterActive(tableKey, col);
-  return `<th class="th-sort${active ? ' th-filtered' : ''}" data-col="${col}" onclick="openColPopover(this,'${tableKey}','${col}')">${label} <span class="th-caret">▾</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
+  return `<th class="th-sort${active ? ' th-filtered' : ''}" data-col="${col}" onclick="toggleSort('${tableKey}','${col}',true)" ondblclick="openColPopover(this,'${tableKey}','${col}')">${label} ${caretHtml(tableKey, col)}${active ? '<span class="th-dot"></span>' : ''}</th>`;
 }
 
+// Částka — jednoklik řadí, dvojklik otevře filtr na rozsah.
 export function thAmount(tableKey, label) {
-  const dir = getSortDir(tableKey);
   const active = isFilterActive(tableKey, 'castka');
-  const caretClass = dir ? `th-caret ${dir}` : 'th-caret';
-  const caretChar = dir === 'asc' ? '▴' : dir === 'desc' ? '▾' : '▾';
-  return `<th class="th-sort th-amt${active ? ' th-filtered' : ''}" data-col="castka" onclick="toggleAmountSort('${tableKey}',event)" ondblclick="openColPopover(this,'${tableKey}','castka')">${label} <span class="${caretClass}">${caretChar}</span>${active ? '<span class="th-dot"></span>' : ''}</th>`;
+  return `<th class="th-sort th-amt${active ? ' th-filtered' : ''}" data-col="castka" onclick="toggleSort('${tableKey}','castka',true)" ondblclick="openColPopover(this,'${tableKey}','castka')">${label} ${caretHtml(tableKey, 'castka')}${active ? '<span class="th-dot"></span>' : ''}</th>`;
 }
 
 /* ── ROW INTERACTIONS (dblclick + long-press) ── */

@@ -11,7 +11,7 @@ import { reloadSheets, saveSettings, initSettings } from './settings.js';
 import { initAuth, logout } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec, syncRecOsobaRow } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
-import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
+import { openColPopover, closePopover, toggleSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
 import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive } from './salary-import.js';
 
@@ -170,7 +170,7 @@ window.syncRecOsobaRow = syncRecOsobaRow;
 window.removeReceipt = removeReceipt;
 window.openMbankImport = openMbankImport;
 window.openColPopover = openColPopover;
-window.toggleAmountSort = toggleAmountSort;
+window.toggleSort = toggleSort;
 window.cpSelectAll = cpSelectAll;
 window.cpClearFilter = cpClearFilter;
 window.cpApplyMulti = cpApplyMulti;

@@ -2,7 +2,7 @@ import { GAS_URL } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, parseRow, base } from './utils.js';
 import { toast, boot } from './app.js';
-import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount } from './table-filters.js';
+import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
 
 let _searchTimer = null;
 export function searchTx() {
@@ -29,26 +29,22 @@ export function renderTx() {
   const head = document.getElementById('txHead');
   if (head) {
     head.innerHTML = `<tr>
-      <th>Datum</th>
-      <th>Popis</th>
+      ${thSort('tx','datum','Datum')}
+      ${thSort('tx','popis','Popis')}
       ${thFilter('tx','kategorie','Kategorie')}
-      <th>Typ</th>
-      <th>Účet</th>
-      <th>Metoda</th>
-      <th>Protistrana</th>
+      ${thSort('tx','typ','Typ')}
+      ${thSort('tx','ucet','Účet')}
+      ${thSort('tx','metoda','Metoda')}
+      ${thSort('tx','protistrana','Protistrana')}
       <th style="text-align:center">Účtenka</th>
       ${thAmount('tx','Částka')}
       <th></th>
     </tr>`;
   }
 
-  // Apply column filters and sort
+  // Apply column filters and sort (bez vybraného sloupce = výchozí, nejnovější nahoře)
   list = applyColumnFilters(list, 'tx');
-  if (state.tableFilters.tx.castkaSort) {
-    list = applySort(list, 'tx');
-  } else {
-    list = list.sort((a,b) => new Date(b.datum)-new Date(a.datum));
-  }
+  list = applySort(list, 'tx');
 
   document.getElementById('txBody').innerHTML = list.map((t,i) => {
     const cls = t.typ === 'Příjem' ? 'ap' : t.typ === 'Vyrovnání' ? 'av' : t.kategorie === 'Investice' ? 'ai' : 'an';
@@ -102,8 +98,16 @@ export function openTx(idx) {
   document.getElementById('txTitle').textContent = state.editIdx !== null ? 'Upravit transakci' : 'Přidat transakci';
   const today = new Date().toISOString().split('T')[0];
   if (state.editIdx !== null) {
-    const t = state.txs[state.editIdx], p = (t.datum||'').split('/');
-    document.getElementById('fDate').value = p.length === 3 ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}` : today;
+    const t = state.txs[state.editIdx];
+    // t.datum je buď "M/D/YYYY" (lokálně přidaná transakce), nebo ISO
+    // timestamp (GAS vrací datumové buňky takhle, Sheets je samo převede
+    // na Date). new Date() umí obojí; toLocaleDateString('sv-SE') vrátí
+    // YYYY-MM-DD v místním čase, takže bez posunu o den kolem půlnoci UTC.
+    // Split podle '/' fungoval jen pro první formát — u ISO stringu selhal
+    // a spadl na "dnešek", takže se při KAŽDÉ úpravě transakce datum tiše
+    // přepsalo na aktuální den.
+    const dObj = new Date(t.datum);
+    document.getElementById('fDate').value = !isNaN(dObj.getTime()) ? dObj.toLocaleDateString('sv-SE') : today;
     document.getElementById('fAmt').value = t.castka;
     document.getElementById('fDesc').value = t.popis;
     document.getElementById('fTyp').value = t.typ;
@@ -197,21 +201,30 @@ export async function saveTx() {
   const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const mesic = `${mn[parseInt(m)]} ${y}`;
   const sign = typ === 'Příjem' ? castka : -castka;
-  const newId = `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
-  const uctenka = state.editIdx !== null ? (state.txs[state.editIdx].uctenka || '') : '';
+  const isEdit = state.editIdx !== null;
+  const old = isEdit ? state.txs[state.editIdx] : null;
+  // Úprava si ponechá PŮVODNÍ id (ne nové) — jinak by se rozbily budoucí
+  // odkazy na tuhle transakci podle id (např. odebrání účtenky).
+  const txId = isEdit ? old.id : `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
+  const uctenka = isEdit ? (old.uctenka || '') : '';
   const bilance = bilanceOn ? 'TRUE' : 'FALSE';
-  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
+  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,txId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
   const tx = parseRow(row);
-  if (state.editIdx !== null) { state.txs[state.editIdx] = tx; } else {
-    state.txs.push(tx);
-    try {
-      const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: [row] }) });
-      const d = await r.json();
-      if (d.error) throw new Error(d.error);
-    } catch(e) { toast('Chyba zápisu: '+e.message,'err'); }
+  try {
+    if (isEdit) {
+      // GAS neumí update na místě → smaž starý řádek (dle id) a přidej
+      // nový (stejný vzor jako u opakovaných plateb v recurring.js).
+      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Transakce', txId: old.id }) });
+    }
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: [row] }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    if (isEdit) state.txs[state.editIdx] = tx; else state.txs.push(tx);
+  } catch(e) {
+    toast('Chyba zápisu: '+e.message,'err');
+    if (isEdit) state.txs[state.editIdx] = tx; else state.txs.push(tx); // aspoň lokálně, ať uživatel nepřijde o zadaná data
   }
-  const txId = newId;
-  closeTx(); boot(); toast(state.editIdx !== null ? 'Transakce upravena' : 'Uloženo do Sheets','ok'); state.editIdx = null;
+  closeTx(); boot(); toast(isEdit ? 'Transakce upravena' : 'Uloženo do Sheets','ok'); state.editIdx = null;
 
   // Upload receipt if file was selected in modal
   if (_modalReceiptFile) {
