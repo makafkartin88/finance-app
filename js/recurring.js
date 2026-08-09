@@ -56,7 +56,7 @@ function renderRecList() {
     <div class="rec-row">
       <div class="rec-info">
         <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${r.typ}</span>${r.bilance ? ' <span style="font-size:11px;color:var(--purple)" title="Počítá se do bilance Martin ↔ Šárka">⇄ bilance</span>' : ''}</div>
-        <div class="rec-detail">${czk(r.castka)} · ${r.osoba} · ${r.ucet} · den ${r.den}</div>
+        <div class="rec-detail">${czk(r.castka)} · ${r.ucet} · den ${r.den}</div>
       </div>
       <div class="rec-actions">
         <span class="rec-status ${r.aktivni ? 'rec-on' : 'rec-off'}">${r.aktivni ? 'Aktivní' : 'Neaktivní'}</span>
@@ -69,6 +69,15 @@ function renderRecList() {
 }
 
 /* ── ADD / EDIT TEMPLATE ── */
+/* Pole „Kdo poslal" jen kdyz se opravdu pocita bilance (viz transactions.js). */
+export function syncRecOsobaRow() {
+  const row = document.getElementById('rfOsobaRow');
+  if (!row) return;
+  const need = document.getElementById('rfBilance')?.checked
+    || document.getElementById('rfTyp')?.value === 'Vyrovnání';
+  row.style.display = need ? '' : 'none';
+}
+
 export function openRecForm() {
   state._recEditIdx = null;
   const hdr = document.querySelector('#recFormWrap h3');
@@ -84,6 +93,7 @@ export function openRecForm() {
   document.getElementById('rfProti').value = '';
   document.getElementById('rfDay').value = '1';
   document.getElementById('rfBilance').checked = false;
+  syncRecOsobaRow();
 }
 
 export function openRecEdit(i) {
@@ -103,6 +113,7 @@ export function openRecEdit(i) {
   document.getElementById('rfProti').value = r.protistrana;
   document.getElementById('rfDay').value = r.den;
   document.getElementById('rfBilance').checked = !!r.bilance;
+  syncRecOsobaRow();
 }
 
 export function closeRecForm() {
@@ -117,12 +128,16 @@ export async function saveRecTemplate() {
   if (!castka) { toast('Vyplň částku','err'); return; }
   const typ = document.getElementById('rfTyp').value;
   const kat = document.getElementById('rfKat').value;
-  const osoba = document.getElementById('rfOsoba').value;
+  // Stejne jako u jednorazove transakce: osoba se resi jen kdyz jde
+  // o bilanci nebo vyrovnani, jinak 'Oba' (vydaje jsou spolecne).
+  const bilanceOn = document.getElementById('rfBilance').checked;
+  const osoba = (bilanceOn || document.getElementById('rfTyp').value === 'Vyrovnání')
+    ? document.getElementById('rfOsoba').value : 'Oba';
   const ucet = document.getElementById('rfUcet').value;
   const metoda = document.getElementById('rfMetoda').value;
   const proti = document.getElementById('rfProti').value;
   const den = parseInt(document.getElementById('rfDay').value)||1;
-  const bilance = document.getElementById('rfBilance').checked ? 'TRUE' : 'FALSE';
+  const bilance = bilanceOn ? 'TRUE' : 'FALSE';
 
   const editIdx = state._recEditIdx;
   const isEdit = editIdx !== null && editIdx !== undefined;

@@ -48,7 +48,6 @@ async function procMbankFile(src, srcName) {
     // takže další výpisy už heslo nevyžadují.
     const password = document.getElementById('mbankPassword')?.value
       || localStorage.getItem(MBANK_PWD_KEY) || '';
-    const osoba    = document.getElementById('mbankOsoba')?.value || state.person || 'Martin';
 
     const arrayBuffer = src instanceof ArrayBuffer ? src : await src.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password: password || undefined });
@@ -76,7 +75,7 @@ async function procMbankFile(src, srcName) {
       });
     }
 
-    const rows = parseMbankItems(allItems, osoba);
+    const rows = parseMbankItems(allItems);
     if (!rows.length) throw new Error('Nenalezeny žádné transakce. Ověř že nahráváš výpis z mBank (ne jiný dokument).');
 
     status.style.display = 'none';
@@ -106,7 +105,7 @@ function acctSet(raw) {
 }
 
 /* ── PDF PARSER ── (exportováno kvůli ověřitelnosti bez reálného PDF) */
-export function parseMbankItems(items, osoba) {
+export function parseMbankItems(items) {
   // Sort: page asc → Y desc (top of page = high Y in pdf.js) → X asc
   items.sort((a, b) => {
     if (a.page !== b.page) return a.page - b.page;
@@ -201,7 +200,11 @@ export function parseMbankItems(items, osoba) {
       const cpAcc = normAccount(cont.find(c => ACCT_RE.test(c)) || '');
       const cpOwner = cpAcc && (mAcc.has(cpAcc) ? 'Martin' : sAcc.has(cpAcc) ? 'Šárka' : null);
       const bilance = !!cpOwner;
-      const rowOsoba = bilance ? (txTyp === 'Příjem' ? cpOwner : osoba) : osoba;
+      // Vydaje jsou spolecne → u bezne transakce 'Oba' (do bilance prispiva
+      // nulou). Konkretni clovek se doplni jen u prevodu mezi Martinem
+      // a Sarkou: u prijmu poslal majitel protiuctu, u vydaje ten druhy.
+      const other = cpOwner === 'Martin' ? 'Šárka' : 'Martin';
+      const rowOsoba = bilance ? (txTyp === 'Příjem' ? cpOwner : other) : 'Oba';
 
       transactions.push({
         datum:       mbankDateToIso(dateStr),
@@ -315,7 +318,7 @@ function showMbankPreview(rows, fname) {
       const openBtn = dup.id
         ? `<button onclick="openEdit('${dup.id}')" style="margin-left:10px;font-size:11px;padding:2px 8px;cursor:pointer;background:var(--amber-text);color:#fff;border:none;border-radius:4px;white-space:nowrap">Otevřít →</button>`
         : '';
-      dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="6" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
+      dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="5" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
     }
 
     return `<tr style="${dup ? 'opacity:.55' : ''}">
@@ -337,10 +340,6 @@ function showMbankPreview(rows, fname) {
         ${cats.map(c => `<option ${c===r.kategorie?'selected':''}>${c}</option>`).join('')}
       </select>
     </td>
-    <td><select id="mbp-${i}" class="sel" style="font-size:11px;padding:3px 6px">
-      <option ${r.osoba==='Martin'?'selected':''}>Martin</option>
-      <option ${r.osoba==='Šárka'?'selected':''}>Šárka</option>
-    </select></td>
     <td style="text-align:center">
       <input type="checkbox" id="mbb-${i}" ${r.bilance ? 'checked' : ''} title="Počítat do bilance Martin ↔ Šárka"/>
       ${r._cpAcc ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">${r._cpAcc}</div>` : ''}
@@ -359,7 +358,7 @@ function showMbankPreview(rows, fname) {
       </div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th style="width:36px">✓</th><th>Datum</th><th>Popis / protistrana</th><th>Typ / kategorie</th><th>Osoba</th><th style="width:44px" title="Počítat do bilance Martin ↔ Šárka">⇄</th><th>Částka</th></tr></thead>
+      <thead><tr><th style="width:36px">✓</th><th>Datum</th><th>Popis / protistrana</th><th>Typ / kategorie</th><th style="width:44px" title="Počítat do bilance Martin ↔ Šárka">⇄</th><th>Částka</th></tr></thead>
       <tbody>${trs}</tbody>
     </table></div>
   </div>`;
@@ -390,7 +389,7 @@ export async function confirmMbankImport() {
     const proti   = (document.getElementById('mbi-'+i)?.value || rows[i].protistrana || '').trim();
     const typ     = document.getElementById('mbt-'+i)?.value || rows[i].typ;
     const kat     = document.getElementById('mbk-'+i)?.value || rows[i].kategorie;
-    const osoba   = document.getElementById('mbp-'+i)?.value || rows[i].osoba || 'Martin';
+    const osoba   = rows[i].osoba || 'Oba';
     const metoda  = rows[i].metoda || 'Převod';
     const bilance = document.getElementById('mbb-'+i)?.checked ? 'TRUE' : 'FALSE';
     const castka  = Math.abs(parseFloat(document.getElementById('mbm-'+i)?.value || rows[i].castka) || 0);

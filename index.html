@@ -25,14 +25,14 @@
       <div class="fg"><label>Datum</label><input type="date" id="fDate"/></div>
       <div class="fg"><label>Částka (Kč)</label><input type="number" id="fAmt" placeholder="0" step="1"/></div>
       <div class="fg fgfull"><label>Popis</label><input type="text" id="fDesc" list="opisList" autocomplete="off" placeholder="Popis transakce"/><datalist id="opisList"></datalist></div>
-      <div class="fg"><label>Typ</label><select id="fTyp"><option>Výdaj</option><option>Příjem</option><option>Vyrovnání</option></select></div>
+      <div class="fg"><label>Typ</label><select id="fTyp" onchange="syncOsobaRow()"><option>Výdaj</option><option>Příjem</option><option>Vyrovnání</option></select></div>
       <div class="fg"><label>Kategorie</label><select id="fKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
-      <div class="fg"><label>Osoba</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
+      <div class="fg" id="fOsobaRow" style="display:none"><label>Kdo poslal (pro bilanci)</label><select id="fOsoba"><option>Martin</option><option>Šárka</option></select></div>
       <div class="fg"><label>Účet</label><select id="fUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
       <div class="fg"><label>Metoda</label><select id="fMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
       <div class="fg fgfull"><label>Protistrana</label><input type="text" id="fProti" list="protrList" autocomplete="off" placeholder="Obchod nebo firma"/><datalist id="protrList"></datalist></div>
       <div class="fg fgfull"><label>Poznámka</label><input type="text" id="fNotes" placeholder="Volitelná poznámka"/></div>
-      <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="fBilance"/> Počítat do bilance Martin ↔ Šárka</label></div>
+      <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="fBilance" onchange="syncOsobaRow()"/> Počítat do bilance Martin ↔ Šárka</label></div>
       <div class="fg fgfull">
         <label>Účtenka</label>
         <div class="rcpt-modal-row">
@@ -81,12 +81,12 @@
         <div class="fg"><label>Částka (Kč)</label><input type="number" id="rfAmt" placeholder="0" step="1"/></div>
         <div class="fg"><label>Typ</label><select id="rfTyp"><option>Výdaj</option><option>Příjem</option><option>Vyrovnání</option></select></div>
         <div class="fg"><label>Kategorie</label><select id="rfKat"><option>Bydlení</option><option>Jídlo</option><option>Doprava</option><option>Zábava</option><option>Zdraví</option><option>Investice</option><option>Ostatní</option></select></div>
-        <div class="fg"><label>Osoba</label><select id="rfOsoba"><option>Martin</option><option>Šárka</option></select></div>
+        <div class="fg" id="rfOsobaRow" style="display:none"><label>Kdo poslal (pro bilanci)</label><select id="rfOsoba"><option>Martin</option><option>Šárka</option></select></div>
         <div class="fg"><label>Účet</label><select id="rfUcet"><option>mBank</option><option>UniCredit</option><option>Trading 212</option><option>Hotovost</option></select></div>
         <div class="fg"><label>Metoda</label><select id="rfMetoda"><option>Karta</option><option>Převod</option><option>Hotovost</option></select></div>
         <div class="fg"><label>Protistrana</label><input type="text" id="rfProti" list="protrList" autocomplete="off" placeholder="Firma"/></div>
         <div class="fg"><label>Den v měsíci</label><input type="number" id="rfDay" value="1" min="1" max="28"/></div>
-        <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="rfBilance"/> Počítat do bilance Martin ↔ Šárka</label></div>
+        <div class="fg fgfull"><label class="check-row"><input type="checkbox" id="rfBilance" onchange="syncRecOsobaRow()"/> Počítat do bilance Martin ↔ Šárka</label></div>
       </div>
       <div class="mactions" style="margin-top:14px">
         <button class="btnp" onclick="saveRecTemplate()">Uložit šablonu</button>
@@ -107,7 +107,6 @@
     <h2>📥 Import výpisu z mBank</h2>
     <div class="fgrid" style="margin-bottom:12px">
       <div class="fg"><label>Heslo k PDF (pokud je)</label><input type="password" id="mbankPassword" placeholder="Zapamatováno z minula"/></div>
-      <div class="fg"><label>Osoba</label><select id="mbankOsoba"><option>Martin</option><option>Šárka</option></select></div>
     </div>
     <div id="mbankZone" class="upzone" style="margin-bottom:12px"
       ondragover="mbankDov(event)" ondragleave="mbankDol()" ondrop="mbankDod(event)">
@@ -170,24 +169,10 @@
       <div class="auth-row"><div class="adot" id="adot"></div><span id="atext">Nepřipojeno</span></div>
       <div class="auth-row" style="margin-bottom:4px"><span id="authUser" style="font-size:11px;color:var(--text2)"></span></div>
       <button id="logoutBtn" class="btn btnsm" style="display:none;margin-bottom:8px;width:100%;font-size:10px" onclick="logout()">Odhlásit se</button>
-      <div style="font-size:10px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Zobrazení</div>
-      <div class="person-row">
-        <button class="pb active" onclick="setPerson('Oba',this)">Oba</button>
-        <button class="pb" onclick="setPerson('Martin',this)">Martin</button>
-        <button class="pb" onclick="setPerson('Šárka',this)">Šárka</button>
-      </div>
     </div>
   </div>
 
   <div class="main">
-    <div class="mobile-person-bar">
-      <div class="person-row">
-        <button class="pb active" onclick="setPerson('Oba',this)">Oba</button>
-        <button class="pb" onclick="setPerson('Martin',this)">Martin</button>
-        <button class="pb" onclick="setPerson('Šárka',this)">Šárka</button>
-      </div>
-    </div>
-
     <div id="p-dashboard" class="page active">
       <div class="topbar">
         <h2 class="dash-title">Dashboard</h2>

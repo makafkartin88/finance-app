@@ -2,14 +2,14 @@ import { GAS_URL, DEMO, VERSION } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
-import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt } from './transactions.js';
+import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt, syncOsobaRow } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, loadInvestmentData, refreshInvNav } from './investments.js';
 import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport } from './inv-import.js';
 import { reloadSheets, saveSettings, initSettings } from './settings.js';
 import { initAuth, logout } from './auth.js';
-import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec } from './recurring.js';
+import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec, syncRecOsobaRow } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleAmountSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
@@ -96,20 +96,9 @@ export function nav(id, el) {
   location.hash = '#'+id;
 }
 
-function applyPersonTheme() {
-  document.body.classList.remove('theme-martin','theme-sarka');
-  if (state.person === 'Martin') document.body.classList.add('theme-martin');
-  if (state.person === 'Šárka') document.body.classList.add('theme-sarka');
-}
-
-function setPerson(p, btn) {
-  state.person = p;
-  document.querySelectorAll('.pb').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  applyPersonTheme();
-  state.drill = { months: new Set(), cat: null };
-  populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv();
-}
+/* Vydaje jsou spolecne — prepinac osoby (Oba/Martin/Sarka) uz v UI neni
+   a state.person zustava natrvalo 'Oba'. Pole `osoba` na transakci dal
+   existuje, ale slouzi uz jen bilanci prispevku Martin <-> Sarka. */
 
 function applyRangeFromInputs() {
   const from = document.getElementById('dFrom')?.value;
@@ -138,7 +127,6 @@ function handleHash() {
 
 /* ── EXPOSE TO WINDOW (for inline onclick handlers) ── */
 window.nav = nav;
-window.setPerson = setPerson;
 window.openTx = openTx;
 window.openEdit = openEdit;
 window.openVyrovnani = openVyrovnani;
@@ -177,6 +165,8 @@ window.generateRecurring = generateRecurring;
 window.toggleRec = toggleRec;
 window.deleteRec = deleteRec;
 window.deleteTx = deleteTx;
+window.syncOsobaRow = syncOsobaRow;
+window.syncRecOsobaRow = syncRecOsobaRow;
 window.removeReceipt = removeReceipt;
 window.openMbankImport = openMbankImport;
 window.openColPopover = openColPopover;
@@ -216,7 +206,6 @@ window.importPayslipFromDrive = importPayslipFromDrive;
 (function init() {
   const sc = localStorage.getItem('fincfg'); if (sc) Object.assign(state.cfg, JSON.parse(sc));
   const sl = localStorage.getItem('finlim'); if (sl) Object.assign(state.limits, JSON.parse(sl));
-  applyPersonTheme();
   const vEl = document.getElementById('appVersion');
   if (vEl) vEl.textContent = `v${VERSION}`;
 

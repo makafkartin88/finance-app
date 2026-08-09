@@ -54,7 +54,6 @@ measurementId: "G-BD3K8RTMZB"
         const salNav = document.querySelector('.ni[data-page="salary"]');
         if (salNav) salNav.style.display = allowed.canSeeSalary ? '' : 'none';
 
-        applyPersonTheme();
         onReady();
       } else {
         showLoginScreen();
@@ -67,11 +66,6 @@ measurementId: "G-BD3K8RTMZB"
   });
 }
 
-function applyPersonTheme() {
-  document.body.classList.remove('theme-martin', 'theme-sarka');
-  if (state.person === 'Martin') document.body.classList.add('theme-martin');
-  if (state.person === 'Šárka') document.body.classList.add('theme-sarka');
-}
 
 function showLoginScreen() {
   const screen = document.getElementById('authScreen');

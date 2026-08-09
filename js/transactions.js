@@ -33,7 +33,6 @@ export function renderTx() {
       <th>Popis</th>
       ${thFilter('tx','kategorie','Kategorie')}
       <th>Typ</th>
-      ${thFilter('tx','osoba','Osoba')}
       <th>Účet</th>
       <th>Metoda</th>
       <th>Protistrana</th>
@@ -58,7 +57,7 @@ export function renderTx() {
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
   }).join('');
   document.getElementById('txEmpty').style.display = list.length ? 'none' : 'block';
   attachRowInteractions(document.getElementById('txBody'));
@@ -115,6 +114,7 @@ export function openTx(idx) {
     document.getElementById('fProti').value = t.protistrana;
     document.getElementById('fNotes').value = t.poznamka;
     document.getElementById('fBilance').checked = !!t.bilance;
+    syncOsobaRow();
     if (t.uctenka) {
       document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
     } else {
@@ -127,6 +127,7 @@ export function openTx(idx) {
     document.getElementById('fOsoba').value = 'Martin'; document.getElementById('fUcet').value = 'mBank';
     document.getElementById('fMetoda').value = 'Karta';
     document.getElementById('fBilance').checked = false;
+    syncOsobaRow();
     document.getElementById('fReceiptInfo').innerHTML = '';
   }
   _modalReceiptFile = null;
@@ -137,6 +138,17 @@ export function openTx(idx) {
 
 export function openEdit(i) { openTx(i); }
 
+/* Pole „Kdo poslal" má smysl jen tam, kde se opravdu počítá bilance —
+   u běžné (společné) transakce by jen mystifikovalo. Zobrazí se proto jen
+   při zaškrtnuté bilanci nebo u typu Vyrovnání. */
+export function syncOsobaRow() {
+  const row = document.getElementById('fOsobaRow');
+  if (!row) return;
+  const need = document.getElementById('fBilance')?.checked
+    || document.getElementById('fTyp')?.value === 'Vyrovnání';
+  row.style.display = need ? '' : 'none';
+}
+
 // Zkratka pro zadání vyrovnávací platby mezi Martinem a Šárkou.
 export function openVyrovnani() {
   openTx();
@@ -145,6 +157,7 @@ export function openVyrovnani() {
   document.getElementById('fOsoba').value = 'Šárka';
   document.getElementById('fMetoda').value = 'Převod';
   document.getElementById('fDesc').value = 'Vyrovnání';
+  syncOsobaRow();
 }
 
 export async function deleteTx(idx) {
@@ -171,7 +184,12 @@ export async function saveTx() {
   if (!popis) { toast('Vyplň popis','err'); return; }
   const typ = document.getElementById('fTyp').value;
   const kat = document.getElementById('fKat').value;
-  const osoba = document.getElementById('fOsoba').value;
+  // Vydaje jsou spolecne, takze u bezne transakce se osoba neresi a uklada
+  // se 'Oba' (do bilance prispiva nulou). Konkretni clovek ma smysl jen tam,
+  // kde se bilance opravdu pocita — proto se pole i zobrazuje jen tehdy.
+  const bilanceOn = document.getElementById('fBilance').checked;
+  const osoba = (bilanceOn || document.getElementById('fTyp').value === 'Vyrovnání')
+    ? document.getElementById('fOsoba').value : 'Oba';
   const ucet = document.getElementById('fUcet').value;
   const metoda = document.getElementById('fMetoda').value;
   const proti = document.getElementById('fProti').value;
@@ -181,7 +199,7 @@ export async function saveTx() {
   const sign = typ === 'Příjem' ? castka : -castka;
   const newId = `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
   const uctenka = state.editIdx !== null ? (state.txs[state.editIdx].uctenka || '') : '';
-  const bilance = document.getElementById('fBilance').checked ? 'TRUE' : 'FALSE';
+  const bilance = bilanceOn ? 'TRUE' : 'FALSE';
   const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,newId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
   const tx = parseRow(row);
   if (state.editIdx !== null) { state.txs[state.editIdx] = tx; } else {

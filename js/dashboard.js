@@ -82,7 +82,6 @@ export function renderDash() {
       <th>Datum</th>
       <th>Popis</th>
       ${thFilter('dash','kategorie','Kategorie')}
-      ${thFilter('dash','osoba','Osoba')}
       <th style="text-align:center">Účtenka</th>
       ${thAmount('dash','Částka')}
     </tr>`;
@@ -104,7 +103,7 @@ export function renderDash() {
     const txIdx = state.txs.indexOf(t);
     const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
     const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}${t.protistrana ? ' · '+t.protistrana : ''}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge ${t.osoba === 'Martin' ? 'bme' : 'bsa'}">${t.osoba}</span></td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td></tr>`;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}${t.protistrana ? ' · '+t.protistrana : ''}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td></tr>`;
   }).join('');
   document.getElementById('recentEmpty').style.display = list.length ? 'none' : 'block';
   attachRowInteractions(document.getElementById('recentBody'));
