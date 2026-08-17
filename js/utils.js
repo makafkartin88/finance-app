@@ -1,4 +1,4 @@
-import { C } from './config.js';
+import { C, GAS_URL } from './config.js';
 import { state } from './state.js';
 
 /* Fetch listu z GAS s opakováním. Apps Script občas místo JSON vrátí HTML
@@ -20,6 +20,32 @@ export async function fetchSheet(url, tries = 3) {
     }
   }
   throw lastErr;
+}
+
+/* Načte VÍC listů jedním požadavkem (?sheets=A,B,C). Apps Script se
+   u každého požadavku rozjíždí několik sekund, takže devět samostatných
+   fetchů byl hlavní důvod pomalého startu. Vrací { NazevListu: {values|error} }.
+   Když GAS ještě neumí `sheets` (starší nasazení), spadne to zpátky na
+   postupné načítání po jednom — appka funguje i před redeployem. */
+const BATCH_CAP_KEY = 'gasBatchUnsupported';
+export async function fetchSheets(names) {
+  // Starší nasazení parametr `sheets` ignoruje a vrátí { values } prvního
+  // listu. Takový pokus stojí stejně dlouho jako běžný požadavek (~15 s),
+  // takže se výsledek zapamatuje — jinak by se ta daň platila při každém
+  // načtení appky, dokud se GAS nepřehraje. Klíč se váže na GAS_URL, takže
+  // nové nasazení (nová URL) se otestuje znovu.
+  let capKey = null;
+  try {
+    capKey = BATCH_CAP_KEY + ':' + GAS_URL.slice(-24);
+    if (localStorage.getItem(capKey) !== '1') {
+      const d = await fetchSheet(GAS_URL + '?sheets=' + encodeURIComponent(names.join(',')));
+      if (d && d.sheets) return d.sheets;
+      localStorage.setItem(capKey, '1'); // umí jen po jednom
+    }
+  } catch (e) { /* výpadek → zkusit po jednom níže */ }
+  const out = {};
+  for (const n of names) out[n] = await fetchSheet(GAS_URL + '?sheet=' + n).catch(() => ({ error: 1 }));
+  return out;
 }
 
 export function parseRow(r) {

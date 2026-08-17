@@ -18,7 +18,26 @@
 
 function doGet(e) {
   var sheetName = (e && e.parameter && e.parameter.sheet) || null;
+  var sheetsParam = (e && e.parameter && e.parameter.sheets) || null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // VÍC LISTŮ NAJEDNOU (?sheets=A,B,C) — appka jich potřebuje ~9 a každý
+  // samostatný požadavek znamená nový (pomalý) start Apps Scriptu. Takhle
+  // se všechny přečtou v jedné exekuci ze stejného sešitu → místo devíti
+  // několikasekundových round-tripů jeden.
+  if (sheetsParam) {
+    var names = String(sheetsParam).split(',');
+    var out = {};
+    for (var n = 0; n < names.length; n++) {
+      var nm = names[n].trim();
+      if (!nm) continue;
+      var sh = ss.getSheetByName(nm);
+      out[nm] = sh ? { values: sh.getDataRange().getValues() }
+                   : { error: 'List "' + nm + '" neexistuje' };
+    }
+    return ContentService.createTextOutput(JSON.stringify({ sheets: out }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 
   // Pokud je zadaný konkrétní list
   if (sheetName) {

@@ -1,6 +1,6 @@
 import { GAS_URL, FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
-import { czk, fetchSheet } from './utils.js';
+import { czk, fetchSheet, fetchSheets } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 
@@ -112,20 +112,21 @@ function applySheets(fR, tR, fhR, thR) {
   })).filter(r => r.spCzk > 0); // bez FX páru za ten den je bod nedůvěryhodný — raději díra v grafu než mix měn
 }
 
-export async function loadInvestmentData() {
+export async function loadInvestmentData(pre) {
   if (!isInvestmentsAllowed()) { state.investments = []; renderInv(); return; }
 
   const cached = loadInvCache();
   if (cached) { applySheets(cached.fR, cached.tR, cached.fhR, cached.thR); renderInv(); }
 
   try {
-    // Postupně, ne paralelně: čtyři souběžné požadavky na tentýž Apps Script
-    // ho vytěžují natolik, že část z nich skončí HTML chybovou stránkou
-    // (404 na redirectu) místo dat. fetchSheet navíc každý pokus opakuje.
-    const fR = await fetchSheet(GAS_URL + '?sheet=Fondy').catch(() => ({ error: 1 }));
-    const tR = await fetchSheet(GAS_URL + '?sheet=Trh').catch(() => ({ values: [] }));
-    const fhR = await fetchSheet(GAS_URL + '?sheet=FondyHist').catch(() => ({ values: [] }));
-    const thR = await fetchSheet(GAS_URL + '?sheet=TrhHist').catch(() => ({ values: [] }));
+    // Vsechny ctyri listy jednim pozadavkem (viz fetchSheets) — driv to byly
+    // ctyri samostatne, sekvencni fetche a kazdy cekal na start Apps Scriptu.
+    // `pre` = uz nactena data z davky v app.js (pak se nefetchuje vubec).
+    const s = pre || await fetchSheets(['Fondy', 'Trh', 'FondyHist', 'TrhHist']);
+    const fR = s.Fondy || { error: 1 };
+    const tR = s.Trh || { values: [] };
+    const fhR = s.FondyHist || { values: [] };
+    const thR = s.TrhHist || { values: [] };
     if (fR.error) { if (!cached) { state.investments = []; state.market = []; renderInv(); } return; }
     applySheets(fR, tR, fhR, thR);
     saveInvCache({ fR, tR, fhR, thR });

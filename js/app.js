@@ -1,6 +1,6 @@
 import { GAS_URL, DEMO, VERSION } from './config.js';
 import { state } from './state.js';
-import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet } from './utils.js';
+import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet, fetchSheets } from './utils.js';
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
 import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt, syncOsobaRow } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
@@ -8,7 +8,7 @@ import { renderCharts } from './charts.js';
 import { renderInv, invTab, loadInvestmentData, refreshInvNav } from './investments.js';
 import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport } from './inv-import.js';
 import { reloadSheets, saveSettings, initSettings } from './settings.js';
-import { initAuth, logout } from './auth.js';
+import { initAuth, logout, isInvestmentsAllowed, isSalaryAllowed } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec, syncRecOsobaRow } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
@@ -30,24 +30,54 @@ function setAuth(ok) {
   document.getElementById('atext').textContent = ok ? 'Připojeno' : 'Nepřipojeno';
 }
 
-/* ── SHEETS (APPS SCRIPT) ── */
+/* ── SHEETS (APPS SCRIPT) ──
+   Apps Script se u KAŽDÉHO požadavku rozjíždí několik sekund, takže dřívější
+   načítání (9 samostatných listů, část souběžně) trvalo desítky sekund.
+   Teď ve třech krocích, aby appka byla použitelná co nejdřív:
+     1. cache z localStorage → Přehled/Transakce se vykreslí okamžitě
+     2. list Transakce samostatně → hlavní obsah je aktuální jako první
+     3. zbytek JEDNÍM dávkovým požadavkem (?sheets=A,B,C) na pozadí
+   Kroky 2 a 3 jsou oddělené schválně — kdyby se tahaly spolu, čekalo by se
+   na to nejpomalejší (historie kurzů) i kvůli obyčejným transakcím. */
+const TX_CACHE_KEY = 'txCacheV1';
+
 export async function loadSheets() {
-  toast('Načítám data z Tabulky...');
+  // 1) Okamžité vykreslení z posledního známého stavu (bez čekání na síť)
+  let hadCache = false;
   try {
+    const cached = JSON.parse(localStorage.getItem(TX_CACHE_KEY) || 'null');
+    if (cached && cached.length) {
+      state.txs = cached.map(parseRow);
+      boot();
+      hadCache = true;
+    }
+  } catch (e) { /* poškozená cache nesmí zabránit načtení ze sítě */ }
+
+  if (!hadCache) toast('Načítám data z Tabulky...');
+  try {
+    // 2) Transakce jako první — na nich stojí Přehled i stránka Transakce
     const d = await fetchSheet(GAS_URL + '?sheet=Transakce');
     if (d.error) throw new Error(d.error);
-    const rows = (d.values || []).slice(1);
-    state.txs = rows.filter(r => r.length > 2 && r[0]).map(parseRow);
+    const rows = (d.values || []).slice(1).filter(r => r.length > 2 && r[0]);
+    state.txs = rows.map(parseRow);
     boot(); toast('Načteno ' + state.txs.length + ' transakcí', 'ok');
     setAuth(true);
-    loadInvestmentData();
-    loadRecurring().then(autoGenerateRecurring);
-    loadMbankNotification();
-    loadSalaryData();
+    try { localStorage.setItem(TX_CACHE_KEY, JSON.stringify(rows)); } catch (e) { /* plná quota */ }
+
+    // 3) Zbytek na pozadí, jedním požadavkem. Listy pro skryté sekce se
+    //    ani nestahují (gating stejný jako v samotných loaderech).
+    const names = ['Recurring', 'MbankImport'];
+    if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist');
+    if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport');
+    fetchSheets(names).then(s => {
+      loadInvestmentData(isInvestmentsAllowed() ? s : undefined);
+      loadRecurring(s.Recurring).then(autoGenerateRecurring);
+      loadMbankNotification(s.MbankImport);
+      loadSalaryData(s.Mzdy, s.MzdyImport);
+    }).catch(() => { /* doplňková data — výpadek nesmí shodit appku */ });
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');
-    state.txs = DEMO.map(parseRow);
-    boot();
+    if (!hadCache) { state.txs = DEMO.map(parseRow); boot(); }
     setAuth(false);
     loadInvestmentData();
     loadRecurring();

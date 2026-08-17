@@ -462,9 +462,9 @@ function refToFileId(ref) {
     : (String(ref || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '';
 }
 
-export async function loadMbankNotification() {
+export async function loadMbankNotification(pre) {
   try {
-    const d = await fetchSheet(GAS_URL + '?sheet=MbankImport');
+    const d = pre || await fetchSheet(GAS_URL + '?sheet=MbankImport');
     const rows = (d.values || []).slice(1).filter(r => r[4] === 'new');
     state._mbankPending = rows.map(r => {
       const p = statementPeriod(r[1]);

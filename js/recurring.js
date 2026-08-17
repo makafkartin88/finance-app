@@ -4,10 +4,11 @@ import { czk, parseRow } from './utils.js';
 import { toast, boot } from './app.js';
 
 /* ── LOAD RECURRING TEMPLATES ── */
-export async function loadRecurring() {
+// `pre` = uz nactena odpoved listu (z davkoveho fetchSheets v app.js) —
+// bez ni si loader nacte list sam (rucni volani, reload).
+export async function loadRecurring(pre) {
   try {
-    const r = await fetch(GAS_URL + '?sheet=Recurring');
-    const d = await r.json();
+    const d = pre || await (await fetch(GAS_URL + '?sheet=Recurring')).json();
     if (d.error) throw new Error(d.error);
     const rows = (d.values || []).slice(1);
     state.recurring = rows.filter(r => r.length > 2 && r[0]).map(parseRecRow);

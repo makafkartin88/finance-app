@@ -263,17 +263,18 @@ export function parseSalaryRow(r) {
   };
 }
 
-export async function loadSalaryData() {
+// `pre`/`preImport` = už načtené odpovědi listů Mzdy / MzdyImport
+// (z dávkového fetchSheets v app.js). Bez nich si je loader načte sám.
+export async function loadSalaryData(pre, preImport) {
   if (!isSalaryAllowed()) return;
   try {
-    const r = await fetch(GAS_URL + '?sheet=Mzdy');
-    const d = await r.json();
+    const d = pre || await (await fetch(GAS_URL + '?sheet=Mzdy')).json();
     if (d.error) { state.salary = []; renderSalary(); return; } // list ještě neexistuje
     // GAS list auto-vytváří bez hlavičky — filtrovat dle tvaru id, ne slice(1)
     state.salary = (d.values || []).map(parseSalaryRow).filter(s => s.id);
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
     renderSalary();
-    loadPayslipNotification();
+    loadPayslipNotification(preImport);
   } catch(e) { /* mzdy jsou volitelné — nechceme rozbít boot */ }
 }
 
@@ -282,9 +283,9 @@ export async function loadSalaryData() {
    viz checkPayslipEmail v GAS), ne podle pořadí řádků — trigger je může
    zachytit v jiném pořadí, než v jakém přišly. Seznam se drží krátký sám
    od sebe: vyřízené pásky mají status 'imported' a mizí z něj. */
-export async function loadPayslipNotification() {
+export async function loadPayslipNotification(pre) {
   try {
-    const d = await fetchSheet(GAS_URL + '?sheet=MzdyImport');
+    const d = pre || await fetchSheet(GAS_URL + '?sheet=MzdyImport');
     const rows = (d.values || []).slice(1).filter(x => x[4] === 'new');
     state._salaryPending = rows.map(r => ({
       filename: r[1], fileId: r[2], period: r[6] || ''
