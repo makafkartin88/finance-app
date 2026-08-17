@@ -3,7 +3,7 @@ import { czk } from './utils.js';
 import { cumulativeInflation } from './inflation-data.js';
 import { mountScrollChart, yearAxisMarks } from './charts.js';
 
-const MONTH_NAMES = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+export const MONTH_NAMES = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const ymLabel = s => `${s.mesic}/${String(s.rok).slice(2)}`;
 const kFmt = n => Math.abs(n) >= 1000 ? (Math.round(n / 100) / 10).toFixed(Math.abs(n) >= 10000 ? 0 : 1).replace('.', ',') + 'k' : Math.round(n).toString();
 

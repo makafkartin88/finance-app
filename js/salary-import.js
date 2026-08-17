@@ -1,8 +1,9 @@
 import { GAS_URL, MZ } from './config.js';
 import { state } from './state.js';
 import { toast } from './app.js';
-import { renderSalary } from './salary.js';
+import { renderSalary, MONTH_NAMES } from './salary.js';
 import { isSalaryAllowed } from './auth.js';
+import { fetchSheet } from './utils.js';
 
 /* ── HESLO K PDF (fixní, uložené lokálně — nikdy do repa) ── */
 function getSalaryPwd() { return localStorage.getItem('salaryPdfPwd') || ''; }
@@ -220,11 +221,14 @@ export async function confirmSalaryImport() {
     state.salary.push(parseSalaryRow(row));
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
     toast(`Páska ${id} uložena`, 'ok');
-    // Pokud šlo o import z banneru, označit jako imported
-    if (state._salaryImportFile) {
-      try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markPayslipImported', filename: state._salaryImportFile }) }); } catch(e) {}
+    // Pokud šlo o import z banneru, označit jako imported (dle fileId —
+    // jméno souboru je u Harnolu vždy stejné, takže by matchování podle
+    // jména omylem označilo všechny pásky s tím názvem najednou)
+    if (state._salaryImportFileId) {
+      try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markPayslipImported', fileId: state._salaryImportFileId }) }); } catch(e) {}
       state._salaryImportFile = null;
-      hideSalaryBanner();
+      state._salaryImportFileId = null;
+      await loadPayslipNotification(); // další čekající páska (pokud je) se rovnou nabídne
     }
     closeSalaryImport();
     renderSalary();
@@ -273,36 +277,80 @@ export async function loadSalaryData() {
   } catch(e) { /* mzdy jsou volitelné — nechceme rozbít boot */ }
 }
 
-/* ── BANNER: nová páska z e-mailu ── */
+/* ── BANNER: nová páska z e-mailu — fronta čekajících ──
+   Nabízí VŽDY nejnovější podle období z předmětu e-mailu ("obdobi" sloupec,
+   viz checkPayslipEmail v GAS), ne podle pořadí řádků — trigger je může
+   zachytit v jiném pořadí, než v jakém přišly. Seznam se drží krátký sám
+   od sebe: vyřízené pásky mají status 'imported' a mizí z něj. */
 export async function loadPayslipNotification() {
   try {
-    const r = await fetch(GAS_URL + '?sheet=MzdyImport');
-    const d = await r.json();
-    if (d.error || !d.values) return;
-    const rows = d.values.slice(1).filter(x => x[4] === 'new');
-    if (!rows.length) return;
-    const latest = rows[rows.length - 1];
-    showSalaryBanner(latest[1], latest[2]); // [_, soubor, fileId]
+    const d = await fetchSheet(GAS_URL + '?sheet=MzdyImport');
+    const rows = (d.values || []).slice(1).filter(x => x[4] === 'new');
+    state._salaryPending = rows.map(r => ({
+      filename: r[1], fileId: r[2], period: r[6] || ''
+    })).sort((a, b) => b.period.localeCompare(a.period));
+    if (state._salaryPending.length) showSalaryBanner(0);
+    else hideSalaryBanner();
   } catch(e) {}
 }
 
-function showSalaryBanner(filename, fileId) {
+// Přepnutí na jiný čekající soubor v rozbalovátku
+export function salaryPickPending(idx) { showSalaryBanner(Number(idx)); }
+
+function periodLabel(period) {
+  const m = String(period).match(/^(\d{4})-(\d{2})$/);
+  return m ? `${MONTH_NAMES[+m[2]] || m[2]} ${m[1]}` : period;
+}
+
+function showSalaryBanner(idx) {
   const banner = document.getElementById('salaryBanner');
-  if (!banner) return;
+  const list = state._salaryPending || [];
+  const cur = list[idx];
+  if (!banner || !cur) return;
+  const esc = s => String(s).replace(/'/g, "\\'");
+  // Rozbalovátko jen když je co vybírat; omezené na 12 nejnovějších.
+  const picker = list.length > 1
+    ? `<select class="sel" style="font-size:11px;padding:3px 6px" onchange="salaryPickPending(this.value)">
+        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${periodLabel(p.period) || p.filename}</option>`).join('')}
+       </select>` : '';
+
   banner.style.display = 'flex';
   banner.innerHTML = `
     <span style="font-size:18px">💵</span>
     <div style="flex:1;min-width:180px">
-      <div style="font-weight:600;font-size:13px">Nová výplatní páska</div>
-      <div style="font-size:12px;color:var(--text2)">${filename}</div>
+      <div style="font-weight:600;font-size:13px">Výplatní páska k importu${cur.period ? ' — ' + periodLabel(cur.period) : ''}</div>
+      <div style="font-size:12px;color:var(--text2)">${cur.filename}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
     </div>
-    <button class="btnp btnsm" onclick="importPayslipFromDrive('${fileId}','${filename.replace(/'/g, '\\\'')}')">Importovat</button>
-    <button class="btn btnsm" onclick="hideSalaryBanner()">✕</button>`;
+    ${picker}
+    <button class="btnp btnsm" onclick="importPayslipFromDrive('${esc(cur.fileId)}','${esc(cur.filename)}')">Importovat</button>
+    <button class="btn btnsm" onclick="salaryMarkDone('${esc(cur.fileId)}')" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
+    <button class="btn btnsm" onclick="hideSalaryBanner()" title="Skrýt jen teď">✕</button>`;
 }
 
 export function hideSalaryBanner() {
   const b = document.getElementById('salaryBanner');
   if (b) b.style.display = 'none';
+}
+
+// Označí pásku za vyřízenou v sheetu → z nabídky zmizí natrvalo.
+export async function salaryMarkDone(fileId) {
+  try {
+    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markPayslipImported', fileId }) });
+  } catch(e) {}
+  await loadPayslipNotification();
+}
+
+// Ruční kontrola pošty — nečeká na denní trigger v GAS.
+export async function salaryCheckMail() {
+  toast('Kontroluji poštu…');
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'checkPayslipEmail' }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    await loadPayslipNotification();
+    const n = (state._salaryPending || []).length;
+    toast(d.added ? `Nalezeno ${d.added} nových pásek · čeká ${n}` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové pásky'), 'ok');
+  } catch(e) { toast('Kontrola pošty selhala: ' + e.message, 'err'); }
 }
 
 /* ── IMPORT Z DRIVE (přes GAS, žádný CORS) ── */
@@ -317,6 +365,7 @@ export async function importPayslipFromDrive(fileId, filename) {
     if (d.error) throw new Error(d.error);
     const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
     state._salaryImportFile = filename;
+    state._salaryImportFileId = fileId;
     await procSalaryFile(bin.buffer, d.name || filename);
   } catch(e) {
     status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">

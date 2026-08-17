@@ -18,7 +18,9 @@ export const state = {
   trhHist: [],           // denní S&P + USD/CZK (list TrhHist)
   salary: [],            // parsované výplatní pásky (list Mzdy)
   _salaryParsed: null,   // aktuálně naparsovaná páska v preview modalu
-  _salaryImportFile: null, // název souboru při importu z banneru (pro markPayslipImported)
+  _salaryImportFile: null,   // název souboru při importu z banneru (pro zobrazení)
+  _salaryImportFileId: null, // Drive fileId při importu z banneru (pro markPayslipImported)
+  _salaryPending: [],    // fronta nevyřízených pásek z e-mailu (list MzdyImport, status 'new')
   _importBusy: false,
   _impRows: [],
   _tt: null,

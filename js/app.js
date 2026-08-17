@@ -13,7 +13,7 @@ import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, op
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
-import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive } from './salary-import.js';
+import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive, salaryPickPending, salaryMarkDone, salaryCheckMail } from './salary-import.js';
 
 /* ── TOAST ── */
 export function toast(msg, type) {
@@ -200,6 +200,9 @@ window.onSalaryFile = onSalaryFile;
 window.confirmSalaryImport = confirmSalaryImport;
 window.hideSalaryBanner = hideSalaryBanner;
 window.importPayslipFromDrive = importPayslipFromDrive;
+window.salaryPickPending = salaryPickPending;
+window.salaryMarkDone = salaryMarkDone;
+window.salaryCheckMail = salaryCheckMail;
 
 
 /* ── INIT ── */

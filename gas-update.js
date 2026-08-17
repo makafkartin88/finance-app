@@ -78,6 +78,11 @@ function doPost(e) {
       return handleMarkPayslipImported(body);
     }
 
+    // ── ZKONTROLOVAT POŠTU HNED (výplatní pásky, nečekat na denní trigger) ──
+    if (body.action === 'checkPayslipEmail') {
+      return jsonOut({ success: true, added: checkPayslipEmail() });
+    }
+
     // ── UPSERT FUND (merge dle ISIN, list Fondy) ──
     if (body.action === 'upsertFund') {
       return handleUpsertFund(body);
@@ -253,13 +258,16 @@ function handleGetDriveFile(body) {
 // ── MARK PAYSLIP IMPORT AS DONE ──
 function handleMarkPayslipImported(body) {
   try {
-    var filename = body.filename;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('MzdyImport');
     if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
     var data = sheet.getDataRange().getValues();
+    // fileId je unikátní i když se víc pásek jmenuje stejně (viz
+    // checkPayslipEmail) — dřív se matchovalo podle jména, takže by tohle
+    // označilo za vyřízené VŠECHNY pásky se stejným názvem najednou.
+    var fileId = body.fileId;
     for (var i = 1; i < data.length; i++) {
-      if (data[i][1] === filename && data[i][4] === 'new') {
+      if (data[i][2] === fileId && data[i][4] === 'new') {
         sheet.getRange(i + 1, 5).setValue('imported');
       }
     }
@@ -784,49 +792,73 @@ function numCz(v) { var n = parseFloat(String(v).replace(/\s/g, '').replace(',',
 function jsonOut(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 // ── GMAIL → DRIVE → SHEET: VÝPLATNÍ PÁSKY ──
-// Spusť ručně nebo nastav time-trigger: Triggers → checkPayslipEmail → Time-driven → Day timer
+// Spusť ručně, přes akci 'checkPayslipEmail' z appky, nebo time-trigger:
+// Triggers → checkPayslipEmail → Time-driven → Day timer.
+// Vrací počet nově přidaných pásek.
+var PAYSLIP_HEADER = ['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status', 'msg_id', 'obdobi'];
+function ensurePayslipHeader(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < PAYSLIP_HEADER.length) {
+    sheet.getRange(1, lastCol + 1, 1, PAYSLIP_HEADER.length - lastCol).setValues([PAYSLIP_HEADER.slice(lastCol)]);
+  }
+}
+// "Logio s.r.o. - výplatní páska za 07/2026" → "2026-07"
+function payslipPeriodFromSubject(subject) {
+  var m = String(subject || '').match(/(\d{1,2})\s*\/\s*(\d{4})/);
+  return m ? (m[2] + '-' + ('0' + m[1]).slice(-2)) : '';
+}
 function checkPayslipEmail() {
-  var threads = GmailApp.search('from:harnol.cz has:attachment newer_than:35d', 0, 10);
-  if (!threads.length) return;
+  // 400 dní (ne 35) — bezpečnostní rezerva, kdyby trigger jednou nevyšel
+  // nebo appka delší dobu neběžela; dedup níže stejně nic nepřidá dvakrát.
+  var threads = GmailApp.search('from:harnol.cz has:attachment newer_than:400d', 0, 30);
+  if (!threads.length) return 0;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('MzdyImport');
-  if (!sheet) {
-    sheet = ss.insertSheet('MzdyImport');
-    sheet.appendRow(['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status']);
-  }
+  if (!sheet) { sheet = ss.insertSheet('MzdyImport'); sheet.appendRow(PAYSLIP_HEADER); }
+  ensurePayslipHeader(sheet);
 
-  // Dedup dle názvu souboru
+  // Dedup dle ID ZPRÁVY, ne názvu přílohy — příloha se u Harnolu jmenuje
+  // pokaždé stejně ("Výplatní lístek pevný.pdf"), takže dedup podle jména
+  // by po první zachycené pásce navždy tiše přeskakoval úplně všechny další
+  // (přesně tohle se v produkci stalo — od června nepřibyla ani jedna).
   var existing = {};
   var rows = sheet.getDataRange().getValues();
-  for (var r = 1; r < rows.length; r++) {
-    existing[rows[r][1]] = true;
-  }
+  for (var r = 1; r < rows.length; r++) existing[rows[r][5]] = true; // msg_id
 
   // Najdi nebo vytvoř složku Finance-Vyplaty (privátní — bez sdílení)
   var folders = DriveApp.getFoldersByName('Finance-Vyplaty');
   var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vyplaty');
 
+  var added = 0;
   threads.forEach(function(thread) {
     thread.getMessages().forEach(function(msg) {
-      msg.getAttachments().forEach(function(att) {
-        if (att.getContentType() !== 'application/pdf') return;
-        var name = att.getName();
-        if (existing[name]) return;
+      var msgId = msg.getId();
+      if (existing[msgId]) return;
+      var pdfAtts = msg.getAttachments().filter(function(a) { return a.getContentType() === 'application/pdf'; });
+      if (!pdfAtts.length) return;
 
-        var file = folder.createFile(att); // záměrně BEZ setSharing — čte ho jen GAS
+      var att = pdfAtts[0];
+      var period = payslipPeriodFromSubject(msg.getSubject());
+      // Unikátní jméno na Disku (jinak by se stejně pojmenované soubory
+      // v jedné složce jen matly) — obdobím, když ho známe, jinak msg_id.
+      var file = folder.createFile(att.copyBlob().setName((period || msgId) + '_' + att.getName()));
+      // záměrně BEZ setSharing — jsou to výplatní pásky, čte je jen GAS
 
-        sheet.appendRow([
-          new Date(),      // datum_detekce
-          name,            // soubor
-          file.getId(),    // file_id (pro akci getDriveFile)
-          msg.getDate(),   // datum_emailu
-          'new'            // status
-        ]);
-        existing[name] = true;
-      });
+      sheet.appendRow([
+        new Date(),        // datum_detekce
+        att.getName(),     // soubor (původní jméno, pro zobrazení)
+        file.getId(),      // file_id (pro akci getDriveFile)
+        msg.getDate(),     // datum_emailu
+        'new',             // status
+        msgId,             // msg_id (dedup klíč)
+        period             // období "YYYY-MM" z předmětu, pro řazení v appce
+      ]);
+      existing[msgId] = true;
+      added++;
     });
   });
+  return added;
 }
 
 // ── GMAIL → DRIVE → SHEET NOTIFICATION ──
