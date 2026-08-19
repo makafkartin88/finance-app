@@ -102,6 +102,14 @@ function doPost(e) {
       return jsonOut({ success: true, added: checkPayslipEmail() });
     }
 
+    // ── UNICREDIT: výpisy z majetkového účtu CP (čtvrtletně, ZIP v e-mailu) ──
+    if (body.action === 'checkUnicreditEmail') {
+      return jsonOut(checkUnicreditEmail());
+    }
+    if (body.action === 'markUcpImported') {
+      return handleMarkUcpImported(body);
+    }
+
     // ── UPSERT FUND (merge dle ISIN, list Fondy) ──
     if (body.action === 'upsertFund') {
       return handleUpsertFund(body);
@@ -934,4 +942,91 @@ function checkMbankEmail() {
     });
   });
   return added;
+}
+
+// ── GMAIL → DRIVE → SHEET: UNICREDIT VÝPISY Z MAJETKOVÉHO ÚČTU CP ──
+// Chodí čtvrtletně jako ZIP s heslem chráněným PDF uvnitř. GAS ZIP rozbalí
+// (Utilities.unzip) a na Disk uloží samotné PDF — heslo pak řeší až appka
+// v prohlížeči přes pdf.js, stejně jako u mBank výpisů a výplatních pásek.
+// Kdyby byl heslem chráněný i samotný ZIP, unzip selže — pak se uloží
+// originál a řádek dostane poznámku, ať je jasné, co se stalo.
+// Spusť ručně, akcí 'checkUnicreditEmail' z appky, nebo time-triggerem.
+var UCP_HEADER = ['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status', 'msg_id', 'obdobi', 'poznamka'];
+
+function checkUnicreditEmail() {
+  var threads = GmailApp.search('from:vypisy_cennepapiry@unicreditgroup.cz newer_than:400d has:attachment', 0, 30);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('UcpImport');
+  if (!sheet) { sheet = ss.insertSheet('UcpImport'); sheet.appendRow(UCP_HEADER); }
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < UCP_HEADER.length) {
+    sheet.getRange(1, lastCol + 1, 1, UCP_HEADER.length - lastCol).setValues([UCP_HEADER.slice(lastCol)]);
+  }
+  if (!threads.length) return { success: true, added: 0 };
+
+  // Dedup dle ID zprávy — název přílohy se může opakovat.
+  var existing = {};
+  var rows = sheet.getDataRange().getValues();
+  for (var r = 1; r < rows.length; r++) existing[rows[r][5]] = true;
+
+  var folders = DriveApp.getFoldersByName('Finance-Vypisy-CP');
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy-CP');
+
+  var added = 0, problems = [];
+  threads.forEach(function (thread) {
+    thread.getMessages().forEach(function (msg) {
+      var msgId = msg.getId();
+      if (existing[msgId]) return;
+      var atts = msg.getAttachments();
+      if (!atts.length) return;
+
+      // Období z předmětu/textu ("k 30.06.2026") → "2026-06"
+      var period = '';
+      var pm = (msg.getSubject() + ' ' + msg.getPlainBody().slice(0, 800)).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+      if (pm) period = pm[3] + '-' + ('0' + pm[2]).slice(-2);
+
+      var att = atts[0];
+      var name = att.getName();
+      var blob = att.copyBlob();
+      var note = '';
+
+      // ZIP rozbalit a vytáhnout PDF
+      if (/\.zip$/i.test(name) || /zip/i.test(att.getContentType())) {
+        try {
+          var inner = Utilities.unzip(blob.setContentType('application/zip'));
+          var pdf = null;
+          for (var k = 0; k < inner.length; k++) {
+            if (/\.pdf$/i.test(inner[k].getName())) { pdf = inner[k]; break; }
+          }
+          if (pdf) { blob = pdf; name = pdf.getName(); }
+          else { note = 'V ZIPu nebylo PDF'; }
+        } catch (e) {
+          // Nejčastěji: ZIP je sám chráněný heslem (GAS to neumí rozbalit)
+          note = 'ZIP se nepodařilo rozbalit (' + e.message + ') — ulozen original, rozbal rucne';
+        }
+      }
+
+      var file = folder.createFile(blob.setName((period || msgId) + '_' + name));
+      // záměrně BEZ setSharing — jsou to výpisy z majetkového účtu, čte je jen GAS
+
+      sheet.appendRow([new Date(), name, file.getId(), msg.getDate(), 'new', msgId, period, note]);
+      existing[msgId] = true;
+      added++;
+      if (note) problems.push(name + ': ' + note);
+    });
+  });
+  return { success: true, added: added, problems: problems };
+}
+
+function handleMarkUcpImported(body) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('UcpImport');
+    if (!sheet) return jsonOut({ success: true });
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][2] === body.fileId && data[i][4] === 'new') sheet.getRange(i + 1, 5).setValue('imported');
+    }
+    return jsonOut({ success: true });
+  } catch (err) { return jsonOut({ error: err.message }); }
 }

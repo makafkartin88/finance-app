@@ -19,7 +19,8 @@ export const FOND = {provider:0,isin:1,nazev:2,mena:3,pocetCP:4,nakupNAV:5,nakup
 export const INV_PROVIDERS = [
   { key: 'CODYA', label: 'CODYA', color: 'var(--blue)' },
   { key: 'CONSEQ', label: 'CONSEQ', color: 'var(--green)' },
-  { key: 'T212', label: 'Trading 212', color: 'var(--purple)' }
+  { key: 'T212', label: 'Trading 212', color: 'var(--purple)' },
+  { key: 'UNICREDIT', label: 'UniCredit', color: 'var(--amber)' }
 ];
 
 // Zaměření fondů (čeho se týkají) — necitlivé, může být v kódu. Klíč = ISIN.
@@ -33,7 +34,17 @@ export const FUND_FOCUS = {
   'CZ1005201655': 'Private equity',              // Direct PRO (EUR)
   'CZ1005202968': 'Retail parky',                // FIDUROCK Retail Parks
   // CONSEQ
-  'CZ1005100618': 'Logistické nemovitosti'       // Conseq Panattoni Logistics Development 1
+  'CZ1005100618': 'Logistické nemovitosti',      // Conseq Panattoni Logistics Development 1
+  // UniCredit (majetkový účet CP) — CZK i EUR třída téhož fondu
+  'LU1883872258': 'Americké akcie',              // AF - US Pioneer Fund CZK
+  'LU1883872332': 'Americké akcie',              // AF - US Pioneer Fund EUR
+  'LU1883311141': 'Evropské akcie',              // AF - Europe Eqt Incm Slct A2
+  'LU0552029232': 'Indické akcie',               // AF - SBI FM India Equity A EUR
+  'LU2716742528': 'Indické akcie',               // AF - SBI FM India Equity A CZK
+  'LU2503841731': 'Globální akcie',              // OM Fidelity Wrd. Eq. Inc. EUR
+  'LU2606421548': 'Globální akcie',              // OM Fidelity Wrd. Eq. Inc. CZK
+  'LU2503834363': 'Rozvíjející se trhy',         // OM JPM Emer. Countr. EUR
+  'LU2606421894': 'Rozvíjející se trhy'          // OM JPM Emer. Countr. CZK
 };
 
 export const DEMO = [

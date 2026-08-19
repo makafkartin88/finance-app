@@ -6,7 +6,8 @@ import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, t
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, loadInvestmentData, refreshInvNav } from './investments.js';
-import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport } from './inv-import.js';
+import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport,
+         loadUcpNotification, ucpPickPending, ucpMarkDone, ucpCheckMail, hideUcpBanner, importUcpFromDrive } from './inv-import.js';
 import { reloadSheets, saveSettings, initSettings } from './settings.js';
 import { initAuth, logout, isInvestmentsAllowed, isSalaryAllowed } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec, syncRecOsobaRow } from './recurring.js';
@@ -71,6 +72,7 @@ export async function loadSheets() {
     if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport');
     fetchSheets(names).then(s => {
       loadInvestmentData(isInvestmentsAllowed() ? s : undefined);
+      if (isInvestmentsAllowed()) loadUcpNotification();
       loadRecurring(s.Recurring).then(autoGenerateRecurring);
       loadMbankNotification(s.MbankImport);
       loadSalaryData(s.Mzdy, s.MzdyImport);
@@ -185,6 +187,11 @@ window.invDol = invDol;
 window.invDod = invDod;
 window.invOnFile = invOnFile;
 window.confirmInvImport = confirmInvImport;
+window.ucpPickPending = ucpPickPending;
+window.ucpMarkDone = ucpMarkDone;
+window.ucpCheckMail = ucpCheckMail;
+window.hideUcpBanner = hideUcpBanner;
+window.importUcpFromDrive = importUcpFromDrive;
 window.openRecurring = openRecurring;
 window.openRecEdit = openRecEdit;
 window.closeRecurring = closeRecurring;

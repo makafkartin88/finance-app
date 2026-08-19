@@ -21,6 +21,8 @@ export const state = {
   _salaryImportFile: null,   // název souboru při importu z banneru (pro zobrazení)
   _salaryImportFileId: null, // Drive fileId při importu z banneru (pro markPayslipImported)
   _salaryPending: [],    // fronta nevyřízených pásek z e-mailu (list MzdyImport, status 'new')
+  _ucpPending: [],       // fronta nevyřízených UniCredit výpisů CP (list UcpImport)
+  _ucpImportFileId: null, // Drive fileId při importu z banneru (pro markUcpImported)
   _importBusy: false,
   _impRows: [],
   _tt: null,

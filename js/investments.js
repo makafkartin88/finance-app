@@ -97,7 +97,9 @@ function saveInvCache(payload) {
 
 // Naplní state z {fR,tR,fhR,thR} — stejný tvar, ať přijde ze sítě, nebo z cache.
 function applySheets(fR, tR, fhR, thR) {
-  state.investments = (fR.values || []).map(parseFundRow).filter(f => /^CZ\d{10}$/.test(f.isin) || f.provider === 'T212');
+  // Standardní ISIN (CZ… u CODYA/CONSEQ, LU… u UniCredit) nebo T212 ticker
+  state.investments = (fR.values || []).map(parseFundRow)
+    .filter(f => /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(f.isin) || f.provider === 'T212');
   const pn = v => parseFloat(String(v).replace(',', '.')) || 0;
   state.market = (tR.values || []).slice(1).filter(r => r[0]).map(r => ({
     provider: r[0], startDate: r[1],
@@ -184,6 +186,7 @@ export function renderInv() {
   renderOverview();
   renderProviderView('codya', 'CODYA');
   renderProviderView('conseq', 'CONSEQ');
+  renderProviderView('unicredit', 'UNICREDIT');
   renderT212View();
 }
 
@@ -623,13 +626,18 @@ function renderProviderView(tabId, provider) {
   const gain = current - invested;
   const gainPct = invested ? (gain / invested) * 100 : 0;
   const totalWithCash = current + cash;
+  // UniCredit výpis uvádí jen stav k datu, ne nákupní ceny — bez nich nelze
+  // spočítat zisk. Zobrazit ho jako „current − 0" by znamenalo tvrdit, že
+  // je celá hodnota portfolia výnos, proto se u chybějící nákupní ceny
+  // ukáže „—" a vysvětlivka. Doplnit ji jde ručně v náhledu importu.
+  const hasCost = invested > 0;
 
   // metric karty
   const cards = `<div class="mgrid">
-    <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${czk(invested)}</div><div class="ms">${funds.length} ${funds.length === 1 ? 'fond' : funds.length < 5 ? 'fondy' : 'fondů'}${funds.some(f => f.poplatek) ? ' · vč. poplatků navíc' : ''}</div></div>
+    <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${hasCost ? czk(invested) : '—'}</div><div class="ms">${funds.length} ${funds.length === 1 ? 'fond' : funds.length < 5 ? 'fondy' : 'fondů'}${hasCost ? (funds.some(f => f.poplatek) ? ' · vč. poplatků navíc' : '') : ' · výpis neuvádí nákupní ceny'}</div></div>
     <div class="mc" style="border-left-color:var(--green)"><div class="ml">Aktuální hodnota fondů</div><div class="mv">${czk(current)}</div><div class="ms">${cash ? 'volná hotovost ' + czk(cash) : 'k datu posledního výpisu'}</div></div>
-    <div class="mc" style="border-left-color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="ml">Zisk / ztráta</div><div class="mv ${gain >= 0 ? 'green' : 'red'}">${gain >= 0 ? '+' : ''}${czk(gain)}</div><div class="ms">oproti nákupní ceně</div></div>
-    <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${gainPct >= 0 ? 'green' : 'red'}">${pctTxt(gainPct)}</div><div class="ms">${cash ? 'celkem u ' + provider + ' ' + czk(totalWithCash) : provider}${funds[0].poznamka ? ' · ' + funds[0].poznamka : ''}</div></div>
+    <div class="mc" style="border-left-color:${!hasCost ? 'var(--border2)' : (gain >= 0 ? 'var(--green)' : 'var(--red)')}"><div class="ml">Zisk / ztráta</div><div class="mv ${hasCost ? (gain >= 0 ? 'green' : 'red') : ''}">${hasCost ? (gain >= 0 ? '+' : '') + czk(gain) : '—'}</div><div class="ms">${hasCost ? 'oproti nákupní ceně' : 'nákupní cena není ve výpisu'}</div></div>
+    <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${hasCost ? (gainPct >= 0 ? 'green' : 'red') : ''}">${hasCost ? pctTxt(gainPct) : '—'}</div><div class="ms">${cash ? 'celkem u ' + provider + ' ' + czk(totalWithCash) : provider}${funds[0].poznamka ? ' · ' + funds[0].poznamka : ''}</div></div>
   </div>`;
 
   // tabulka fondů
