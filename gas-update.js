@@ -964,6 +964,14 @@ function checkUnicreditEmail() {
   }
   if (!threads.length) return { success: true, added: 0 };
 
+  // Zámek: bez něj dvě souběžná spuštění (např. dvojklik na "Zkontrolovat
+  // poštu") obě přečtou `existing` PŘED tím, než druhá dopíše své řádky —
+  // dedup podle msg_id pak nezabrání duplicitě. Přesně tohle se stalo
+  // (každá zpráva v UcpImport zapsaná dvakrát, s odstupem ~1-2 s).
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { success: false, error: 'Kontrola pošty právě běží jinde, zkus to za chvíli.' };
+
+  try {
   // Dedup dle ID zprávy — název přílohy se může opakovat.
   var existing = {};
   var rows = sheet.getDataRange().getValues();
@@ -977,7 +985,10 @@ function checkUnicreditEmail() {
     thread.getMessages().forEach(function (msg) {
       var msgId = msg.getId();
       if (existing[msgId]) return;
-      var atts = msg.getAttachments();
+      // Jen skutečný výpis (ZIP/PDF) — email má i vložený podpisový obrázek
+      // (image001.gif apod.), který GAS vidí jako další "přílohu". Bez
+      // téhle filtrace se atts[0] mohl trefit do obrázku místo výpisu.
+      var atts = msg.getAttachments().filter(function (a) { return /\.(zip|pdf)$/i.test(a.getName() || ''); });
       if (!atts.length) return;
 
       // Období z předmětu/textu ("k 30.06.2026") → "2026-06"
@@ -1016,6 +1027,9 @@ function checkUnicreditEmail() {
     });
   });
   return { success: true, added: added, problems: problems };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleMarkUcpImported(body) {
