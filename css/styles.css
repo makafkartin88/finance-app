@@ -63,6 +63,31 @@ body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 select.sel{padding:6px 10px;border-radius:var(--rsm);border:1px solid var(--border2);background:var(--surface);font-size:12px;color:var(--text);cursor:pointer}
 .mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
 .mc{background:var(--surface);border:1px solid rgba(0,0,0,0.06);border-left:3px solid var(--border);border-radius:var(--r);padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 4px 12px rgba(0,0,0,0.03)}
+
+/* Rychlé odkazy na reálná portfolia (Investice) — jedna karta, barevný
+   "ticker" monogram sdílí přesně tu barvu, kterou má poskytovatel v koláči
+   a grafu na téže stránce, takže proklik navazuje na stejný vizuální kód. */
+.portfolio-links{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.plink{
+  display:flex;align-items:center;gap:10px;flex:1 1 200px;min-width:180px;
+  background:var(--surface);border:1px solid rgba(0,0,0,0.06);border-radius:var(--r);
+  padding:10px 14px;text-decoration:none;color:var(--text);
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);
+  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;
+}
+.plink:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,0.08);border-color:var(--pl-c)}
+.plink:focus-visible{outline:2px solid var(--pl-c);outline-offset:2px}
+.plink-mono{
+  width:34px;height:34px;border-radius:9px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;letter-spacing:.02em;color:var(--pl-c);
+  background:color-mix(in srgb, var(--pl-c) 14%, transparent);
+}
+.plink-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+.plink-name{font-size:13px;font-weight:600;line-height:1.2}
+.plink-cta{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:3px}
+.plink-cta svg{width:9px;height:9px;transition:transform .15s ease}
+.plink:hover .plink-cta svg{transform:translate(1px,-1px)}
 .ml{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .mv{font-size:26px;font-weight:800;letter-spacing:-.7px;line-height:1}
 .ms{font-size:11px;color:var(--text3);margin-top:5px}
