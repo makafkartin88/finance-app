@@ -530,7 +530,15 @@ function fondRow(o) {
 }
 
 // ── REFRESH NAV: scrape aktuálních kurzů fondů z webů CODYA/CONSEQ ──
-// Voláno z appky (action:'refreshNav') NEBO jako time-trigger (týdně).
+// Voláno z appky (action:'refreshNav') NEBO jako time-trigger (týdně):
+// Triggers → refreshNav → Time-driven → Week timer → pondělí, 6-7am.
+// Trigger se zakládá klikacím rozhraním, ne kódem — ScriptApp.newTrigger()
+// by vyžadovalo scope script.scriptapp v manifestu a tím i novou autorizaci
+// celé web appky. Redeploy pro založení triggeru netřeba, běží nad uloženým
+// kódem projektu.
+// Týdně, ne měsíčně: fondy přeceňují měsíčně, ale na web to dávají s
+// nepravidelným zpožděním — běh 1. dne v měsíci by nové ocenění mohl minout
+// a data by pak čekala celý další měsíc.
 // Fondy se oceňují měsíčně; scrape drží aktuální NAV bez ručního re-importu.
 // Sloupce listu Fondy musí odpovídat FOND v js/config.js.
 var FOND_C = { isin: 1, mena: 3, pocetCP: 4, aktualNAV: 8, aktualNAVdatum: 9, aktualHodnotaCZK: 10, kurzEUR: 12 };
@@ -619,32 +627,6 @@ function refreshNav() {
     try { sendNavAlert(['VÝJIMKA'], [err.message]); } catch (e2) {}
     return jsonOut({ error: err.message });
   }
-}
-
-// ── AUTOMATICKÁ AKTUALIZACE KURZŮ (běží i bez otevřené appky) ──
-// Spusť JEDNOU ručně v editoru: script.google.com → vyber installNavTrigger
-// → Run. Redeploy k tomu netřeba — trigger je vlastnost projektu, ne verze
-// web appky. Opakované spuštění je bezpečné: staré triggery na refreshNav se
-// nejdřív smažou, takže se nenaskládají duplicity.
-//
-// Týdně (ne měsíčně): fondy sice přeceňují měsíčně, ale na web to dávají s
-// nepravidelným zpožděním — kdyby běh 1. dne trefil web ještě před přeceněním,
-// data by čekala celý další měsíc. Osm HTTP requestů týdně je zanedbatelné.
-function installNavTrigger() {
-  var all = ScriptApp.getProjectTriggers();
-  var removed = 0;
-  for (var i = 0; i < all.length; i++) {
-    if (all[i].getHandlerFunction() === 'refreshNav') { ScriptApp.deleteTrigger(all[i]); removed++; }
-  }
-  ScriptApp.newTrigger('refreshNav').timeBased()
-    .everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(6).create();
-
-  var now = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
-  var msg = 'Hotovo: refreshNav poběží každé pondělí ~6:00'
-    + (removed ? ' (smazán starý trigger: ' + removed + '×)' : '')
-    + '. Všechny triggery projektu: ' + (now.length ? now.join(', ') : 'žádné');
-  Logger.log(msg);
-  return msg;
 }
 
 // Summary karta → list "Trh" per provider. Sloupce:
