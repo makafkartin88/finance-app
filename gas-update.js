@@ -621,6 +621,32 @@ function refreshNav() {
   }
 }
 
+// ── AUTOMATICKÁ AKTUALIZACE KURZŮ (běží i bez otevřené appky) ──
+// Spusť JEDNOU ručně v editoru: script.google.com → vyber installNavTrigger
+// → Run. Redeploy k tomu netřeba — trigger je vlastnost projektu, ne verze
+// web appky. Opakované spuštění je bezpečné: staré triggery na refreshNav se
+// nejdřív smažou, takže se nenaskládají duplicity.
+//
+// Týdně (ne měsíčně): fondy sice přeceňují měsíčně, ale na web to dávají s
+// nepravidelným zpožděním — kdyby běh 1. dne trefil web ještě před přeceněním,
+// data by čekala celý další měsíc. Osm HTTP requestů týdně je zanedbatelné.
+function installNavTrigger() {
+  var all = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === 'refreshNav') { ScriptApp.deleteTrigger(all[i]); removed++; }
+  }
+  ScriptApp.newTrigger('refreshNav').timeBased()
+    .everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(6).create();
+
+  var now = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  var msg = 'Hotovo: refreshNav poběží každé pondělí ~6:00'
+    + (removed ? ' (smazán starý trigger: ' + removed + '×)' : '')
+    + '. Všechny triggery projektu: ' + (now.length ? now.join(', ') : 'žádné');
+  Logger.log(msg);
+  return msg;
+}
+
 // Summary karta → list "Trh" per provider. Sloupce:
 // [provider, startDate, spStart, spCurrent, spCurrentDate, spStartCzk, spCurrentCzk]
 // CZK verze = S&P (USD) × USD/CZK k danému datu → devizově korigované srovnání.
