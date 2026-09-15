@@ -92,15 +92,22 @@ export function renderSalary() {
   if (rangeTxt) rangeTxt.innerHTML = `<strong>${data.length} pásek</strong>`;
 
   if (!data.length) {
+    // Rozliš "ještě nedorazilo ze sheetu" (spinner) od "opravdu žádné pásky"
+    // (výzva k nahrání) — bez toho appka chvíli po startu tvrdí, že nemáš
+    // žádné pásky, i když jen čekáš na pomalý GAS cold-start.
+    const stillLoading = !all.length && !state._salaryLoaded;
     ['sal1','sal2','sal3','sal4'].forEach(id => document.getElementById(id).textContent = '—');
     ['sal1s','sal2s','sal3s','sal4s'].forEach(id => document.getElementById(id).textContent = '');
-    document.getElementById('salChart').innerHTML = '<div class="empty">Žádné pásky v rozsahu</div>';
-    document.getElementById('salDetail').innerHTML = '<div class="empty">Žádná data</div>';
-    document.getElementById('salInflation').innerHTML = '<div class="empty">Žádná data</div>';
-    document.getElementById('salTarif').innerHTML = '<div class="empty">Žádná data</div>';
-    document.getElementById('salPremie').innerHTML = '<div class="empty">Žádná data</div>';
+    const msg = stillLoading
+      ? '<div class="loading-state"><div class="loading-spinner spin"></div>Načítám pásky…</div>'
+      : '<div class="empty">Žádné pásky v rozsahu</div>';
+    document.getElementById('salChart').innerHTML = msg;
+    document.getElementById('salDetail').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
+    document.getElementById('salInflation').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
+    document.getElementById('salTarif').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
+    document.getElementById('salPremie').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
     document.getElementById('salBody').innerHTML = '';
-    if (empty) empty.style.display = all.length ? 'none' : 'block';
+    if (empty) empty.style.display = (all.length || stillLoading) ? 'none' : 'block';
     return;
   }
   if (empty) empty.style.display = 'none';

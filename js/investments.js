@@ -115,7 +115,7 @@ function applySheets(fR, tR, fhR, thR) {
 }
 
 export async function loadInvestmentData(pre) {
-  if (!isInvestmentsAllowed()) { state.investments = []; renderInv(); return; }
+  if (!isInvestmentsAllowed()) { state.investments = []; state._invLoaded = true; renderInv(); return; }
 
   const cached = loadInvCache();
   if (cached) { applySheets(cached.fR, cached.tR, cached.fhR, cached.thR); renderInv(); }
@@ -129,11 +129,24 @@ export async function loadInvestmentData(pre) {
     const tR = s.Trh || { values: [] };
     const fhR = s.FondyHist || { values: [] };
     const thR = s.TrhHist || { values: [] };
-    if (fR.error) { if (!cached) { state.investments = []; state.market = []; renderInv(); } return; }
+    if (fR.error) { if (!cached) { state.investments = []; state.market = []; state._invLoaded = true; renderInv(); } return; }
     applySheets(fR, tR, fhR, thR);
     saveInvCache({ fR, tR, fhR, thR });
+    state._invLoaded = true;
     renderInv();
-  } catch (e) { /* investice jsou volitelné — necháme zobrazenou cache (pokud byla), jinak neshodit boot */ }
+  } catch (e) {
+    // investice jsou volitelné — necháme zobrazenou cache (pokud byla), jinak
+    // neshodit boot. I bez cache ale musí zmizet spinner, jinak by appka
+    // navěky tvrdila "načítám", i když fetch definitivně selhal.
+    if (!cached) { state._invLoaded = true; renderInv(); }
+  }
+}
+
+// Sdílený "ještě se to načítá" placeholder pro Přehled/CODYA/CONSEQ/T212 —
+// stejný vzor jako `.empty`, jen se zobrazí PŘED prvním pokusem o fetch
+// (kdežto `.empty` znamená, že fetch doběhl a data opravdu nejsou).
+function loadingHtml(what) {
+  return `<div class="loading-state"><div class="loading-spinner spin"></div>Načítám ${what}…</div>`;
 }
 
 // datum (D.M.YYYY nebo ISO) → Date (pro výpočet délky držby)
@@ -226,7 +239,9 @@ function renderOverview() {
   // pokaždé, když by se u některé pozice nedohledala měna nástroje.
   const funds = (state.investments || []).filter(f => !(f.provider === 'T212' && f.isin !== 'T212_CASH'));
   if (!funds.length) {
-    el.innerHTML = `<div class="empty" style="padding:48px 0">Zatím žádná data. Nahraj výpis přes „📥 Nahrát výpis".</div>`;
+    el.innerHTML = state._invLoaded
+      ? `<div class="empty" style="padding:48px 0">Zatím žádná data. Nahraj výpis přes „📥 Nahrát výpis".</div>`
+      : loadingHtml('investice');
     return;
   }
 
@@ -615,8 +630,9 @@ function renderProviderView(tabId, provider) {
   const funds = (state.investments || []).filter(f => f.provider === provider);
 
   if (!funds.length) {
-    el.innerHTML = `<div class="empty" style="padding:48px 0">
-      Zatím žádná data z ${provider}. Nahraj výpis přes „📥 Nahrát výpis".</div>`;
+    el.innerHTML = state._invLoaded
+      ? `<div class="empty" style="padding:48px 0">Zatím žádná data z ${provider}. Nahraj výpis přes „📥 Nahrát výpis".</div>`
+      : loadingHtml(provider);
     return;
   }
 
@@ -735,9 +751,11 @@ function renderT212View() {
   const positions = all.filter(f => f.isin !== 'T212_CASH');
 
   if (!cashRow && !positions.length) {
-    el.innerHTML = `<div class="empty" style="padding:48px 0">Zatím žádná data z Trading 212.<br>
+    el.innerHTML = state._invLoaded
+      ? `<div class="empty" style="padding:48px 0">Zatím žádná data z Trading 212.<br>
       Nastav <code>T212_API_KEY</code> ve Script Properties (script.google.com) — read-only klíč,
-      scopes „Portfolio" + „Account data" — a klikni na „🔄 Aktualizovat kurzy".</div>`;
+      scopes „Portfolio" + „Account data" — a klikni na „🔄 Aktualizovat kurzy".</div>`
+      : loadingHtml('Trading 212');
     return;
   }
 

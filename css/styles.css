@@ -304,6 +304,11 @@ input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 
 .bar-savings-low{background:linear-gradient(180deg,#e87a5a,var(--red))}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin .8s linear infinite}
+/* Načítání dat ze sheetu (Investice/Mzda) — odlišuje "ještě nedorazilo" od
+   "opravdu prázdné", ať appka na první pohled netvrdí "zatím žádná data",
+   když GAS jen ještě startuje. */
+.loading-state{text-align:center;padding:48px 24px;color:var(--text3);font-size:13px;line-height:1.6}
+.loading-spinner{width:26px;height:26px;margin:0 auto 12px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--blue)}
 /* ── DESKTOP: sticky sidebar ── */
 @media (min-width: 641px){
   .sidebar{position:sticky;top:0;height:100vh;height:100dvh;overflow:hidden}

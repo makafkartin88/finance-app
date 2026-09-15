@@ -269,13 +269,19 @@ export async function loadSalaryData(pre, preImport) {
   if (!isSalaryAllowed()) return;
   try {
     const d = pre || await (await fetch(GAS_URL + '?sheet=Mzdy')).json();
-    if (d.error) { state.salary = []; renderSalary(); return; } // list ještě neexistuje
+    if (d.error) { state.salary = []; state._salaryLoaded = true; renderSalary(); return; } // list ještě neexistuje
     // GAS list auto-vytváří bez hlavičky — filtrovat dle tvaru id, ne slice(1)
     state.salary = (d.values || []).map(parseSalaryRow).filter(s => s.id);
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
+    state._salaryLoaded = true;
     renderSalary();
     loadPayslipNotification(preImport);
-  } catch(e) { /* mzdy jsou volitelné — nechceme rozbít boot */ }
+  } catch(e) {
+    // mzdy jsou volitelné — nechceme rozbít boot, ale spinner musí zmizet,
+    // i když fetch definitivně selže.
+    state._salaryLoaded = true;
+    renderSalary();
+  }
 }
 
 /* ── BANNER: nová páska z e-mailu — fronta čekajících ──

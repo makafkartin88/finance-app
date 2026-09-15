@@ -16,7 +16,9 @@ export const state = {
   market: [],            // S&P 500 benchmark per provider (list Trh)
   invHist: [],           // historie hodnot fondů (list FondyHist)
   trhHist: [],           // denní S&P + USD/CZK (list TrhHist)
+  _invLoaded: false,     // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   salary: [],            // parsované výplatní pásky (list Mzdy)
+  _salaryLoaded: false,  // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   _salaryParsed: null,   // aktuálně naparsovaná páska v preview modalu
   _salaryImportFile: null,   // název souboru při importu z banneru (pro zobrazení)
   _salaryImportFileId: null, // Drive fileId při importu z banneru (pro markPayslipImported)
