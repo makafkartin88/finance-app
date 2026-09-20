@@ -666,6 +666,7 @@ function renderProviderView(tabId, provider) {
     const czkCol = dCZK >= 0 ? 'ap' : 'an';    // Δ CZK (po kurzu) — může mít jiné znaménko než NAV %
     return `<tr>
       <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${focus}${f.mena === 'EUR' ? ' · EUR' : ''}</div></td>
+      <td style="color:var(--text2);white-space:nowrap">${f.nakupDatum || '—'}</td>
       <td style="color:var(--text2);white-space:nowrap">${f.pocetCP.toLocaleString('cs-CZ')}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
       <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
@@ -730,7 +731,7 @@ function renderProviderView(tabId, provider) {
 
   el.innerHTML = cards + compCard + `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Fondy — nákupní vs. aktuální cena</div></div>
-    <div class="tw"><table><thead><tr><th>Fond</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fond</th><th>Nákup</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${cashRow}
     <div style="font-size:11px;color:var(--text3);margin-top:12px">Aktuální NAV k datu ${funds[0].aktualNAVdatum || '—'}${_lastRefresh && !_lastRefresh.error ? ` · 🔄 staženo z webu ${_lastRefresh.when.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}. Tyto fondy se oceňují měsíčně, nejde o realtime kurz.</div>
   </div>`;
