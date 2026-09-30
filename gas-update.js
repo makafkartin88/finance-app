@@ -125,6 +125,11 @@ function doPost(e) {
       return refreshT212();
     }
 
+    // ── ULOŽIT NASTAVENÍ (bilance + čísla účtů) — sdílené, ne per-zařízení ──
+    if (body.action === 'saveSettings') {
+      return handleSaveSettings(body);
+    }
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -356,6 +361,31 @@ function handleUpsertFund(body) {
     if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
     ensureFondyHeader(sheet);
     upsertFundRows(sheet, body.values || []);
+    return jsonOut({ success: true });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  }
+}
+
+// ── NASTAVENÍ (bilance + čísla účtů Martin/Šárka) ──
+// Dřív se ukládalo jen do localStorage prohlížeče — na jiném zařízení/
+// prohlížeči proto appka vypadala, jako by nic uloženo nebylo. Je to JEDEN
+// sdílený řádek (ne per-uživatel), protože bilance vzájemných příspěvků a
+// rozpoznávání převodů mezi Martinem a Šárkou při mBank importu potřebuje
+// znát účty obou najednou, ne jen toho, kdo je zrovna přihlášený.
+var NASTAVENI_HEADER = ['bilanceOffset', 'bilanceUcet', 'uctyMartin', 'uctySarka'];
+
+function handleSaveSettings(body) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Nastaveni');
+    if (!sheet) { sheet = ss.insertSheet('Nastaveni'); sheet.appendRow(NASTAVENI_HEADER); }
+    sheet.getRange(2, 1, 1, NASTAVENI_HEADER.length).setValues([[
+      body.bilanceOffset != null ? body.bilanceOffset : '',
+      body.bilanceUcet || '',
+      body.uctyMartin || '',
+      body.uctySarka || ''
+    ]]);
     return jsonOut({ success: true });
   } catch (err) {
     return jsonOut({ error: err.message });

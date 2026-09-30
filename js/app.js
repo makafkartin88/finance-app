@@ -8,7 +8,7 @@ import { renderCharts } from './charts.js';
 import { renderInv, invTab, loadInvestmentData, refreshInvNav } from './investments.js';
 import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport,
          loadUcpNotification, ucpPickPending, ucpMarkDone, ucpCheckMail, hideUcpBanner, importUcpFromDrive } from './inv-import.js';
-import { reloadSheets, saveSettings, initSettings } from './settings.js';
+import { reloadSheets, saveSettings, initSettings, persistCfg } from './settings.js';
 import { initAuth, logout, isInvestmentsAllowed, isSalaryAllowed } from './auth.js';
 import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, openRecForm, openRecEdit, closeRecForm, saveRecTemplate, generateRecurring, toggleRec, deleteRec, syncRecOsobaRow } from './recurring.js';
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
@@ -67,7 +67,7 @@ export async function loadSheets() {
 
     // 3) Zbytek na pozadí, jedním požadavkem. Listy pro skryté sekce se
     //    ani nestahují (gating stejný jako v samotných loaderech).
-    const names = ['Recurring', 'MbankImport'];
+    const names = ['Recurring', 'MbankImport', 'Nastaveni'];
     if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist');
     if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport');
     fetchSheets(names).then(s => {
@@ -76,6 +76,7 @@ export async function loadSheets() {
       loadRecurring(s.Recurring).then(autoGenerateRecurring);
       loadMbankNotification(s.MbankImport);
       loadSalaryData(s.Mzdy, s.MzdyImport);
+      applyNastaveni(s.Nastaveni);
     }).catch(() => { /* doplňková data — výpadek nesmí shodit appku */ });
   } catch(e) {
     toast('Chyba spojení s tabulkou: ' + e.message, 'err');
@@ -83,6 +84,27 @@ export async function loadSheets() {
     setAuth(false);
     loadInvestmentData();
     loadRecurring();
+  }
+}
+
+/* List "Nastaveni" (bilance + účty) — jeden sdílený řádek, viz settings.js.
+   Server je autoritativní JEN pokud v něm už něco je: dřív se totéž ukládalo
+   pouze do localStorage, takže při prvním načtení po tomhle updatu může mít
+   tenhle prohlížeč platná data, zatímco list Nastaveni je ještě prázdný —
+   v tom případě se lokální hodnoty jednorázově nahrají nahoru (migrace),
+   místo aby se tiše vynulovaly. */
+function applyNastaveni(nR) {
+  const row = (nR && nR.values && nR.values[1]) || null;
+  const hasServerAccounts = row && (row[1] || row[2] || row[3]);
+  if (hasServerAccounts) {
+    if (row[0] !== '' && row[0] != null) state.cfg.bilanceOffset = Number(row[0]) || 0;
+    state.cfg.bilanceUcet = row[1] || state.cfg.bilanceUcet;
+    state.cfg.uctyMartin = row[2] || '';
+    state.cfg.uctySarka = row[3] || '';
+    try { localStorage.setItem('fincfg', JSON.stringify(state.cfg)); } catch (e) { /* plná quota */ }
+    renderCharts();
+  } else if (state.cfg.uctyMartin || state.cfg.uctySarka) {
+    persistCfg();
   }
 }
 

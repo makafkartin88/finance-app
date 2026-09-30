@@ -1,7 +1,27 @@
 import { state } from './state.js';
+import { GAS_URL } from './config.js';
 import { toast } from './app.js';
 
-export function saveSettings() {
+// Bilance a čísla účtů (uctyMartin/uctySarka/bilanceUcet/bilanceOffset) jsou
+// sdílené mezi zařízeními — zapisují se do listu Nastaveni přes GAS, ne jen
+// do localStorage prohlížeče. apiKey (Gemini, pro OCR účtenek) záměrně
+// zůstává jen lokálně — je to osobní klíč, ne rodinné nastavení, a nemá
+// smysl ho tahat přes stejný sdílený list.
+export async function persistCfg() {
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'saveSettings',
+      bilanceOffset: state.cfg.bilanceOffset,
+      bilanceUcet: state.cfg.bilanceUcet,
+      uctyMartin: state.cfg.uctyMartin,
+      uctySarka: state.cfg.uctySarka
+    }) });
+    const d = await r.json();
+    return !d.error;
+  } catch (e) { return false; }
+}
+
+export async function saveSettings() {
   const apiEl = document.getElementById('sApiKey');
   if (apiEl) state.cfg.apiKey = apiEl.value;
   state.cfg.bilanceOffset = Number(document.getElementById('sBilanceOffset')?.value) || 0;
@@ -9,7 +29,8 @@ export function saveSettings() {
   state.cfg.uctyMartin = (document.getElementById('sUctyMartin')?.value || '').trim();
   state.cfg.uctySarka = (document.getElementById('sUctySarka')?.value || '').trim();
   localStorage.setItem('fincfg', JSON.stringify(state.cfg));
-  toast('Nastavení uloženo', 'ok');
+  const ok = await persistCfg();
+  toast(ok ? 'Nastavení uloženo' : 'Uloženo lokálně, ale zápis na server selhal — zkus to znovu', ok ? 'ok' : 'err');
 }
 
 export function initSettings() {

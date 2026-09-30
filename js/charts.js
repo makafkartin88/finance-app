@@ -1,6 +1,8 @@
 import { CATEGORY_COLORS } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, getMonths, base } from './utils.js';
+import { persistCfg } from './settings.js';
+import { toast } from './app.js';
 
 // Interní stav pro výběr kategorie v protistrany-grafu
 let _catFilter = null;
@@ -344,10 +346,14 @@ window.editBilance = function() {
   amt.onkeydown = e => { if (e.key === 'Enter') window.saveBilance(); if (e.key === 'Escape') renderCharts(); };
 };
 
-window.saveBilance = function() {
+window.saveBilance = async function() {
   const who = document.getElementById('bilWho')?.value || 'Martin';
   const amt = Math.abs(Number(document.getElementById('bilAmt')?.value) || 0);
   state.cfg.bilanceOffset = who === 'Šárka' ? -amt : amt;
   localStorage.setItem('fincfg', JSON.stringify(state.cfg));
   renderCharts();
+  // Zápis na server na pozadí (UI se překreslí hned) — ať je stejná bilance
+  // vidět i na jiném zařízení, ne jen tady v prohlížeči.
+  const ok = await persistCfg();
+  if (!ok) toast('Bilance uložena lokálně, ale zápis na server selhal', 'err');
 };
