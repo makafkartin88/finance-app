@@ -103,6 +103,11 @@ function applyNastaveni(nR) {
     state.cfg.uctySarka = row[3] || '';
     try { localStorage.setItem('fincfg', JSON.stringify(state.cfg)); } catch (e) { /* plná quota */ }
     renderCharts();
+    // initSettings je bez efektu, pokud stránka Nastavení není zrovna
+    // otevřená (nav() ji stejně volá znovu při přepnutí) — ale POKUD
+    // otevřená je, data z téhle dávky dorazí až PO prvním initSettings()
+    // z nav(), takže bez tohohle by zůstala zobrazená stará/prázdná pole.
+    initSettings();
   } else if (state.cfg.uctyMartin || state.cfg.uctySarka) {
     persistCfg();
   }
