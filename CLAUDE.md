@@ -13,7 +13,9 @@ This is a **single-page vanilla JS finance app** with no build step. It runs ent
 
 ## How to run
 
-Open `index.html` directly in a browser (no server needed — ES modules work via `file://` on modern browsers, or serve with any static server). There is no build, no npm, no bundler.
+Open `index.html` directly in a browser (no server needed — ES modules work via `file://` on modern browsers, or serve with any static server). There is no build, no npm dependencies, no bundler.
+
+Unit tests for pure logic: `npm test` (= `node --test "tests/*.test.js"`, Node 24, no dependencies). `package.json` exists only for `"type": "module"` and this script.
 
 ## Data layer
 
@@ -21,7 +23,7 @@ All persistence goes through `GAS_URL` in `js/config.js`:
 - `GET ?sheet=SheetName` — fetch rows from a named Google Sheet.
 - `POST` with JSON body — append rows or perform named actions (`deleteRow`, `uploadReceipt`, `removeReceipt`, `markMbankImported`).
 
-Sheet names used: `Transakce`, `Recurring`, `MbankImport`, `Investice`, `Ucty`.
+Sheet names used: `Transakce`, `Recurring`, `MbankImport`, `Fondy`, `Trh`, `FondyHist`, `TrhHist`, `Mzdy`, `MzdyImport`, `UcpImport`, `Nastaveni`, `Dokumenty`.
 
 Column indices for `Transakce` rows are defined in `config.js` as `C` — always use these constants, never raw indices. The `parseRow()` function in `utils.js` maps a raw sheet row to a transaction object.
 
@@ -44,7 +46,9 @@ Column indices for `Transakce` rows are defined in `config.js` as `C` — always
 | `mbank-import.js` | PDF parsing (via pdf.js), duplicate detection, import preview table, GAS notification banner |
 | `recurring.js` | Recurring templates CRUD, monthly generation |
 | `charts.js` | Charts page rendering |
-| `budgets.js` | Budget limits and progress bars |
+| `budgets.js` | Rozpočty (karta v Nastavení) a limity |
+| `documents.js` | Stránka Dokumenty: seznam, hledání, složky, nahrání/úprava/smazání (GAS `uploadDocument`/`updateDocument`/`deleteDocument`) |
+| `documents-core.js` | Čistá logika dokumentů bez DOM/sítě, pokrytá `npm test` |
 | `investments.js` | Investment positions and account balances |
 | `settings.js` | Settings page |
 | `table-filters.js` | Column filter popovers and amount sorting shared between dashboard and transactions |
