@@ -55,6 +55,22 @@ body.theme-sarka{--bg:#fff1f5;--surface2:#f9e8ee}
 .range-hint{font-size:11px;color:var(--text3)}
 .chip-row{display:flex;gap:8px;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:11px;color:var(--text2);font-weight:600}
+/* Dokumenty */
+.doc-search{width:100%;padding:10px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);font-size:14px;color:var(--text)}
+.doc-folders{margin:12px 0}
+button.chip{cursor:pointer;font-family:inherit}
+.chip.active{background:var(--text);border-color:var(--text);color:var(--surface)}
+.doc-row{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border)}
+.doc-row:last-child{border-bottom:none}
+.doc-ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.02em}
+.doc-ico.pdf{color:var(--red);background:color-mix(in srgb, var(--red) 12%, transparent)}
+.doc-ico.image{color:var(--blue);background:color-mix(in srgb, var(--blue) 12%, transparent)}
+.doc-main{flex:1;min-width:0;text-decoration:none;color:var(--text)}
+.doc-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.doc-vis{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--surface2);color:var(--text2);white-space:nowrap}
+.doc-vis.priv{background:color-mix(in srgb, var(--purple) 14%, transparent);color:var(--purple)}
+.doc-actions{display:flex;gap:4px;flex-shrink:0}
 .btn{padding:7px 13px;border-radius:var(--rsm);border:1px solid var(--border2);background:var(--surface);font-size:12px;font-weight:500;cursor:pointer;color:var(--text);transition:all .12s;white-space:nowrap}
 .btn:hover{background:var(--surface2)}
 .btnp{padding:7px 13px;border-radius:var(--rsm);border:none;background:var(--text);font-size:12px;font-weight:600;cursor:pointer;color:#fff;transition:opacity .12s;white-space:nowrap}

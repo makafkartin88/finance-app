@@ -114,6 +114,13 @@ export function getCurrentUser() {
   return firebaseAuth?.currentUser || null;
 }
 
+// Jméno přihlášeného ('Martin'/'Šárka'); null = appka bez přihlášení (lokální vývoj).
+export function getCurrentPerson() {
+  const user = getCurrentUser();
+  if (!user) return null;
+  return AUTH_USERS[user.email.toLowerCase()]?.person || null;
+}
+
 export function isInvestmentsAllowed() {
   const user = getCurrentUser();
   if (!user) return true; // Pokud není auth, zobrazit vše

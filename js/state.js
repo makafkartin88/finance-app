@@ -19,6 +19,8 @@ export const state = {
   _invLoaded: false,     // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   salary: [],            // parsované výplatní pásky (list Mzdy)
   _salaryLoaded: false,  // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
+  docs: [],              // dokumenty (list Dokumenty), viz documents-core.js
+  _docsLoaded: false,    // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   _salaryParsed: null,   // aktuálně naparsovaná páska v preview modalu
   _salaryImportFile: null,   // název souboru při importu z banneru (pro zobrazení)
   _salaryImportFileId: null, // Drive fileId při importu z banneru (pro markPayslipImported)
