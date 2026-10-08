@@ -130,6 +130,11 @@ function doPost(e) {
       return handleSaveSettings(body);
     }
 
+    // ── DOKUMENTY (Drive + list Dokumenty) ──
+    if (body.action === 'uploadDocument') return handleUploadDocument(body);
+    if (body.action === 'updateDocument') return handleUpdateDocument(body);
+    if (body.action === 'deleteDocument') return handleDeleteDocument(body);
+
     var sheetName = body.sheet || null;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet;
@@ -389,6 +394,111 @@ function handleSaveSettings(body) {
     return jsonOut({ success: true });
   } catch (err) {
     return jsonOut({ error: err.message });
+  }
+}
+
+// ── DOKUMENTY ──
+// Soubory: Finance-Dokumenty/<slozka>/<soubor>, sdílení „kdo má odkaz"
+// (stejně jako účtenky). Viditelnost Oba/Martin/Šárka vynucuje jen appka —
+// endpoint nemá autentizaci (vědomé rozhodnutí, viz spec 2026-10-08).
+var DOK_HEADER = ['id', 'nazev', 'slozka', 'viditelnost', 'url', 'fileId', 'typ', 'velikost', 'nahral', 'datum'];
+var DOK_VIS = ['Oba', 'Martin', 'Šárka'];
+
+function dokSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Dokumenty');
+  if (!sheet) {
+    sheet = ss.insertSheet('Dokumenty');
+    sheet.appendRow(DOK_HEADER);
+    // Sloupec datum jako čistý text — jinak ho Sheets převede na Date a ten
+    // se do JSON serializuje v UTC (o půlnoci CET = předchozí den).
+    sheet.getRange('J:J').setNumberFormat('@');
+  }
+  return sheet;
+}
+
+function dokFolder(slozka) {
+  var it = DriveApp.getFoldersByName('Finance-Dokumenty');
+  var root = it.hasNext() ? it.next() : DriveApp.createFolder('Finance-Dokumenty');
+  if (!slozka) return root;
+  var sub = root.getFoldersByName(slozka);
+  return sub.hasNext() ? sub.next() : root.createFolder(slozka);
+}
+
+function dokRowToObj(r) {
+  var o = {};
+  for (var i = 0; i < DOK_HEADER.length; i++) o[DOK_HEADER[i]] = r[i];
+  return o;
+}
+
+function dokFindRow(sheet, id) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) if (String(data[i][0]) === String(id)) return { idx: i + 1, row: data[i] };
+  return null;
+}
+
+function handleUploadDocument(body) {
+  try {
+    if (!body.data) return jsonOut({ error: 'Chybí data souboru.' });
+    var slozka = String(body.slozka || '').trim();
+    var vis = DOK_VIS.indexOf(body.viditelnost) >= 0 ? body.viditelnost : 'Oba';
+    var mime = body.mimeType || 'application/octet-stream';
+    var blob = Utilities.newBlob(Utilities.base64Decode(body.data), mime, body.fileName || 'dokument');
+    var file = dokFolder(slozka).createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var id = 'doc_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    var row = [id, String(body.nazev || body.fileName || 'Dokument').trim(), slozka, vis,
+      file.getUrl(), file.getId(), mime === 'application/pdf' ? 'pdf' : 'image',
+      blob.getBytes().length, String(body.nahral || ''),
+      Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd')];
+    dokSheet().appendRow(row);
+    return jsonOut({ success: true, doc: dokRowToObj(row) });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  }
+}
+
+function handleUpdateDocument(body) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return jsonOut({ error: 'Dokumenty se právě upravují jinde, zkus to za chvíli.' });
+  try {
+    var sheet = dokSheet();
+    var hit = dokFindRow(sheet, body.id);
+    if (!hit) return jsonOut({ error: 'Dokument nenalezen (možná už byl smazán).' });
+    var row = hit.row;
+    if (body.nazev != null && String(body.nazev).trim()) row[1] = String(body.nazev).trim();
+    if (body.viditelnost != null && DOK_VIS.indexOf(body.viditelnost) >= 0) row[3] = body.viditelnost;
+    if (body.slozka != null) {
+      var nova = String(body.slozka).trim();
+      if (nova !== String(row[2])) {
+        DriveApp.getFileById(row[5]).moveTo(dokFolder(nova));
+        row[2] = nova;
+      }
+    }
+    sheet.getRange(hit.idx, 1, 1, DOK_HEADER.length).setValues([row.slice(0, DOK_HEADER.length)]);
+    return jsonOut({ success: true, doc: dokRowToObj(row) });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleDeleteDocument(body) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return jsonOut({ error: 'Dokumenty se právě upravují jinde, zkus to za chvíli.' });
+  try {
+    var sheet = dokSheet();
+    var hit = dokFindRow(sheet, body.id);
+    if (!hit) return jsonOut({ error: 'Dokument nenalezen (možná už byl smazán).' });
+    // Koš, ne trvalé smazání — 30 dní jde obnovit přímo na Drive.
+    try { DriveApp.getFileById(hit.row[5]).setTrashed(true); } catch (e) { /* soubor už neexistuje */ }
+    sheet.deleteRow(hit.idx);
+    return jsonOut({ success: true });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  } finally {
+    lock.releaseLock();
   }
 }
 
