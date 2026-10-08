@@ -14,7 +14,8 @@ import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, op
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
-import { loadDocuments, renderDocs, docSearch, docPickFolder } from './documents.js';
+import { loadDocuments, renderDocs, docSearch, docPickFolder, openDocUpload, openDocEdit, closeDocModal,
+         docDov, docDol, docDod, onDocFile, saveDoc, deleteDoc, docSetVis } from './documents.js';
 import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive, salaryPickPending, salaryMarkDone, salaryCheckMail } from './salary-import.js';
 
 /* ── TOAST ── */
@@ -276,6 +277,16 @@ window.salaryMarkDone = salaryMarkDone;
 window.salaryCheckMail = salaryCheckMail;
 window.docSearch = docSearch;
 window.docPickFolder = docPickFolder;
+window.openDocUpload = openDocUpload;
+window.openDocEdit = openDocEdit;
+window.closeDocModal = closeDocModal;
+window.docDov = docDov;
+window.docDol = docDol;
+window.docDod = docDod;
+window.onDocFile = onDocFile;
+window.saveDoc = saveDoc;
+window.deleteDoc = deleteDoc;
+window.docSetVis = docSetVis;
 
 
 /* ── INIT ── */

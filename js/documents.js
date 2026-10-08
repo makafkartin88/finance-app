@@ -1,6 +1,9 @@
 import { state } from './state.js';
+import { GAS_URL } from './config.js';
 import { getCurrentPerson } from './auth.js';
-import { parseDocRow, visibleDocs, filterDocs, folderCounts, escHtml } from './documents-core.js';
+import { toast } from './app.js';
+import { parseDocRow, visibleDocs, filterDocs, folderCounts, escHtml,
+         validateUpload, canonicalFolder, stripExt, VISIBILITY, DOK } from './documents-core.js';
 
 let _query = '';
 let _folder = null; // null = všechny složky, '' = bez složky
@@ -61,4 +64,133 @@ export function renderDocs() {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ── MODAL: nahrání i úprava ── */
+let _editId = null;   // null = nahrávání nového
+let _file = null;
+let _vis = 'Oba';
+let _busy = false;
+
+const $ = id => document.getElementById(id);
+const visLabel = v => v === 'Oba' ? 'Oba' : 'jen ' + v;
+
+function renderVis() {
+  $('docVis').innerHTML = VISIBILITY.map(v =>
+    `<button type="button" class="chip${_vis === v ? ' active' : ''}" onclick="docSetVis('${v}')">${visLabel(v)}</button>`).join('');
+}
+export function docSetVis(v) { _vis = v; renderVis(); }
+
+function fillFolderList() {
+  $('docFolderList').innerHTML = folderCounts(state.docs).filter(f => f.name)
+    .map(f => `<option value="${escHtml(f.name)}"></option>`).join('');
+}
+
+function showErr(msg) { const e = $('docErr'); e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; }
+
+function openModal(title, withFile) {
+  _busy = false;
+  $('docModalTitle').textContent = title;
+  $('docZone').style.display = withFile ? '' : 'none';
+  $('docZoneLabel').textContent = 'Přetáhni PDF nebo obrázek sem';
+  $('docSaveBtn').disabled = false;
+  $('docSaveBtn').textContent = 'Uložit';
+  showErr('');
+  fillFolderList();
+  renderVis();
+  $('docModal').style.display = 'flex';
+}
+
+export function openDocUpload() {
+  _editId = null; _file = null; _vis = 'Oba';
+  $('docName').value = ''; $('docFolder').value = _folder || '';
+  openModal('Nahrát dokument', true);
+}
+
+export function openDocEdit(id) {
+  const d = state.docs.find(x => x.id === id);
+  if (!d) return;
+  _editId = id; _file = null; _vis = d.viditelnost;
+  $('docName').value = d.nazev; $('docFolder').value = d.slozka;
+  openModal('Upravit dokument', false);
+}
+
+export function closeDocModal() { if (!_busy) $('docModal').style.display = 'none'; }
+
+function pickFile(f) {
+  const err = validateUpload({ name: f.name, size: f.size, type: f.type });
+  if (err) { _file = null; showErr(err); return; }
+  _file = f; showErr('');
+  $('docZoneLabel').textContent = '📎 ' + f.name;
+  if (!$('docName').value.trim()) $('docName').value = stripExt(f.name);
+}
+export function docDov(e) { e.preventDefault(); $('docZone').classList.add('over'); }
+export function docDol() { $('docZone').classList.remove('over'); }
+export function docDod(e) { e.preventDefault(); docDol(); const f = e.dataTransfer.files[0]; if (f) pickFile(f); }
+export function onDocFile(e) { const f = e.target.files[0]; if (f) pickFile(f); e.target.value = ''; }
+
+function readBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1]);
+    r.onerror = () => reject(new Error('Soubor nejde přečíst.'));
+    r.readAsDataURL(file);
+  });
+}
+
+async function postGas(payload) {
+  const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+// GAS vrací objekt podle hlavičky → převést na řádek a projet stejným parserem jako načtení.
+const docFromServer = o => parseDocRow(Object.keys(DOK).map(k => o[k]));
+
+export async function saveDoc() {
+  if (_busy) return;
+  const nazev = $('docName').value.trim();
+  const existing = folderCounts(state.docs).map(f => f.name).filter(Boolean);
+  const slozka = canonicalFolder($('docFolder').value, existing);
+  if (!_editId && !_file) { showErr('Vyber soubor.'); return; }
+  if (!nazev) { showErr('Vyplň název.'); return; }
+
+  _busy = true; showErr('');
+  const btn = $('docSaveBtn');
+  btn.disabled = true;
+  btn.textContent = _editId ? 'Ukládám…' : 'Nahrávám…';
+  try {
+    let d;
+    if (_editId) {
+      d = await postGas({ action: 'updateDocument', id: _editId, nazev, slozka, viditelnost: _vis });
+      state.docs = state.docs.map(x => x.id === _editId ? docFromServer(d.doc) : x);
+    } else {
+      const data = await readBase64(_file);
+      d = await postGas({ action: 'uploadDocument', nazev, slozka, viditelnost: _vis,
+        nahral: getCurrentPerson() || '', fileName: _file.name, mimeType: _file.type, data });
+      state.docs = state.docs.concat(docFromServer(d.doc));
+    }
+    _busy = false;
+    $('docModal').style.display = 'none';
+    toast(_editId ? 'Dokument upraven' : 'Dokument nahrán', 'ok');
+    renderDocs();
+  } catch (e) {
+    _busy = false;
+    btn.disabled = false; btn.textContent = 'Uložit';
+    showErr('Nepodařilo se uložit: ' + e.message);
+  }
+}
+
+export async function deleteDoc(id) {
+  const d = state.docs.find(x => x.id === id);
+  if (!d || !confirm(`Smazat „${d.nazev}"?\nSoubor se přesune do koše na Google Drive (30 dní jde obnovit).`)) return;
+  try {
+    await postGas({ action: 'deleteDocument', id });
+    state.docs = state.docs.filter(x => x.id !== id);
+    toast('Dokument smazán', 'ok');
+    renderDocs();
+  } catch (e) {
+    toast('Smazání selhalo: ' + e.message, 'err');
+  }
 }

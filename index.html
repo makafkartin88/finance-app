@@ -152,6 +152,32 @@
   </div>
 </div>
 
+<div class="overlay" id="docModal" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <h2 id="docModalTitle">Nahrát dokument</h2>
+    <div id="docZone" class="upzone" style="margin-bottom:14px;padding:22px"
+      ondragover="docDov(event)" ondragleave="docDol()" ondrop="docDod(event)">
+      <div id="docZoneLabel" style="font-weight:600;margin-bottom:8px">Přetáhni PDF nebo obrázek sem</div>
+      <label class="btnp btnsm" style="cursor:pointer">Vybrat soubor / vyfotit
+        <input type="file" accept="application/pdf,image/*" style="display:none" onchange="onDocFile(event)"/>
+      </label>
+    </div>
+    <div class="fg"><label>Název</label><input type="text" id="docName" placeholder="např. Smlouva o koupi psa"/></div>
+    <div class="fg" style="margin-top:10px"><label>Složka</label>
+      <input type="text" id="docFolder" list="docFolderList" placeholder="vyber nebo napiš novou (např. Pes)" autocomplete="off"/>
+      <datalist id="docFolderList"></datalist>
+    </div>
+    <div class="fg" style="margin-top:10px"><label>Kdo to uvidí</label>
+      <div class="chip-row" id="docVis"></div>
+    </div>
+    <div id="docErr" style="display:none;color:var(--red);font-size:12px;margin-top:10px"></div>
+    <div class="mactions">
+      <button class="btn" onclick="closeDocModal()">Zrušit</button>
+      <button class="btnp" id="docSaveBtn" onclick="saveDoc()">Uložit</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="app">
