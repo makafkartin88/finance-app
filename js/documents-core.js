@@ -15,6 +15,13 @@ export function escHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Hodnota jako argument inline handleru: onclick="fn(${jsArg(x)})".
+// Samotné escHtml nestačí — prohlížeč entity v atributu dekóduje dřív, než
+// JS běží, takže '&#39;' by z řetězce zase vyskočilo.
+export function jsArg(s) {
+  return escHtml(JSON.stringify(String(s ?? '')));
+}
+
 export function stripExt(name) {
   const i = name.lastIndexOf('.');
   return i > 0 ? name.slice(0, i) : name;
@@ -41,7 +48,8 @@ export function parseDocRow(r) {
     nazev: String(r[DOK.nazev] || ''),
     slozka: String(r[DOK.slozka] || '').trim(),
     viditelnost: VISIBILITY.includes(vis) ? vis : 'Oba',
-    url: String(r[DOK.url] || ''),
+    // List jde zapsat i mimo appku (GAS bez auth) → do href pustit jen https.
+    url: /^https:\/\//i.test(String(r[DOK.url] || '')) ? String(r[DOK.url]) : '',
     fileId: String(r[DOK.fileId] || ''),
     typ: String(r[DOK.typ] || 'pdf'),
     velikost: Number(r[DOK.velikost]) || 0,
@@ -68,6 +76,20 @@ export function folderCounts(docs) {
   for (const d of docs) m.set(d.slozka, (m.get(d.slozka) || 0) + 1);
   return [...m.entries()].map(([name, count]) => ({ name, count }))
     .sort((a, b) => (a.name === '') - (b.name === '') || a.name.localeCompare(b.name, 'cs'));
+}
+
+// Návrhy složek v modalu jen z toho, co člověk vidí — jinak by názvy
+// soukromých složek druhého prosákly přes našeptávač.
+export function folderSuggestions(docs, person) {
+  return folderCounts(visibleDocs(docs, person)).map(f => f.name).filter(Boolean);
+}
+
+// Odpověď listu → { docs, error }. Chybějící list = zatím nic nenahráno
+// (OK); jakákoli jiná chyba = načtení selhalo a nesmí vypadat jako prázdno.
+export function docsFromSheet(res) {
+  if (res && Array.isArray(res.values)) return { docs: res.values.map(parseDocRow).filter(Boolean), error: false };
+  if (res && /neexistuje/.test(String(res.error))) return { docs: [], error: false };
+  return { docs: [], error: true };
 }
 
 // „pes" / „Pes " / „PES" → stávající „Pes", ať nevznikají duplicitní složky.

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DOK, DOC_MAX_BYTES, VISIBILITY, normText, escHtml, stripExt, docType,
-  parseDocRow, visibleDocs, filterDocs, folderCounts, canonicalFolder, validateUpload
+  parseDocRow, visibleDocs, filterDocs, folderCounts, canonicalFolder, validateUpload,
+  jsArg, folderSuggestions, docsFromSheet
 } from '../js/documents-core.js';
 
 const row = (o) => {
@@ -106,4 +107,33 @@ test('validateUpload: velikost, typ, prázdný soubor', () => {
 
 test('VISIBILITY konstanta', () => {
   assert.deepEqual(VISIBILITY, ['Oba', 'Martin', 'Šárka']);
+});
+
+test('jsArg: id/název bezpečně jako argument v inline onclick', () => {
+  const evil = "x');alert(1)//";
+  const attr = jsArg(evil);
+  // prohlížeč dekóduje entity v atributu → výsledný JS musí být jeden řetězcový literál
+  const decoded = attr.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  assert.equal(JSON.parse(decoded), evil);
+  assert.ok(!attr.includes("'"));
+});
+
+test('parseDocRow: url jen https, jinak prázdná (žádné javascript:)', () => {
+  assert.equal(parseDocRow(row({ id: 'u1', url: 'javascript:alert(1)' })).url, '');
+  assert.equal(parseDocRow(row({ id: 'u2', url: 'https://drive.google.com/file/d/abc/view' })).url, 'https://drive.google.com/file/d/abc/view');
+});
+
+test('folderSuggestions: jen složky z dokumentů, které daný člověk vidí', () => {
+  const docs = [doc({ id: '1', slozka: 'Pes', viditelnost: 'Oba' }), doc({ id: '2', slozka: 'Dárek pro Šárku', viditelnost: 'Martin' }), doc({ id: '3', slozka: '' })];
+  assert.deepEqual(folderSuggestions(docs, 'Šárka'), ['Pes']);
+  assert.deepEqual(folderSuggestions(docs, 'Martin'), ['Dárek pro Šárku', 'Pes']);
+});
+
+test('docsFromSheet: chybějící list = prázdno bez chyby, jiná chyba = error', () => {
+  assert.deepEqual(docsFromSheet({ error: 'List "Dokumenty" neexistuje' }), { docs: [], error: false });
+  assert.deepEqual(docsFromSheet({ error: 1 }), { docs: [], error: true });
+  assert.deepEqual(docsFromSheet(undefined), { docs: [], error: true });
+  const r = docsFromSheet({ values: [['id', 'nazev'], row({ id: 'a', nazev: 'A' })] });
+  assert.equal(r.error, false);
+  assert.deepEqual(r.docs.map(d => d.id), ['a']);
 });

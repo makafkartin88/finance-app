@@ -2,15 +2,18 @@ import { state } from './state.js';
 import { GAS_URL } from './config.js';
 import { getCurrentPerson } from './auth.js';
 import { toast } from './app.js';
-import { parseDocRow, visibleDocs, filterDocs, folderCounts, escHtml,
+import { parseDocRow, visibleDocs, filterDocs, folderCounts, escHtml, jsArg, folderSuggestions, docsFromSheet,
          validateUpload, canonicalFolder, stripExt, VISIBILITY, DOK } from './documents-core.js';
 
 let _query = '';
 let _folder = null; // null = všechny složky, '' = bez složky
+let _loadError = false;
 
 // `pre` = odpověď listu Dokumenty z dávkového fetchSheets v app.js.
 export function loadDocuments(pre) {
-  state.docs = (pre && Array.isArray(pre.values)) ? pre.values.map(parseDocRow).filter(Boolean) : [];
+  const { docs, error } = docsFromSheet(pre);
+  state.docs = docs;
+  _loadError = error;
   state._docsLoaded = true;
   renderDocs();
 }
@@ -31,12 +34,17 @@ export function renderDocs() {
     list.innerHTML = '<div class="loading-state"><div class="loading-spinner spin"></div>Načítám dokumenty…</div>';
     return;
   }
+  if (_loadError) {
+    chips.innerHTML = '';
+    list.innerHTML = '<div class="empty">Dokumenty se nepodařilo načíst.<br><button class="btn btnsm" style="margin-top:10px" onclick="reloadSheets()">↺ Zkusit znovu</button></div>';
+    return;
+  }
   const mine = visibleDocs(state.docs, getCurrentPerson());
   const folders = folderCounts(mine);
   if (_folder !== null && !folders.some(f => f.name === _folder)) _folder = null;
 
   chips.innerHTML = [`<button class="chip${_folder === null ? ' active' : ''}" onclick="docPickFolder(null)">Vše ${mine.length}</button>`]
-    .concat(folders.map(f => `<button class="chip${_folder === f.name ? ' active' : ''}" onclick="docPickFolder(${escHtml(JSON.stringify(f.name))})">${escHtml(folderLabel(f.name))} ${f.count}</button>`))
+    .concat(folders.map(f => `<button class="chip${_folder === f.name ? ' active' : ''}" onclick="docPickFolder(${jsArg(f.name)})">${escHtml(folderLabel(f.name))} ${f.count}</button>`))
     .join('');
 
   if (!mine.length) {
@@ -59,8 +67,8 @@ export function renderDocs() {
       </a>
       ${vis}
       <div class="doc-actions">
-        <button class="btn btnsm" onclick="openDocEdit('${escHtml(d.id)}')" title="Upravit">✎</button>
-        <button class="btn btnsm" onclick="deleteDoc('${escHtml(d.id)}')" title="Smazat">🗑</button>
+        <button class="btn btnsm" onclick="openDocEdit(${jsArg(d.id)})" title="Upravit">✎</button>
+        <button class="btn btnsm" onclick="deleteDoc(${jsArg(d.id)})" title="Smazat">🗑</button>
       </div>
     </div>`;
   }).join('');
@@ -82,8 +90,8 @@ function renderVis() {
 export function docSetVis(v) { _vis = v; renderVis(); }
 
 function fillFolderList() {
-  $('docFolderList').innerHTML = folderCounts(state.docs).filter(f => f.name)
-    .map(f => `<option value="${escHtml(f.name)}"></option>`).join('');
+  $('docFolderList').innerHTML = folderSuggestions(state.docs, getCurrentPerson())
+    .map(n => `<option value="${escHtml(n)}"></option>`).join('');
 }
 
 function showErr(msg) { const e = $('docErr'); e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; }
