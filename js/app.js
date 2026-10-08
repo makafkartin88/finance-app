@@ -179,7 +179,7 @@ function resetRange() {
 /* ── HASH ROUTING ── */
 function handleHash() {
   const hash = location.hash.slice(1) || 'dashboard';
-  const validPages = ['dashboard','transactions','budgets','charts','investments','salary','settings'];
+  const validPages = ['dashboard','transactions','documents','charts','investments','salary','settings'];
   const page = validPages.includes(hash) ? hash : 'dashboard';
   nav(page, document.querySelector(`.ni[data-page="${page}"]`));
 }

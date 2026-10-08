@@ -134,7 +134,7 @@ async function procFile(file) {
   if (state._importBusy) return;
   if (!state.cfg.apiKey) {
     toast('Nejdřív v Nastavení zadej Gemini API klíč!', 'err');
-    nav('settings', document.querySelectorAll('.ni')[6]);
+    nav('settings', document.querySelector('.ni[data-page="settings"]'));
     return;
   }
 

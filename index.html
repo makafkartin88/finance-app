@@ -161,7 +161,6 @@
       <div class="nlabel">Přehled</div>
       <div class="ni active" data-page="dashboard" onclick="nav('dashboard',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg><span>Přehled</span></div>
       <div class="ni" data-page="transactions" onclick="nav('transactions',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="11" width="14" height="2" rx="1"/></svg><span>Transakce</span></div>
-      <div class="ni" data-page="budgets" onclick="nav('budgets',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2" stroke-linecap="round"/></svg><span>Rozpočty</span></div>
       <div class="nlabel">Analýzy</div>
       <div class="ni" data-page="charts" onclick="nav('charts',this)"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="4" width="3" height="11"/><rect x="11" y="6" width="3" height="9"/></svg><span>Grafy</span></div>
       <div class="ni" data-page="investments" style="display:none" onclick="nav('investments',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 14,3"/><polyline points="11,3 14,3 14,6"/></svg><span>Investice</span></div>
@@ -225,7 +224,7 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-hdr"><div class="ct" id="recentTitle">Poslední transakce</div><button class="btn btnsm" onclick="nav('transactions',document.querySelectorAll('.ni')[1])">Všechny →</button></div>
+          <div class="card-hdr"><div class="ct" id="recentTitle">Poslední transakce</div><button class="btn btnsm" onclick="nav('transactions',document.querySelector('.ni[data-page=&quot;transactions&quot;]'))">Všechny →</button></div>
           <div class="tw"><table><thead id="recentHead"></thead><tbody id="recentBody"></tbody></table></div>
           <div id="recentEmpty" class="empty" style="display:none">Žádné transakce pro tento filtr.</div>
           </div>
@@ -251,19 +250,6 @@
           <input type="file" id="receiptFileIn" accept="image/*,.pdf" style="display:none" onchange="onReceiptFile(event)"/>
           <div id="txEmpty" class="empty" style="display:none">Žádné transakce</div>
         </div>
-      </div>
-    </div>
-
-    <div id="p-budgets" class="page">
-      <div class="topbar"><h2>Rozpočty</h2><div class="topbar-right"><select class="sel" id="bMonth" onchange="renderBudgets()"></select></div></div>
-      <div class="content">
-        <div class="mgrid">
-          <div class="mc"><div class="ml">V pořádku</div><div class="mv green" id="b1">—</div></div>
-          <div class="mc"><div class="ml">Překročeno</div><div class="mv red" id="b2">—</div></div>
-          <div class="mc"><div class="ml">Celkový limit</div><div class="mv" id="b3">—</div></div>
-          <div class="mc"><div class="ml">Utraceno</div><div class="mv" id="b4">—</div></div>
-        </div>
-        <div class="card"><div class="card-hdr"><div class="ct">Limity</div><button class="btn btnsm" onclick="nav('settings',document.querySelectorAll('.ni')[5])">Upravit</button></div><div id="budRows"></div></div>
       </div>
     </div>
 
@@ -441,6 +427,17 @@
             <div class="fhint">Při importu z mBank se převod na/z těchto účtů automaticky označí „do bilance" a přiřadí se odesílateli. Předvyplnění jde v náhledu přepnout.</div>
           </div>
           <button class="btnp" style="margin-top:14px" onclick="saveSettings()">Uložit nastavení</button>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-hdr"><div class="ct">Rozpočty</div><select class="sel" id="bMonth" onchange="renderBudgets()"></select></div>
+          <div class="mgrid">
+            <div class="mc"><div class="ml">V pořádku</div><div class="mv green" id="b1">—</div></div>
+            <div class="mc"><div class="ml">Překročeno</div><div class="mv red" id="b2">—</div></div>
+            <div class="mc"><div class="ml">Celkový limit</div><div class="mv" id="b3">—</div></div>
+            <div class="mc"><div class="ml">Utraceno</div><div class="mv" id="b4">—</div></div>
+          </div>
+          <div id="budRows"></div>
         </div>
 
         <div class="card" style="margin-top:16px">
