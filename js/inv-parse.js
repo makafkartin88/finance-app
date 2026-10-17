@@ -2,6 +2,8 @@
 // bez pdf.js a bez sítě, ať jdou testovat přes `npm test`. Vstupem jsou
 // řádky (seskupené podle Y) a tokeny v pořadí obsahu PDF, viz inv-import.js.
 
+import { FOND } from './config.js';
+
 export const DEFAULT_EUR = 25; // fallback EUR/CZK, když výpis kurz neuvádí
 
 /* ── ČÍSLA / DATA ── */
@@ -140,67 +142,107 @@ export function parseUnicredit(toks) {
   return out;
 }
 
-/* ── PARSER: CONSEQ periodický výpis (vše v jednom) ──
-   Fond je vysázen na 2 řádcích (jméno se zalamuje), s čísly oddělenými
-   jen mezerou od navazujícího jména i navzájem — přímé parsování
-   "počtu kusů" z těsně sázené tabulky je nespolehlivé. Proto se počet
-   dopočítává zpětně z jednoznačného řádku "… investice celkem: X CZK"
-   a aktuální NAV (pocetCP = celkem / NAV) — obchází nejednoznačnost.
-   Ostatní pole (nákup, poplatky, hotovost) se čtou z izolovaných,
-   jednoznačných řádků v sekci pohybů na účtu. Ověřeno proti reálnému
-   výpisu (2026-07-23). */
+/* ── PARSER: CONSEQ periodický výpis (vše v jednom, libovolný počet fondů) ──
+   Každý fond v tabulce „Stav investičního účtu" zabírá 3 řádky:
+     "<jméno 1> <datum ceny> <NAV 4 des.> CZK/CZK"
+     "<jméno 2> <počet> <hodnota v měně> <měna> <kurz 4 des.> <hodnota v CZK> CZK"
+     "<ISIN> Cenný papír kol. invest."
+   Počet kusů je od hodnoty oddělený jen mezerou ("273 329 500 000,74"),
+   takže se nedá číst přímo — dopočítá se z jednoznačné hodnoty v CZK
+   (poslední číslo řádku) / kurz / NAV, a to pro KAŽDÝ fond zvlášť.
+   (Dřív se počítal z „… investice celkem", tj. ze součtu všech fondů —
+   s druhým fondem ve výpisu to dávalo dvojnásobné počty.) */
+const AMT = String.raw`\d{1,3}(?:\s\d{3})*,\d{2}`;
 export function parseConseq(lines) {
-  const isinIdx = lines.findIndex(l => /^CZ\d{10}\b/.test(l));
-  if (isinIdx === -1) return [];
-  const isin = lines[isinIdx].match(/^(CZ\d{10})/)[1];
+  const stLine = lines.find(l => /Stav investičního účtu k datu/i.test(l)) || '';
+  const _statementDate = parseDate(stLine);
 
-  // Hlavička fondu = 2 řádky před ISIN: "<jméno část 1> <datum> <NAV> <kurz párů>"
-  //                                     "<jméno část 2> <počet> <hodnota v měně> <kurz> <hodnota základní>"
-  const navLine = lines[isinIdx - 2] || '';
-  const navM = navLine.match(/(\d+,\d{4})/);
-  const aktualNAV = navM ? parseNum(navM[1]) : 0;
-  const aktualNAVdatum = parseDate(navLine);
-  let nazev = navLine.replace(/\d{1,2}\.\s*\d{1,2}\.\s*\d{4}.*$/, '').trim();
-  const contLine = lines[isinIdx - 1] || '';
-  const contNameM = contLine.match(/^(.*?)(?=\d{2,})/);
-  if (contNameM && contNameM[1].trim()) nazev = (nazev + ' ' + contNameM[1].trim()).trim();
-
-  // Celková hodnota fondu — jednoznačný řádek "… investice celkem: X CZK"
-  const totalLine = lines.find(l => /investice celkem:/i.test(l));
-  const aktualHodnotaCZK = totalLine ? parseNum((totalLine.match(/(\d[\d\s]*,\d{2})/) || [])[1]) : 0;
-  // Počet kusů dopočítán zpětně (viz komentář výše) — obchází nejednoznačné sloupce
-  const pocetCP = aktualNAV ? Math.round(aktualHodnotaCZK / aktualNAV) : 0;
-
-  // Nákupní NAV — jednoznačný řádek "<ISIN> Nákup <NAV 4dec> …"
-  const buyLine = lines.find(l => new RegExp(isin + '\\s+N[áa]kup').test(l));
-  const buyNavM = buyLine ? buyLine.match(/(\d+,\d{4})/) : null;
-  const nakupNAV = buyNavM ? parseNum(buyNavM[1]) : 0;
-  const buyDateM = buyLine ? buyLine.match(/\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\s*$/) : null;
-  const nakupDatum = buyDateM ? parseDate(buyDateM[0]) : '';
-
-  // Investováno / poplatek — jednoznačné řádky v sekci pohybů na peněžním účtu
-  const investLine = lines.find(l => /N[áa]kup.*Dr\./i.test(l) && !/poplatek/i.test(l));
-  const feeLine = lines.find(l => /vstupní poplatek/i.test(l) && /Dr\./i.test(l));
-  const investM = investLine ? [...investLine.matchAll(/(-?\d[\d\s]*,\d{2})/g)].pop() : null;
-  const feeM = feeLine ? [...feeLine.matchAll(/(-?\d[\d\s]*,\d{2})/g)].pop() : null;
-  const poplatek = feeM ? Math.abs(parseNum(feeM[1])) : 0;
-  const castka = investM ? Math.abs(parseNum(investM[1])) : 0; // skutečně zaplaceno (vč. poplatku), v CZK
-
-  // Hotovost — jednoznačný řádek "Konečný zůstatek: X CZK"
-  const cashLine = lines.find(l => /Konečný zůstatek:/i.test(l));
-  const hotovostCZK = cashLine ? parseNum((cashLine.match(/(\d[\d\s]*,\d{2})/) || [])[1]) : 0;
-
-  // Zhodnocení %
   const perfLine = lines.find(l => /Zhodnocení portfolia/i.test(l));
   const pM = perfLine ? perfLine.match(/(-?\d+,\d+)\s*%/) : null;
   const poznamka = pM ? `Zhodnocení ${pM[1]} %` : '';
 
-  return [{
-    isin, nazev: nazev || 'Conseq fond', mena: 'CZK', pocetCP,
-    nakupNAV, nakupDatum, poplatek, castka,
-    aktualNAV, aktualNAVdatum,
-    kurzEUR: 1,
-    _aktualNativni: aktualHodnotaCZK,
-    hotovostCZK, poznamka
-  }];
+  const out = [];
+  lines.forEach((line, i) => {
+    const isinM = line.match(/^(CZ\d{10})\s+Cenný papír/i);
+    if (!isinM) return;
+    const isin = isinM[1];
+    const navLine = lines[i - 2] || '', valLine = lines[i - 1] || '';
+    const navM = navLine.match(/(\d{1,2}\.\d{1,2}\.\d{4})\s+(\d+,\d{4})\s+(CZK|EUR)\/CZK/);
+    const valM = valLine.match(new RegExp(String.raw`(\d+,\d{4})\s+(${AMT})\s*CZK\s*$`));
+    if (!navM || !valM) return;
+    const aktualNAV = parseNum(navM[2]);
+    const mena = navM[3];
+    const kurz = parseNum(valM[1]) || 1;
+    const hodnotaCZK = parseNum(valM[2]);
+    const native = hodnotaCZK / kurz;
+    const name1 = navLine.slice(0, navM.index).trim();
+    const name2 = (valLine.match(/^(.*?\))\s/) || [])[1] || '';
+
+    // Nákup v tomto období (jen u fondu, který ho má): "<ISIN> Nákup <cena> … <celkem> CZK <datum>"
+    const buys = lines.filter(l => new RegExp('^' + isin + String.raw`\s+N[áa]kup`).test(l));
+    let nakupNAV = 0, nakupDatum = '', castka = 0, poplatek = 0;
+    for (const b of buys) {
+      const priceM = b.match(/(\d+,\d{4})/);
+      if (!nakupNAV && priceM) nakupNAV = parseNum(priceM[1]);
+      const dates = b.match(/\d{1,2}\.\d{1,2}\.\d{4}\s*$/);
+      if (dates) nakupDatum = parseDate(dates[0]);
+      const amts = [...b.matchAll(new RegExp(String.raw`(?<![\d,])(${AMT})(?=\s*CZK)`, 'g'))].map(m => parseNum(m[1]));
+      if (amts.length >= 2) {
+        castka += amts[amts.length - 1];
+        poplatek += amts[amts.length - 1] - amts[amts.length - 2];
+      }
+    }
+
+    out.push({
+      isin, nazev: (name1 + ' ' + name2).trim() || 'Conseq fond', mena,
+      pocetCP: aktualNAV ? Math.round(native / aktualNAV) : 0,
+      nakupNAV, nakupDatum,
+      poplatek: Math.round(poplatek * 100) / 100,
+      castka: Math.round(castka * 100) / 100,
+      aktualNAV, aktualNAVdatum: parseDate(navM[1]),
+      kurzEUR: mena === 'EUR' ? kurz : 1,
+      _aktualNativni: Math.round(native * 100) / 100,
+      _statementDate, poznamka,
+    });
+  });
+
+  // Hotovost na účtu je jedna za celý výpis → jen u prvního fondu, ostatním
+  // výslovně 0 (jinak by u nich při upsertu zůstala stará hodnota).
+  const cashLine = lines.find(l => /Konečný zůstatek:/i.test(l));
+  if (cashLine && out.length) {
+    const cM = cashLine.match(new RegExp(String.raw`(-?${AMT})`));
+    const cash = cM ? Math.max(0, parseNum(cM[1])) : 0;
+    out.forEach((f, k) => { f.hotovostCZK = k === 0 ? cash : 0; });
+  }
+  return out;
+}
+
+/* ── ŘÁDEK PRO LIST Fondy (upsert dle ISIN) ──
+   Prázdná hodnota ('') se při upsertu NEPŘEPÍŠE, takže chybějící údaj
+   z výpisu nezničí to, co už v listu je. Hotovost je výjimka: 0 je platná
+   informace („už nic volného") a musí se zapsat, jinak by zůstala stará
+   částka (přesně tak dřív u CONSEQ zůstalo 505 000 Kč po nákupu fondu). */
+export function buildFundRow(f) {
+  const mena = f.mena || 'CZK';
+  const kurzEUR = f.kurzEUR || (mena === 'EUR' ? DEFAULT_EUR : 1);
+  const fx = mena === 'EUR' ? kurzEUR : 1;
+  const pocetCP = f.pocetCP || 0, nakupNAV = f.nakupNAV || 0, aktualNAV = f.aktualNAV || 0;
+  const castka = f.castka || 0;
+  const row = new Array(15).fill('');
+  row[FOND.provider] = f.provider;
+  row[FOND.isin] = f.isin;
+  row[FOND.nazev] = f.nazev || '';
+  row[FOND.mena] = mena;
+  row[FOND.pocetCP] = pocetCP || '';
+  row[FOND.nakupNAV] = nakupNAV || '';
+  row[FOND.nakupDatum] = f.nakupDatum || '';
+  row[FOND.investovanoCZK] = castka ? Math.round(castka * fx) : (nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '');
+  row[FOND.aktualNAV] = aktualNAV || '';
+  row[FOND.aktualNAVdatum] = f.aktualNAVdatum || '';
+  row[FOND.aktualHodnotaCZK] = aktualNAV ? Math.round(pocetCP * aktualNAV * fx) : '';
+  row[FOND.poplatek] = f.poplatek || '';
+  row[FOND.kurzEUR] = mena === 'EUR' ? kurzEUR : '';
+  row[FOND.hotovostCZK] = typeof f.hotovostCZK === 'number' ? f.hotovostCZK : '';
+  row[FOND.poznamka] = f.poznamka || '';
+  return row;
 }

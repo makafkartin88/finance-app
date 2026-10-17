@@ -1,9 +1,9 @@
-import { GAS_URL, FOND, FUND_FOCUS } from './config.js';
+import { GAS_URL, FUND_FOCUS } from './config.js';
 import { state } from './state.js';
 import { toast } from './app.js';
 import { loadInvestmentData } from './investments.js';
 import { fetchSheet } from './utils.js';
-import { DEFAULT_EUR, parseCodyaHoldings, parseCodyaTransactions, parseUnicredit, parseConseq } from './inv-parse.js';
+import { DEFAULT_EUR, parseCodyaHoldings, parseCodyaTransactions, parseUnicredit, parseConseq, buildFundRow } from './inv-parse.js';
 
 // Heslo k zaheslovaným výpisům (UniCredit) — jen localStorage, nikdy v kódu
 const INV_PWD_KEY = 'invPdfPwd';
@@ -149,38 +149,18 @@ export async function confirmInvImport() {
   const funds = window._invParsed || [];
   const rows = funds.map((f, i) => {
     const g = id => document.getElementById(id + i);
-    const nazev = g('if-nazev-')?.value.trim() || f.nazev || '';
+    const num = (id, dflt) => { const v = g(id)?.value; return v === undefined || v === '' ? dflt : (parseFloat(v) || 0); };
     const mena = g('if-mena-')?.value || f.mena || 'CZK';
-    const pocetCP = parseFloat(g('if-pocet-')?.value) || f.pocetCP || 0;
-    const nakupNAV = parseFloat(g('if-nakup-')?.value) || f.nakupNAV || 0;
-    const aktualNAV = parseFloat(g('if-aktual-')?.value) || f.aktualNAV || 0;
-    const kurzEUR = parseFloat(g('if-kurz-')?.value) || (mena === 'EUR' ? DEFAULT_EUR : 1);
-    const hotovostCZK = parseFloat(g('if-hotovost-')?.value) || f.hotovostCZK || 0;
-    const fx = mena === 'EUR' ? kurzEUR : 1;
-    // Investováno = skutečně zaplacená částka (vč. poplatku), pokud ji výpis uvádí;
-    // jinak dopočet z počtu × NAV (bez poplatku, jen záchranná síť).
-    const castka = f.castka || 0;
-    const investovanoCZK = castka ? Math.round(castka * fx) : (nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '');
-    const aktualHodnotaCZK = aktualNAV ? Math.round(pocetCP * aktualNAV * fx) : '';
-
-    // Řádek pro sheet — prázdné hodnoty ('') se při upsertu nepřepíšou.
-    const row = new Array(15).fill('');
-    row[FOND.provider] = f.provider;
-    row[FOND.isin] = f.isin;
-    row[FOND.nazev] = nazev;
-    row[FOND.mena] = mena;
-    row[FOND.pocetCP] = pocetCP || '';
-    row[FOND.nakupNAV] = nakupNAV || '';
-    row[FOND.nakupDatum] = f.nakupDatum || '';
-    row[FOND.investovanoCZK] = investovanoCZK;
-    row[FOND.aktualNAV] = aktualNAV || '';
-    row[FOND.aktualNAVdatum] = f.aktualNAVdatum || '';
-    row[FOND.aktualHodnotaCZK] = aktualHodnotaCZK;
-    row[FOND.poplatek] = f.poplatek || '';
-    row[FOND.kurzEUR] = mena === 'EUR' ? kurzEUR : '';
-    row[FOND.hotovostCZK] = hotovostCZK || '';
-    row[FOND.poznamka] = f.poznamka || '';
-    return row;
+    return buildFundRow({
+      ...f,
+      nazev: g('if-nazev-')?.value.trim() || f.nazev || '',
+      mena,
+      pocetCP: num('if-pocet-', f.pocetCP),
+      nakupNAV: num('if-nakup-', f.nakupNAV),
+      aktualNAV: num('if-aktual-', f.aktualNAV),
+      kurzEUR: num('if-kurz-', f.kurzEUR) || (mena === 'EUR' ? DEFAULT_EUR : 1),
+      hotovostCZK: num('if-hotovost-', f.hotovostCZK),
+    });
   });
 
   try {
