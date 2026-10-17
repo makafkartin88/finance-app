@@ -228,7 +228,7 @@ export function buildFundRow(f) {
   const fx = mena === 'EUR' ? kurzEUR : 1;
   const pocetCP = f.pocetCP || 0, nakupNAV = f.nakupNAV || 0, aktualNAV = f.aktualNAV || 0;
   const castka = f.castka || 0;
-  const row = new Array(15).fill('');
+  const row = new Array(FOND.vypisDatum + 1).fill('');
   row[FOND.provider] = f.provider;
   row[FOND.isin] = f.isin;
   row[FOND.nazev] = f.nazev || '';
@@ -244,6 +244,8 @@ export function buildFundRow(f) {
   row[FOND.kurzEUR] = mena === 'EUR' ? kurzEUR : '';
   row[FOND.hotovostCZK] = typeof f.hotovostCZK === 'number' ? f.hotovostCZK : '';
   row[FOND.poznamka] = f.poznamka || '';
+  // Datum výpisu, ze kterého pochází počet kusů — podle něj se pozná starší výpis.
+  row[FOND.vypisDatum] = isoOf(f._statementDate);
   return row;
 }
 
@@ -267,7 +269,10 @@ export function detectStatement(lines, allTokens = []) {
     provider = 'CONSEQ'; type = 'holdings'; docLabel = 'výpis z investičního účtu';
     funds = parseConseq(lines);
   } else return null;
-  funds.forEach(f => { f.provider = provider; });
+  let statementDate = '';
+  if (provider === 'CODYA') statementDate = parseDate(lines.find(l => /Výpis ze dne/i.test(l)) || '');
+  else if (provider === 'UNICREDIT') statementDate = parseDate(allTokens.find(t => /\d{1,2}\.\d{1,2}\.\d{4}/.test(t)) || '');
+  funds.forEach(f => { f.provider = provider; if (statementDate && !f._statementDate) f._statementDate = statementDate; });
   return { provider, type, docLabel, kind: [provider, type], funds };
 }
 
@@ -289,11 +294,21 @@ function isoOf(v) {
    k ruční kontrole. `existing` = state.investments. */
 export function planAutoImport(funds, provider, type, existing) {
   if (!funds || !funds.length) return { ok: false, reason: 've výpisu nejsou žádné fondy' };
+  // Výpis transakcí uvádí jednotlivé nákupy, ne stav — u dokoupeného fondu by
+  // počet kusů a investovanou částku přepsal jedním nákupem. Jen ručně.
+  if (type === 'transactions') return { ok: false, reason: 'výpis transakcí — zkontroluj a ulož ručně' };
   const bad = funds.find(f => !(f.pocetCP > 0) || !(f.aktualNAV > 0));
   if (bad && type !== 'transactions') return { ok: false, reason: `nulový počet kusů nebo kurz u ${bad.isin}` };
 
   const mine = (existing || []).filter(e => e.provider === provider);
   const byIsin = new Map(mine.map(e => [e.isin, e]));
+
+  // Stejný nebo starší výpis, než ze kterého už jsou uložené počty kusů
+  // (opakované zpracování, dřív ručně naimportovaný, pozdě rozbalený ZIP…)
+  // → nic nepřepisovat, jen odbavit. Jinak by vrátil staré kusy a hotovost.
+  const sd = isoOf(funds[0]._statementDate);
+  const last = mine.map(e => isoOf(e.vypisDatum)).filter(Boolean).sort().pop() || '';
+  if (sd && last && sd <= last) return { ok: true, stale: true, rows: [] };
   if (type === 'holdings') {
     const gone = mine.find(e => !funds.some(f => f.isin === e.isin));
     if (gone) return { ok: false, reason: `ve výpisu chybí fond ${gone.isin}` };

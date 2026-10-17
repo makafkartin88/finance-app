@@ -201,7 +201,7 @@ export async function loadUcpNotification({ auto = true } = {}) {
 }
 
 async function autoImportPending() {
-  if (_autoBusy || !state._invLoaded) return;
+  if (_autoBusy || !state._invFresh) return;
   _autoBusy = true;
   let imported = 0;
   try {
@@ -216,12 +216,15 @@ async function autoImportPending() {
         const { lines, allTokens } = await readPdf(bin.buffer, false);
         const st = detectStatement(lines, allTokens);
         if (!st) {
-          // Není to výpis (newsletter, smlouva…) → tiše odbavit.
-          await postJson({ action: 'markUcpImported', fileId: item.fileId });
+          // Bez jediného ISINu to výpis není (newsletter, smlouva…) → tiše odbavit.
+          // S ISINem to nejspíš výpis je, jen ve formátu, který neznáme → banner.
+          if (/\b[A-Z]{2}[A-Z0-9]{9}\d\b/.test(lines.join(' '))) _autoNotes[item.fileId] = 'Nerozpoznaný formát výpisu — zkontroluj ručně';
+          else await postJson({ action: 'markUcpImported', fileId: item.fileId });
           continue;
         }
         const plan = planAutoImport(st.funds, st.provider, st.type, state.investments);
         if (!plan.ok) { _autoNotes[item.fileId] = 'Automatický import zastaven: ' + plan.reason; continue; }
+        if (plan.stale) { await postJson({ action: 'markUcpImported', fileId: item.fileId }); continue; } // už zpracovaný / starší výpis
         await postJson({ action: 'upsertFund', values: plan.rows });
         await postJson({ action: 'markUcpImported', fileId: item.fileId });
         imported++;

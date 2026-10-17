@@ -130,6 +130,9 @@ export async function loadInvestmentData(pre) {
     applySheets(fR, tR, fhR, thR);
     saveInvCache({ fR, tR, fhR, thR });
     state._invLoaded = true;
+    // Jen nad čerstvými daty ze sítě smí běžet automatický import výpisů —
+    // nad cache nebo prázdnem po výpadku by pojistky neměly s čím porovnávat.
+    state._invFresh = true;
     renderInv();
   } catch (e) {
     // investice jsou volitelné — necháme zobrazenou cache (pokud byla), jinak
@@ -176,7 +179,8 @@ function parseFundRow(r) {
     hotovostCZK: num(FOND.hotovostCZK),
     poznamka: r[FOND.poznamka] || '',
     pplNative: num(FOND.pplNative),
-    fxPplNative: num(FOND.fxPplNative)
+    fxPplNative: num(FOND.fxPplNative),
+    vypisDatum: r[FOND.vypisDatum] || ''
   };
 }
 

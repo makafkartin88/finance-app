@@ -322,7 +322,7 @@ function handleMarkPayslipImported(body) {
 // Hlavička listu "Fondy" — musí odpovídat FOND v js/config.js. `pplNative`/
 // `fxPplNative` (17., 18. sloupec) jsou nové kvůli Trading 212 — u CODYA/CONSEQ
 // zůstávají prázdné.
-var FOND_HEADER = ['provider','isin','nazev','mena','pocetCP','nakupNAV','nakupDatum','investovanoCZK','aktualNAV','aktualNAVdatum','aktualHodnotaCZK','poplatek','kurzEUR','hotovostCZK','poznamka','pplNative','fxPplNative'];
+var FOND_HEADER = ['provider','isin','nazev','mena','pocetCP','nakupNAV','nakupDatum','investovanoCZK','aktualNAV','aktualNAVdatum','aktualHodnotaCZK','poplatek','kurzEUR','hotovostCZK','poznamka','pplNative','fxPplNative','vypisDatum'];
 
 // Rozšíří hlavičku existujícího listu Fondy o nové sloupce, pokud tam ještě
 // nejsou (list vznikl před Trading 212 integrací) — nedestruktivní.
@@ -363,6 +363,11 @@ function upsertFundRows(sheet, rows) {
 
 // ── UPSERT FUND (list Fondy, klíč = ISIN) — akce z appky (PDF import) ──
 function handleUpsertFund(body) {
+  // Zámek: appka teď ukládá výpisy sama při otevření — dvě zařízení naráz
+  // by jinak oba appendRow-ly nový fond (duplicitní ISIN), a souběžný
+  // refreshNav by upsert přepsal svým snímkem listu.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(60000)) return jsonOut({ error: 'List Fondy se právě aktualizuje — zkus to za chvíli.' });
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Fondy');
@@ -372,6 +377,8 @@ function handleUpsertFund(body) {
     return jsonOut({ success: true });
   } catch (err) {
     return jsonOut({ error: err.message });
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -1239,7 +1246,8 @@ function checkUnicreditEmail() {
   if (lastCol < UCP_HEADER.length) {
     sheet.getRange(1, lastCol + 1, 1, UCP_HEADER.length - lastCol).setValues([UCP_HEADER.slice(lastCol)]);
   }
-  if (!threads.length) return { success: true, added: 0 };
+  // (Bez předčasného návratu při prázdné poště — zaseknuté ZIPy ve frontě
+  // se mají zkusit znovu, i když nepřišel nový e-mail.)
 
   // Zámek: bez něj dvě souběžná spuštění (např. dvojklik na "Zkontrolovat
   // poštu") obě přečtou `existing` PŘED tím, než druhá dopíše své řádky —

@@ -17,6 +17,7 @@ export const state = {
   invHist: [],           // historie hodnot fondů (list FondyHist)
   trhHist: [],           // denní S&P + USD/CZK (list TrhHist)
   _invLoaded: false,     // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
+  _invFresh: false,      // true až po načtení Fondy ze sítě (ne z cache) — podmínka automatického importu
   salary: [],            // parsované výplatní pásky (list Mzdy)
   _salaryLoaded: false,  // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   docs: [],              // dokumenty (list Dokumenty), viz documents-core.js

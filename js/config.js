@@ -13,7 +13,7 @@ export const MZ = {id:0,mesic:1,rok:2,tarif:3,prumerHod:4,zakladniMzda:5,svatek:
 // Sloupce listu "Fondy" (investiční fondy CODYA / CONSEQ / T212) — klíč = isin
 // (u T212 = ticker, nebo "T212_CASH" pro souhrnný řádek účtu). pplNative/
 // fxPplNative jsou vyplněné jen u T212 pozic (P/L a kurzový vliv v měně účtu).
-export const FOND = {provider:0,isin:1,nazev:2,mena:3,pocetCP:4,nakupNAV:5,nakupDatum:6,investovanoCZK:7,aktualNAV:8,aktualNAVdatum:9,aktualHodnotaCZK:10,poplatek:11,kurzEUR:12,hotovostCZK:13,poznamka:14,pplNative:15,fxPplNative:16};
+export const FOND = {provider:0,isin:1,nazev:2,mena:3,pocetCP:4,nakupNAV:5,nakupDatum:6,investovanoCZK:7,aktualNAV:8,aktualNAVdatum:9,aktualHodnotaCZK:10,poplatek:11,kurzEUR:12,hotovostCZK:13,poznamka:14,pplNative:15,fxPplNative:16,vypisDatum:17};
 
 // Metadata poskytovatelů investic pro Přehled (donut, graf, selektor).
 export const INV_PROVIDERS = [

@@ -129,9 +129,30 @@ test('planAutoImport: zmizelý známý fond → ruční kontrola', () => {
   assert.match(p.reason, /CZ0008475936/);
 });
 
-test('planAutoImport: u výpisu transakcí se zmizelé fondy nehlídají', () => {
-  const p = planAutoImport([got({ nakupNAV: 1 })], 'CODYA', 'transactions', [have({ provider: 'CODYA' }), have({ provider: 'CODYA', isin: 'CZ0008042892' })].map(x => x), );
-  assert.equal(p.ok, true);
+test('planAutoImport: výpis transakcí se sám neimportuje (přepsal by počet kusů jedním nákupem)', () => {
+  const p = planAutoImport([got({ nakupNAV: 1, pocetCP: 10 })], 'CODYA', 'transactions', [have({ provider: 'CODYA' })]);
+  assert.equal(p.ok, false);
+  assert.match(p.reason, /transakcí/);
+});
+
+test('planAutoImport: stejný nebo starší výpis, než jaký už je uložený → přeskočit (stale)', () => {
+  const ex = [have({ vypisDatum: '2026-09-30T22:00:00.000Z' })]; // = 1. 10. 2026 v Praze
+  const same = planAutoImport([got({ _statementDate: '1.10.2026' })], 'CONSEQ', 'holdings', ex);
+  assert.equal(same.ok, true); assert.equal(same.stale, true); assert.equal(same.rows.length, 0);
+  const older = planAutoImport([got({ _statementDate: '30.6.2026' })], 'CONSEQ', 'holdings', ex);
+  assert.equal(older.stale, true);
+  const newer = planAutoImport([got({ _statementDate: '31.12.2026' })], 'CONSEQ', 'holdings', ex);
+  assert.equal(newer.stale, undefined);
+  assert.equal(newer.rows[0][FOND.vypisDatum], '2026-12-31');
+});
+
+test('detectStatement: datum výpisu u CODYA i UniCredit', () => {
+  const c = detectStatement(['VÝPIS Z MAJETKOVÉHO ÚČTU', 'CODYA', 'Výpis ze dne: Výpis ze dne: 30. 9. 2026',
+    'Fond A CZ0008042892 CZK 100 1,2000 31. 8. 2026 120,00']);
+  assert.equal(c.funds[0]._statementDate, '30.9.2026');
+  const u = detectStatement(['UniCredit', 'MAJETKOVÉHO ÚČTU CENNÝCH PAPÍRŮ'],
+    ['Výpis z majetkového účtu cenných papírů k 30.09.2026', 'Fond U', 'LU1883872258', '2,000', '7.000,000000', 'CZK', '14.000,00', '14.000,00']);
+  assert.equal(u.funds[0]._statementDate, '30.9.2026');
 });
 
 test('planAutoImport: nulový počet nebo kurz → ruční kontrola', () => {
