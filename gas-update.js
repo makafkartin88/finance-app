@@ -703,6 +703,16 @@ var NAV_SOURCES = {
   'CZ1005100618': { url: 'https://www.conseq.cz/investice/prehled-fondu/conseq-panattoni-logistics-developement-1-czk', anchor: 'Cena za kus' }
 };
 
+// Zdroj kurzu pro fond: ruční záznam v NAV_SOURCES, jinak u CONSEQ obecná
+// stránka fondu podle ISIN (má stejné „Cena za kus") — nový fond CONSEQ se
+// tak začne stahovat sám, bez úpravy kódu. CODYA takovou stránku nemá.
+function navSourceFor(provider, isin) {
+  if (NAV_SOURCES[isin]) return NAV_SOURCES[isin];
+  if (provider === 'CONSEQ' && /^CZ\d{10}$/.test(isin))
+    return { url: 'https://www.conseq.cz/investment/mutual-funds/' + isin.toLowerCase() + '?lang=cs-cz', anchor: 'Cena za kus' };
+  return null;
+}
+
 function refreshNav() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -721,7 +731,7 @@ function refreshNav() {
     var navUpdates = {};
     for (var i = 1; i < data.length; i++) {
       var isin = String(data[i][FOND_C.isin] || '');
-      var src = NAV_SOURCES[isin];
+      var src = navSourceFor(String(data[i][0] || ''), isin);
       if (!src) continue;
       var res = scrapeNav(src.url, src.anchor);
       if (!res || !res.nav) { log.push(isin + ': ' + ((res && res.err) || 'nenačteno')); failed.push(isin); continue; }
@@ -1100,6 +1110,110 @@ function checkMbankEmail() {
 // originál a řádek dostane poznámku, ať je jasné, co se stalo.
 // Spusť ručně, akcí 'checkUnicreditEmail' z appky, nebo time-triggerem.
 var UCP_HEADER = ['datum_detekce', 'soubor', 'file_id', 'datum_emailu', 'status', 'msg_id', 'obdobi', 'poznamka'];
+
+// ── ZIPCRYPTO: rozšifrování ZIPu z UniCreditu ──
+// UniCredit posílá ZIP chráněný klasickým PKWARE ZipCrypto, který
+// Utilities.unzip neumí. Šifra je jednoduchá (3 klíče aktualizované přes
+// CRC32), takže ji jde rozšifrovat tady: z dat se sloupne šifra a složí se
+// NEšifrovaný ZIP, který už rozbalí Utilities.unzip (ten řeší i deflate).
+// Vstup i výstup = pole bajtů (vstup smí být i podepsané -128..127 z GAS).
+// AES-šifrované ZIPy (metoda 99) nepodporuje — dá srozumitelnou chybu.
+var ZC_CRC = (function () {
+  var t = [];
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function zcUpdate(keys, b) {
+  keys[0] = (ZC_CRC[(keys[0] ^ b) & 0xff] ^ (keys[0] >>> 8)) >>> 0;
+  keys[1] = (Math.imul((keys[1] + (keys[0] & 0xff)) >>> 0, 134775813) + 1) >>> 0;
+  keys[2] = (ZC_CRC[(keys[2] ^ (keys[1] >>> 24)) & 0xff] ^ (keys[2] >>> 8)) >>> 0;
+}
+
+function zipDecryptToPlain(input, password) {
+  var b = input.map(function (x) { return x & 0xff; });
+  var u16 = function (p) { return b[p] | (b[p + 1] << 8); };
+  var u32 = function (p) { return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0; };
+  var e = -1;
+  for (var i = b.length - 22; i >= 0; i--) if (u32(i) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('Soubor není ZIP (chybí konec archivu).');
+
+  var count = u16(e + 10), p = u32(e + 16);
+  var entries = [];
+  for (var n = 0; n < count; n++) {
+    if (u32(p) !== 0x02014b50) throw new Error('Poškozený adresář ZIPu.');
+    var fnLen = u16(p + 28), exLen = u16(p + 30), cmLen = u16(p + 32);
+    entries.push({ flags: u16(p + 8), method: u16(p + 10), time: u16(p + 12), date: u16(p + 14),
+      crc: u32(p + 16), csize: u32(p + 20), usize: u32(p + 24), off: u32(p + 42),
+      name: b.slice(p + 46, p + 46 + fnLen) });
+    p += 46 + fnLen + exLen + cmLen;
+  }
+
+  var out = [], cd = [];
+  var put16 = function (a, v) { a.push(v & 0xff, (v >>> 8) & 0xff); };
+  var put32 = function (a, v) { a.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff); };
+  entries.forEach(function (en) {
+    if (en.method === 99) throw new Error('ZIP je šifrovaný AES — tohle rozšifrovat neumím.');
+    var start = en.off + 30 + u16(en.off + 26) + u16(en.off + 28);
+    var data = b.slice(start, start + en.csize);
+    if (en.flags & 1) {
+      var keys = [0x12345678, 0x23456789, 0x34567890];
+      for (var k = 0; k < password.length; k++) zcUpdate(keys, password.charCodeAt(k) & 0xff);
+      var plain = new Array(data.length);
+      for (var j = 0; j < data.length; j++) {
+        var t = (keys[2] | 2) & 0xffff;
+        var c = data[j] ^ (((t * (t ^ 1)) >>> 8) & 0xff);
+        zcUpdate(keys, c);
+        plain[j] = c;
+      }
+      var check = (en.flags & 8) ? ((en.time >>> 8) & 0xff) : ((en.crc >>> 24) & 0xff);
+      if (plain[11] !== check) throw new Error('Špatné heslo k ZIPu (UCP_ZIP_PASSWORD).');
+      data = plain.slice(12);
+    }
+    var flags = en.flags & ~9; // bez šifry a bez data descriptoru
+    var off = out.length;
+    put32(out, 0x04034b50); put16(out, 20); put16(out, flags); put16(out, en.method);
+    put16(out, en.time); put16(out, en.date); put32(out, en.crc); put32(out, data.length); put32(out, en.usize);
+    put16(out, en.name.length); put16(out, 0);
+    Array.prototype.push.apply(out, en.name);
+    for (var q = 0; q < data.length; q++) out.push(data[q]);
+    put32(cd, 0x02014b50); put16(cd, 20); put16(cd, 20); put16(cd, flags); put16(cd, en.method);
+    put16(cd, en.time); put16(cd, en.date); put32(cd, en.crc); put32(cd, data.length); put32(cd, en.usize);
+    put16(cd, en.name.length); put16(cd, 0); put16(cd, 0); put16(cd, 0); put16(cd, 0); put32(cd, 0); put32(cd, off);
+    Array.prototype.push.apply(cd, en.name);
+  });
+  var cdOff = out.length;
+  for (var r = 0; r < cd.length; r++) out.push(cd[r]);
+  put32(out, 0x06054b50); put16(out, 0); put16(out, 0); put16(out, entries.length); put16(out, entries.length);
+  put32(out, cd.length); put32(out, cdOff); put16(out, 0);
+  return out;
+}
+
+// ZIP z UniCreditu → PDF blob. Nejdřív zkusí běžné rozbalení, pak ZipCrypto
+// s heslem ze Script Properties (UCP_ZIP_PASSWORD). Vrací { blob, note } —
+// blob je PDF, nebo null (pak note říká proč).
+function ucpExtractPdf(zipBlob) {
+  var inner = null, note = '';
+  try {
+    inner = Utilities.unzip(zipBlob.setContentType('application/zip'));
+  } catch (e) {
+    var pwd = PropertiesService.getScriptProperties().getProperty('UCP_ZIP_PASSWORD');
+    if (!pwd) return { blob: null, note: 'ZIP je zaheslovaný — doplň heslo do Script Properties jako UCP_ZIP_PASSWORD' };
+    try {
+      var plain = zipDecryptToPlain(zipBlob.getBytes(), pwd)
+        .map(function (x) { return x > 127 ? x - 256 : x; });
+      inner = Utilities.unzip(Utilities.newBlob(plain, 'application/zip', 'plain.zip'));
+    } catch (e2) {
+      return { blob: null, note: e2.message };
+    }
+  }
+  for (var k = 0; k < inner.length; k++) if (/\.pdf$/i.test(inner[k].getName())) return { blob: inner[k], note: note };
+  return { blob: null, note: 'V ZIPu nebylo PDF' };
+}
 
 function checkUnicreditEmail() {
   var threads = GmailApp.search('from:vypisy_cennepapiry@unicreditgroup.cz newer_than:400d has:attachment', 0, 30);
