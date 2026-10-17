@@ -22,6 +22,32 @@ export async function fetchSheet(url, tries = 3) {
   throw lastErr;
 }
 
+/* POST akce na GAS. Stejný problém jako u čtení: Apps Script občas vrátí
+   HTML chybovou stránku místo JSON — dřív to shodilo „Aktualizovat kurzy"
+   hláškou „Unexpected token '<'". `tries` > 1 jen pro akce, které jde
+   bezpečně zopakovat (aktualizace kurzů); nahrání souboru opakovat nesmí,
+   to by mohlo vytvořit duplikát. Chyba vrácená skriptem ({error}) se
+   neopakuje — je to odpověď, ne výpadek. */
+export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    let d;
+    try {
+      const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
+      const t = await r.text();
+      if (t.trim().startsWith('<')) throw new Error(`Apps Script vrátil HTML (HTTP ${r.status}) místo dat — zkus to za chvíli`);
+      d = JSON.parse(t);
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await new Promise(res => setTimeout(res, delayMs * (i + 1)));
+      continue;
+    }
+    if (d && d.error) throw new Error(d.error);
+    return d;
+  }
+  throw lastErr;
+}
+
 /* Načte VÍC listů jedním požadavkem (?sheets=A,B,C). Apps Script se
    u každého požadavku rozjíždí několik sekund, takže devět samostatných
    fetchů byl hlavní důvod pomalého startu. Vrací { NazevListu: {values|error} }.

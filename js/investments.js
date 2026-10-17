@@ -1,6 +1,6 @@
 import { GAS_URL, FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
-import { czk, fetchSheet, fetchSheets } from './utils.js';
+import { czk, fetchSheet, fetchSheets, postJson } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 
@@ -52,19 +52,16 @@ export async function refreshInvNav() {
     // Paralelní běh navíc pouštěl dvě těžké GAS exekuce naráz (scrape 8 webů
     // + stahování metadat T212), což přetěžovalo skript a shazovalo i běžné
     // čtení listů (Google vracel HTML 404 místo JSON).
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshNav' }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    // Výpadek Googlu (HTML místo JSON) se zkusí znovu — refresh jde bezpečně opakovat.
+    const d = await postJson({ action: 'refreshNav' }, { tries: 3 });
     // odfiltruj S&P500 z failed → to je benchmark, ne fond
     const failedFunds = (d.failed || []).filter(x => /^CZ\d{10}$/.test(x));
     // T212 až potom a nezávisle — chybějící klíč nesmí shodit CODYA/CONSEQ.
     let t212Msg = '';
-    const rt = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'refreshT212' }) }).catch(() => null);
-    if (rt) {
-      const dt = await rt.json().catch(() => null);
-      if (dt && dt.error) t212Msg = ` · T212: ${dt.error}`;
-      else if (dt && dt.success) t212Msg = ` · T212 ${dt.updated} pozic`;
-    }
+    try {
+      const dt = await postJson({ action: 'refreshT212' }, { tries: 2 });
+      if (dt && dt.success) t212Msg = ` · T212 ${dt.updated} pozic`;
+    } catch (et) { t212Msg = ` · T212: ${et.message}`; }
     _lastRefresh = { updated: d.updated || 0, failed: failedFunds, eur: d.eur, when: new Date() };
     const okMsg = `Aktualizováno ${d.updated} kurzů${d.eur ? ` · EUR ${d.eur.toFixed(2)}` : ''}${t212Msg}`;
     toast(failedFunds.length ? `${okMsg} · ${failedFunds.length} selhalo` : okMsg, failedFunds.length ? 'err' : 'ok');
