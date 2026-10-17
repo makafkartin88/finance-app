@@ -2,8 +2,9 @@ import { GAS_URL, FUND_FOCUS } from './config.js';
 import { state } from './state.js';
 import { toast } from './app.js';
 import { loadInvestmentData } from './investments.js';
-import { fetchSheet } from './utils.js';
-import { DEFAULT_EUR, parseCodyaHoldings, parseCodyaTransactions, parseUnicredit, parseConseq, buildFundRow } from './inv-parse.js';
+import { fetchSheet, postJson } from './utils.js';
+import { DEFAULT_EUR, detectStatement, planAutoImport, buildFundRow } from './inv-parse.js';
+import { escHtml, jsArg } from './documents-core.js';
 
 // Heslo k zaheslovaným výpisům (UniCredit) — jen localStorage, nikdy v kódu
 const INV_PWD_KEY = 'invPdfPwd';
@@ -34,7 +35,50 @@ export function invDol() { document.getElementById('invZone').classList.remove('
 export function invDod(e) { e.preventDefault(); invDol(); const f = e.dataTransfer.files[0]; if (f) procInvFile(f); }
 export function invOnFile(e) { const f = e.target.files[0]; if (f) procInvFile(f); e.target.value = ''; }
 
-/* ── HLAVNÍ PROCESOR ──
+/* ── ČTENÍ PDF (pdf.js) → řádky + tokeny ──
+   interactive=true: při chybějícím/špatném heslu se zeptá (ruční import).
+   interactive=false: jen uložené heslo, jinak chyba — automatický import
+   na pozadí nesmí uživatele přepadnout dialogem. */
+async function readPdf(arrayBuffer, interactive) {
+  if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js se nepodařilo načíst — zkontroluj připojení');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  // UniCredit PDF bývá zaheslované — heslo se zeptá jednou a uloží se do
+  // localStorage (repo je veřejné, takže nikdy do kódu).
+  const savedPwd = localStorage.getItem(INV_PWD_KEY) || '';
+  const task = pdfjsLib.getDocument({ data: arrayBuffer, password: savedPwd || undefined });
+  let usedPwd = savedPwd;
+  const pwdFail = new Promise((_, reject) => {
+    task.onPassword = (updateCallback, reason) => {
+      if (!interactive) { reject(new Error('PDF je zaheslované a uložené heslo nesedí')); task.destroy(); return; }
+      const pwd = prompt(reason === 2 ? 'Nesprávné heslo, zadej znovu:' : 'Zadej heslo k PDF výpisu (zapamatuje se):');
+      if (pwd !== null) { usedPwd = pwd.trim(); updateCallback(usedPwd); }
+      else { reject(new Error('Import zrušen — heslo nebylo zadáno')); task.destroy(); }
+    };
+  });
+  const pdf = await Promise.race([task.promise, pwdFail]);
+  if (usedPwd) localStorage.setItem(INV_PWD_KEY, usedPwd);
+
+  const lines = [];
+  const allTokens = []; // tokeny v pořadí obsahu PDF — UniCredit se parsuje z nich
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items.filter(it => it.str.trim())
+      .map(it => ({ str: it.str.trim(), x: it.transform[4], y: it.transform[5] }));
+    items.forEach(it => allTokens.push(it.str));
+    // seskupit do vizuálních řádků dle Y (±4px)
+    const sorted = items.slice().sort((a, b) => Math.abs(a.y - b.y) > 4 ? b.y - a.y : a.x - b.x);
+    let prevY = null, tokens = [];
+    for (const it of sorted) {
+      if (prevY !== null && Math.abs(it.y - prevY) <= 4) tokens.push(it.str);
+      else { if (tokens.length) lines.push(tokens.join(' ').replace(/\s{2,}/g, ' ').trim()); tokens = [it.str]; prevY = it.y; }
+    }
+    if (tokens.length) lines.push(tokens.join(' ').replace(/\s{2,}/g, ' ').trim());
+  }
+  return { lines, allTokens };
+}
+
+/* ── HLAVNÍ PROCESOR (ruční import s náhledem) ──
    `src` je buď File (drag-drop / výběr), nebo ArrayBuffer (stažení z Disku
    přes GAS — viz importUcpFromDrive). */
 async function procInvFile(src, srcName) {
@@ -48,73 +92,17 @@ async function procInvFile(src, srcName) {
 
   const fname = srcName || src.name || 'vypis.pdf';
   try {
-    if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js se nepodařilo načíst — zkontroluj připojení');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
     const arrayBuffer = src instanceof ArrayBuffer ? src : await src.arrayBuffer();
-    // UniCredit výpisy chodí zaheslované — heslo se zeptá jednou a uloží se
-    // do localStorage (repo je veřejné, takže nikdy do kódu). CODYA/CONSEQ
-    // heslo nemají, u nich se onPassword vůbec nezavolá.
-    const savedPwd = localStorage.getItem(INV_PWD_KEY) || '';
-    const task = pdfjsLib.getDocument({ data: arrayBuffer, password: savedPwd || undefined });
-    let usedPwd = savedPwd;
-    task.onPassword = (updateCallback, reason) => {
-      const msg = reason === 2 ? 'Nesprávné heslo, zadej znovu:' : 'Zadej heslo k PDF výpisu (zapamatuje se):';
-      const pwd = prompt(msg);
-      if (pwd !== null) { usedPwd = pwd.trim(); updateCallback(usedPwd); }
-      else throw new Error('Import zrušen — heslo nebylo zadáno');
-    };
-    const pdf = await task.promise;
-    if (usedPwd) localStorage.setItem(INV_PWD_KEY, usedPwd);
-
-    const lines = [];
-    const allTokens = []; // tokeny v pořadí obsahu PDF — UniCredit výpis se
-                          // parsuje z nich (viz parseUnicredit), ne z řádků
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      const items = content.items.filter(it => it.str.trim())
-        .map(it => ({ str: it.str.trim(), x: it.transform[4], y: it.transform[5] }));
-      items.forEach(it => allTokens.push(it.str));
-      // seskupit do vizuálních řádků dle Y (±4px)
-      const sorted = items.slice().sort((a, b) => Math.abs(a.y - b.y) > 4 ? b.y - a.y : a.x - b.x);
-      let prevY = null, tokens = [];
-      for (const it of sorted) {
-        if (prevY !== null && Math.abs(it.y - prevY) <= 4) tokens.push(it.str);
-        else { if (tokens.length) lines.push(tokens.join(' ').replace(/\s{2,}/g, ' ').trim()); tokens = [it.str]; prevY = it.y; }
-      }
-      if (tokens.length) lines.push(tokens.join(' ').replace(/\s{2,}/g, ' ').trim());
-    }
-
-    const text = lines.join('\n');
-    const upper = text.toUpperCase();
-    let funds = [], provider = '', docType = '';
-
-    if (upper.includes('VÝPIS Z MAJETKOVÉHO ÚČTU') && upper.includes('CODYA')) {
-      provider = 'CODYA'; docType = 'majetkový výpis (aktuální NAV)';
-      funds = parseCodyaHoldings(lines);
-    } else if (upper.includes('VÝPIS TRANSAKCÍ') && upper.includes('CODYA')) {
-      provider = 'CODYA'; docType = 'výpis transakcí (nákupní NAV)';
-      funds = parseCodyaTransactions(lines);
-    } else if (upper.includes('UNICREDIT') && upper.includes('MAJETKOVÉHO ÚČTU CENNÝCH PAPÍRŮ')) {
-      provider = 'UNICREDIT'; docType = 'výpis z majetkového účtu CP';
-      funds = parseUnicredit(allTokens);
-    } else if (upper.includes('CONSEQ')) {
-      provider = 'CONSEQ'; docType = 'výpis z investičního účtu';
-      funds = parseConseq(lines);
-    } else {
-      throw new Error('Neznámý typ výpisu. Podporováno: CODYA (majetkový výpis / transakce), CONSEQ a UniCredit (majetkový účet CP).');
-    }
-
-    if (!funds.length) throw new Error('Ve výpisu se nepodařilo najít žádné fondy (ISIN). Zkus jiný soubor.');
-
-    funds.forEach(f => { f.provider = provider; });
+    const { lines, allTokens } = await readPdf(arrayBuffer, true);
+    const st = detectStatement(lines, allTokens);
+    if (!st) throw new Error('Neznámý typ výpisu. Podporováno: CODYA (majetkový výpis / transakce), CONSEQ a UniCredit (majetkový účet CP).');
+    if (!st.funds.length) throw new Error('Ve výpisu se nepodařilo najít žádné fondy (ISIN). Zkus jiný soubor.');
     status.style.display = 'none';
-    showInvPreview(funds, provider, docType, fname);
+    showInvPreview(st.funds, st.provider, st.docLabel, fname);
   } catch (e) {
     status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">
-      <p style="color:var(--red);font-weight:600">Chyba: ${e.message}</p>
-      <p style="color:var(--text2);font-size:12px;margin-top:6px">Podporované výpisy: CODYA (majetkový výpis + transakce) a CONSEQ periodický výpis.</p></div>`;
+      <p style="color:var(--red);font-weight:600">Chyba: ${escHtml(e.message)}</p>
+      <p style="color:var(--text2);font-size:12px;margin-top:6px">Podporované výpisy: CODYA (majetkový výpis + transakce), CONSEQ a UniCredit.</p></div>`;
   }
 }
 
@@ -174,7 +162,7 @@ export async function confirmInvImport() {
     if (state._ucpImportFileId) {
       try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markUcpImported', fileId: state._ucpImportFileId }) }); } catch (e2) {}
       state._ucpImportFileId = null;
-      await loadUcpNotification();
+      await loadUcpNotification({ auto: false });
     }
     loadInvestmentData();
   } catch (e) {
@@ -182,26 +170,72 @@ export async function confirmInvImport() {
   }
 }
 
-/* ── UNICREDIT: výpisy z majetkového účtu CP zachycené v e-mailu ──
-   Stejný vzor jako u mBank výpisů a výplatních pásek: GAS je stáhne z pošty
-   (a rozbalí ZIP), appka pak nabídne frontu čekajících a na jedno kliknutí
-   soubor stáhne přes GAS, rozparsuje a rovnou ukáže návrh. */
+/* ── VÝPISY ZACHYCENÉ V E-MAILU (UniCredit, CODYA, CONSEQ) ──
+   GAS je každé pondělí stáhne z pošty do fronty (list UcpImport, ZIP
+   z UniCreditu rovnou rozšifruje). Appka při otevření frontu projde a co
+   projde pojistkami (planAutoImport), uloží SAMA bez klikání. Co neprojde,
+   zůstane v banneru k ruční kontrole i s důvodem. */
 const UCP_MONTHS = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen',
   'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 function ucpLabel(period) {
-  const m = String(period || '').match(/^(\d{4})-(\d{2})$/);
-  return m ? `${UCP_MONTHS[+m[2]] || m[2]} ${m[1]}` : (period || '');
+  const m = String(period || '').match(/^(\d{4})-(\d{2})/);
+  return m ? `${UCP_MONTHS[+m[2]] || m[2]} ${m[1]}` : '';
 }
 
-export async function loadUcpNotification() {
+/* ── AUTOMATICKÝ IMPORT — stav ── */
+const _autoNotes = {};          // fileId → proč se nedal naimportovat sám (pro banner)
+const _autoTried = new Set();   // co už v tomhle otevření appky selhalo — nezkoušet dokola
+let _autoBusy = false;
+
+export async function loadUcpNotification({ auto = true } = {}) {
   try {
     const d = await fetchSheet(GAS_URL + '?sheet=UcpImport');
     const rows = (d.values || []).slice(1).filter(r => r[4] === 'new');
     state._ucpPending = rows
-      .map(r => ({ filename: r[1], fileId: r[2], period: r[6] || '', note: r[7] || '' }))
-      .sort((a, b) => String(b.period).localeCompare(String(a.period)));
+      .map(r => ({ filename: String(r[1] || ''), fileId: String(r[2] || ''), emailDate: String(r[3] || ''),
+                   period: String(r[6] || ''), note: _autoNotes[r[2]] || String(r[7] || '') }))
+      .sort((a, b) => b.emailDate.localeCompare(a.emailDate));
     if (state._ucpPending.length) showUcpBanner(0); else hideUcpBanner();
+    if (auto && state._ucpPending.length) autoImportPending();
   } catch (e) { /* list ještě nemusí existovat */ }
+}
+
+async function autoImportPending() {
+  if (_autoBusy || !state._invLoaded) return;
+  _autoBusy = true;
+  let imported = 0;
+  try {
+    // Od nejstaršího, ať novější výpis vždy skončí jako poslední stav.
+    const queue = (state._ucpPending || []).slice().reverse().filter(x => !_autoTried.has(x.fileId));
+    for (const item of queue) {
+      _autoTried.add(item.fileId);
+      if (/\.zip$/i.test(item.filename)) continue; // ještě nerozšifrovaný ZIP — banner s poznámkou z GAS
+      try {
+        const d = await postJson({ action: 'getDriveFile', fileId: item.fileId }, { tries: 2 });
+        const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
+        const { lines, allTokens } = await readPdf(bin.buffer, false);
+        const st = detectStatement(lines, allTokens);
+        if (!st) {
+          // Není to výpis (newsletter, smlouva…) → tiše odbavit.
+          await postJson({ action: 'markUcpImported', fileId: item.fileId });
+          continue;
+        }
+        const plan = planAutoImport(st.funds, st.provider, st.type, state.investments);
+        if (!plan.ok) { _autoNotes[item.fileId] = 'Automatický import zastaven: ' + plan.reason; continue; }
+        await postJson({ action: 'upsertFund', values: plan.rows });
+        await postJson({ action: 'markUcpImported', fileId: item.fileId });
+        imported++;
+        const k = st.funds[0]._statementDate || st.funds[0].aktualNAVdatum || '';
+        toast(`✓ Importován výpis ${st.provider}${k ? ' k ' + k : ''} — ${plan.rows.length} fondů`, 'ok');
+      } catch (e) {
+        _autoNotes[item.fileId] = 'Automatický import selhal: ' + e.message;
+      }
+    }
+  } finally {
+    _autoBusy = false;
+  }
+  if (imported) await loadInvestmentData();
+  await loadUcpNotification({ auto: false });
 }
 
 export function ucpPickPending(i) { showUcpBanner(Number(i)); }
@@ -211,22 +245,22 @@ function showUcpBanner(idx) {
   const list = state._ucpPending || [];
   const cur = list[idx];
   if (!banner || !cur) return;
-  const esc = s => String(s).replace(/'/g, "\\'");
+  const label = p => ucpLabel(p.period) || p.filename;
   const picker = list.length > 1
     ? `<select class="sel" style="font-size:11px;padding:3px 6px" onchange="ucpPickPending(this.value)">
-        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${ucpLabel(p.period) || p.filename}</option>`).join('')}
+        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escHtml(label(p))}</option>`).join('')}
        </select>` : '';
   banner.style.display = 'flex';
   banner.innerHTML = `
     <span style="font-size:18px">📈</span>
     <div style="flex:1;min-width:180px">
-      <div style="font-weight:600;font-size:13px">Výpis z UniCredit k importu${cur.period ? ' — ' + ucpLabel(cur.period) : ''}</div>
-      <div style="font-size:12px;color:var(--text2)">${cur.filename}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
-      ${cur.note ? `<div style="font-size:11px;color:var(--amber-text)">⚠️ ${cur.note}</div>` : ''}
+      <div style="font-weight:600;font-size:13px">Investiční výpis k ruční kontrole${ucpLabel(cur.period) ? ' — ' + ucpLabel(cur.period) : ''}</div>
+      <div style="font-size:12px;color:var(--text2)">${escHtml(cur.filename)}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
+      ${cur.note ? `<div style="font-size:11px;color:var(--amber-text)">⚠️ ${escHtml(cur.note)}</div>` : ''}
     </div>
     ${picker}
-    <button class="btnp btnsm" onclick="importUcpFromDrive('${esc(cur.fileId)}','${esc(cur.filename)}')">Importovat</button>
-    <button class="btn btnsm" onclick="ucpMarkDone('${esc(cur.fileId)}')" title="Skrýt natrvalo">✓ Už mám</button>
+    <button class="btnp btnsm" onclick="importUcpFromDrive(${jsArg(cur.fileId)},${jsArg(cur.filename)})">Zkontrolovat a importovat</button>
+    <button class="btn btnsm" onclick="ucpMarkDone(${jsArg(cur.fileId)})" title="Skrýt natrvalo">✓ Už mám</button>
     <button class="btn btnsm" onclick="hideUcpBanner()" title="Skrýt jen teď">✕</button>`;
 }
 
@@ -236,19 +270,17 @@ export function hideUcpBanner() {
 }
 
 export async function ucpMarkDone(fileId) {
-  try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markUcpImported', fileId }) }); } catch (e) {}
-  await loadUcpNotification();
+  try { await postJson({ action: 'markUcpImported', fileId }); } catch (e) {}
+  await loadUcpNotification({ auto: false });
 }
 
 export async function ucpCheckMail() {
   toast('Kontroluji poštu…');
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'checkUnicreditEmail' }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'checkInvestEmail' });
     await loadUcpNotification();
     const n = (state._ucpPending || []).length;
-    toast(d.added ? `Nalezeno ${d.added} nových výpisů · čeká ${n}` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové výpisy'), 'ok');
+    toast(d.added ? `Nalezeno ${d.added} nových výpisů` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové výpisy'), 'ok');
   } catch (e) { toast('Kontrola pošty selhala: ' + e.message, 'err'); }
 }
 
@@ -258,14 +290,12 @@ export async function importUcpFromDrive(fileId, filename) {
   status.style.display = 'block';
   status.innerHTML = `<div class="card" style="text-align:center;padding:20px;color:var(--text2)">Stahuji výpis z Disku…</div>`;
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'getDriveFile', fileId }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'getDriveFile', fileId }, { tries: 2 });
     const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
     state._ucpImportFileId = fileId;
     await procInvFile(bin.buffer, d.name || filename);
   } catch (e) {
     status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">
-      <p style="color:var(--red);font-weight:600">Chyba stažení: ${e.message}</p></div>`;
+      <p style="color:var(--red);font-weight:600">Chyba stažení: ${escHtml(e.message)}</p></div>`;
   }
 }

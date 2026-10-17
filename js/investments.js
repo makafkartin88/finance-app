@@ -1,4 +1,4 @@
-import { GAS_URL, FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
+import { FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
 import { czk, fetchSheet, fetchSheets, postJson } from './utils.js';
 import { toast } from './app.js';
