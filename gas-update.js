@@ -1325,60 +1325,10 @@ function checkUnicreditEmail() {
   }
 }
 
-// ── GMAIL → DRIVE → SHEET: výpisy CODYA / CONSEQ ──
-// PDF přílohy z e-mailů, které zmiňují CODYA/CONSEQ, jdou do stejné fronty
-// jako UniCredit (list UcpImport). Jestli jde opravdu o výpis, pozná až
-// appka podle obsahu — co výpis není (newsletter…), tiše odbaví.
-// Okno 60 dní: první běh nevytáhne staré, dávno ručně naimportované výpisy;
-// dál drží duplicity klíč „id zprávy|název přílohy".
-function checkFundStatementsEmail() {
-  var threads = GmailApp.search('has:attachment filename:pdf newer_than:60d (codya OR conseq) ' +
-    '-from:mbank.cz -from:harnol.cz -from:unicreditgroup.cz', 0, 30);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('UcpImport');
-  if (!sheet) { sheet = ss.insertSheet('UcpImport'); sheet.appendRow(UCP_HEADER); }
-  if (!threads.length) return { success: true, added: 0 };
-
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) return { success: false, error: 'Kontrola pošty právě běží jinde, zkus to za chvíli.' };
-  try {
-    var existing = {};
-    var rows = sheet.getDataRange().getValues();
-    for (var r = 1; r < rows.length; r++) existing[rows[r][5]] = true;
-    var folders = DriveApp.getFoldersByName('Finance-Vypisy-Fondy');
-    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy-Fondy');
-    var added = 0;
-    threads.forEach(function (thread) {
-      thread.getMessages().forEach(function (msg) {
-        msg.getAttachments().forEach(function (att) {
-          var name = att.getName() || '';
-          if (!/\.pdf$/i.test(name)) return;
-          var key = msg.getId() + '|' + name;
-          if (existing[key]) return;
-          // záměrně BEZ setSharing — osobní výpisy, čte je jen GAS
-          var file = folder.createFile(att.copyBlob().setName(msg.getId() + '_' + name));
-          sheet.appendRow([new Date(), name, file.getId(), msg.getDate(), 'new', key, '', '']);
-          existing[key] = true;
-          added++;
-        });
-      });
-    });
-    return { success: true, added: added };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-// Kontrola pošty pro všechny investiční výpisy (tlačítko v appce + týdenní běh).
+// Kontrola pošty pro investiční výpisy (tlačítko v appce + týdenní běh).
+// Jen UniCredit — u CODYA/CONSEQ se složení fondů nemění, stačí kurzy z webu.
 function checkInvestEmail() {
-  var u = checkUnicreditEmail(), f = checkFundStatementsEmail();
-  return {
-    success: !!(u.success && f.success),
-    error: u.error || f.error || '',
-    added: (u.added || 0) + (f.added || 0),
-    fixed: u.fixed || 0,
-    problems: u.problems || []
-  };
+  return checkUnicreditEmail();
 }
 
 function handleMarkUcpImported(body) {
