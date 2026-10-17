@@ -106,6 +106,9 @@ function doPost(e) {
     if (body.action === 'checkUnicreditEmail') {
       return jsonOut(checkUnicreditEmail());
     }
+    if (body.action === 'checkInvestEmail') {
+      return jsonOut(checkInvestEmail());
+    }
     if (body.action === 'markUcpImported') {
       return handleMarkUcpImported(body);
     }
@@ -713,7 +716,7 @@ function navSourceFor(provider, isin) {
   return null;
 }
 
-function refreshNav() {
+function refreshNav(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Fondy');
@@ -767,6 +770,18 @@ function refreshNav() {
     // Historie → listy TrhHist (denní S&P+FX) a FondyHist (řídké body fondů)
     var hist = updateHistory(ss, data, sp, fx);
     if (!hist.ok) log.push(hist.err || 'historie: nezapsána');
+
+    // Týdenní časovač (e.triggerUid) projde navíc poštu: výpisy UniCredit,
+    // CODYA a CONSEQ → fronta, kterou appka při otevření sama naimportuje.
+    // Z tlačítka v appce se nevolá — zdržovalo by to aktualizaci kurzů.
+    if (e && e.triggerUid) {
+      try {
+        var mail = checkInvestEmail();
+        log.push('Pošta: ' + (mail.added || 0) + ' nových výpisů' + (mail.fixed ? ', ' + mail.fixed + ' rozbaleno dodatečně' : ''));
+        if (mail.error) { failed.push('POŠTA'); log.push(mail.error); }
+        (mail.problems || []).forEach(function (pr) { failed.push('VÝPIS'); log.push(pr); });
+      } catch (em) { failed.push('POŠTA'); log.push('Kontrola pošty: ' + em.message); }
+    }
 
     // Upozornění e-mailem když scrape selže (funguje hlavně pro týdenní trigger;
     // při ručním volání z appky se stav vrací i v JSON logu).
@@ -1242,6 +1257,23 @@ function checkUnicreditEmail() {
   var folders = DriveApp.getFoldersByName('Finance-Vypisy-CP');
   var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy-CP');
 
+  // Čekající ZIPy zachycené dřív, než šlo rozšifrovat (nebo bez hesla) →
+  // zkusit znovu, ať se frontou neplouží nezpracovatelný ZIP.
+  var fixed = 0;
+  for (var z = 1; z < rows.length; z++) {
+    if (rows[z][4] !== 'new' || !/\.zip$/i.test(String(rows[z][1]))) continue;
+    try {
+      var old = DriveApp.getFileById(rows[z][2]);
+      var exz = ucpExtractPdf(old.getBlob());
+      if (!exz.blob) { sheet.getRange(z + 1, 8).setValue(exz.note); continue; }
+      var nf = folder.createFile(exz.blob.setName(rows[z][5] + '_' + exz.blob.getName()));
+      sheet.getRange(z + 1, 2, 1, 2).setValues([[exz.blob.getName(), nf.getId()]]);
+      sheet.getRange(z + 1, 8).setValue('');
+      old.setTrashed(true);
+      fixed++;
+    } catch (ez) { sheet.getRange(z + 1, 8).setValue('Opakované rozbalení selhalo: ' + ez.message); }
+  }
+
   var added = 0, problems = [];
   threads.forEach(function (thread) {
     thread.getMessages().forEach(function (msg) {
@@ -1263,20 +1295,11 @@ function checkUnicreditEmail() {
       var blob = att.copyBlob();
       var note = '';
 
-      // ZIP rozbalit a vytáhnout PDF
+      // ZIP rozbalit (i zaheslovaný — ZipCrypto, viz ucpExtractPdf)
       if (/\.zip$/i.test(name) || /zip/i.test(att.getContentType())) {
-        try {
-          var inner = Utilities.unzip(blob.setContentType('application/zip'));
-          var pdf = null;
-          for (var k = 0; k < inner.length; k++) {
-            if (/\.pdf$/i.test(inner[k].getName())) { pdf = inner[k]; break; }
-          }
-          if (pdf) { blob = pdf; name = pdf.getName(); }
-          else { note = 'V ZIPu nebylo PDF'; }
-        } catch (e) {
-          // Nejčastěji: ZIP je sám chráněný heslem (GAS to neumí rozbalit)
-          note = 'ZIP se nepodařilo rozbalit (' + e.message + ') — ulozen original, rozbal rucne';
-        }
+        var ex = ucpExtractPdf(blob);
+        if (ex.blob) { blob = ex.blob; name = ex.blob.getName(); }
+        note = ex.note;
       }
 
       var file = folder.createFile(blob.setName((period || msgId) + '_' + name));
@@ -1288,10 +1311,66 @@ function checkUnicreditEmail() {
       if (note) problems.push(name + ': ' + note);
     });
   });
-  return { success: true, added: added, problems: problems };
+  return { success: true, added: added, fixed: fixed, problems: problems };
   } finally {
     lock.releaseLock();
   }
+}
+
+// ── GMAIL → DRIVE → SHEET: výpisy CODYA / CONSEQ ──
+// PDF přílohy z e-mailů, které zmiňují CODYA/CONSEQ, jdou do stejné fronty
+// jako UniCredit (list UcpImport). Jestli jde opravdu o výpis, pozná až
+// appka podle obsahu — co výpis není (newsletter…), tiše odbaví.
+// Okno 60 dní: první běh nevytáhne staré, dávno ručně naimportované výpisy;
+// dál drží duplicity klíč „id zprávy|název přílohy".
+function checkFundStatementsEmail() {
+  var threads = GmailApp.search('has:attachment filename:pdf newer_than:60d (codya OR conseq) ' +
+    '-from:mbank.cz -from:harnol.cz -from:unicreditgroup.cz', 0, 30);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('UcpImport');
+  if (!sheet) { sheet = ss.insertSheet('UcpImport'); sheet.appendRow(UCP_HEADER); }
+  if (!threads.length) return { success: true, added: 0 };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { success: false, error: 'Kontrola pošty právě běží jinde, zkus to za chvíli.' };
+  try {
+    var existing = {};
+    var rows = sheet.getDataRange().getValues();
+    for (var r = 1; r < rows.length; r++) existing[rows[r][5]] = true;
+    var folders = DriveApp.getFoldersByName('Finance-Vypisy-Fondy');
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Finance-Vypisy-Fondy');
+    var added = 0;
+    threads.forEach(function (thread) {
+      thread.getMessages().forEach(function (msg) {
+        msg.getAttachments().forEach(function (att) {
+          var name = att.getName() || '';
+          if (!/\.pdf$/i.test(name)) return;
+          var key = msg.getId() + '|' + name;
+          if (existing[key]) return;
+          // záměrně BEZ setSharing — osobní výpisy, čte je jen GAS
+          var file = folder.createFile(att.copyBlob().setName(msg.getId() + '_' + name));
+          sheet.appendRow([new Date(), name, file.getId(), msg.getDate(), 'new', key, '', '']);
+          existing[key] = true;
+          added++;
+        });
+      });
+    });
+    return { success: true, added: added };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Kontrola pošty pro všechny investiční výpisy (tlačítko v appce + týdenní běh).
+function checkInvestEmail() {
+  var u = checkUnicreditEmail(), f = checkFundStatementsEmail();
+  return {
+    success: !!(u.success && f.success),
+    error: u.error || f.error || '',
+    added: (u.added || 0) + (f.added || 0),
+    fixed: u.fixed || 0,
+    problems: u.problems || []
+  };
 }
 
 function handleMarkUcpImported(body) {
