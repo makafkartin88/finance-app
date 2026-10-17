@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConseq, buildFundRow } from '../js/inv-parse.js';
+import { parseConseq, buildFundRow, planAutoImport, detectStatement } from '../js/inv-parse.js';
 import { FOND } from '../js/config.js';
 
 // Struktura řádků odpovídá reálnému výpisu CONSEQ (pdf.js, seskupení dle Y),
@@ -104,4 +104,77 @@ test('buildFundRow: investováno ze skutečné částky, hodnota z počtu × NAV
   const n = buildFundRow({ provider: 'UNICREDIT', isin: 'LU1', nazev: 'U', mena: 'CZK', pocetCP: 2, aktualNAV: 10 });
   assert.equal(n[FOND.investovanoCZK], '');
   assert.equal(n[FOND.nakupNAV], '');
+});
+
+// ── Automatický import: pojistky ──
+const have = (o) => ({ provider: 'CONSEQ', isin: 'CZ1005100618', mena: 'CZK', pocetCP: 100, nakupNAV: 1, aktualNAV: 1, aktualNAVdatum: '30.6.2026', ...o });
+const got = (o) => ({ provider: 'CONSEQ', isin: 'CZ1005100618', nazev: 'B', mena: 'CZK', pocetCP: 100, nakupNAV: 0, aktualNAV: 1.1, aktualNAVdatum: '30.9.2026', ...o });
+
+test('planAutoImport: běžný výpis projde a vrátí řádky', () => {
+  const p = planAutoImport([got()], 'CONSEQ', 'holdings', [have()]);
+  assert.equal(p.ok, true);
+  assert.equal(p.rows.length, 1);
+  assert.equal(p.rows[0][FOND.aktualNAV], 1.1);
+});
+
+test('planAutoImport: nový fond se přidá', () => {
+  const p = planAutoImport([got(), got({ isin: 'CZ0008475936', pocetCP: 50 })], 'CONSEQ', 'holdings', [have()]);
+  assert.equal(p.ok, true);
+  assert.equal(p.rows.length, 2);
+});
+
+test('planAutoImport: zmizelý známý fond → ruční kontrola', () => {
+  const p = planAutoImport([got()], 'CONSEQ', 'holdings', [have(), have({ isin: 'CZ0008475936' })]);
+  assert.equal(p.ok, false);
+  assert.match(p.reason, /CZ0008475936/);
+});
+
+test('planAutoImport: u výpisu transakcí se zmizelé fondy nehlídají', () => {
+  const p = planAutoImport([got({ nakupNAV: 1 })], 'CODYA', 'transactions', [have({ provider: 'CODYA' }), have({ provider: 'CODYA', isin: 'CZ0008042892' })].map(x => x), );
+  assert.equal(p.ok, true);
+});
+
+test('planAutoImport: nulový počet nebo kurz → ruční kontrola', () => {
+  assert.equal(planAutoImport([got({ pocetCP: 0 })], 'CONSEQ', 'holdings', []).ok, false);
+  assert.equal(planAutoImport([got({ aktualNAV: 0 })], 'CONSEQ', 'holdings', []).ok, false);
+  assert.equal(planAutoImport([], 'CONSEQ', 'holdings', []).ok, false);
+});
+
+test('planAutoImport: skok hodnoty fondu o víc než 50 % → ruční kontrola', () => {
+  assert.equal(planAutoImport([got({ pocetCP: 200, aktualNAV: 1 })], 'CONSEQ', 'holdings', [have()]).ok, false);
+  assert.equal(planAutoImport([got({ pocetCP: 140, aktualNAV: 1 })], 'CONSEQ', 'holdings', [have()]).ok, true);
+});
+
+test('planAutoImport: dokoupení známého fondu za jinou cenu → ruční kontrola', () => {
+  assert.equal(planAutoImport([got({ nakupNAV: 1.5 })], 'CONSEQ', 'holdings', [have({ nakupNAV: 1 })]).ok, false);
+  assert.equal(planAutoImport([got({ nakupNAV: 1 })], 'CONSEQ', 'holdings', [have({ nakupNAV: 1 })]).ok, true);
+});
+
+test('planAutoImport: starší kurz z výpisu nepřepíše novější stažený', () => {
+  const p = planAutoImport([got({ aktualNAV: 1.05, aktualNAVdatum: '30.6.2026', pocetCP: 110 })], 'CONSEQ', 'holdings',
+    [have({ aktualNAV: 1.2, aktualNAVdatum: '2026-08-31T22:00:00.000Z' })]);
+  assert.equal(p.ok, true);
+  assert.equal(p.rows[0][FOND.aktualNAV], 1.2);
+  assert.equal(p.rows[0][FOND.aktualHodnotaCZK], 132);
+  assert.equal(p.rows[0][FOND.pocetCP], 110);
+});
+
+test('planAutoImport: fondy jiného poskytovatele se neporovnávají', () => {
+  const p = planAutoImport([got()], 'CONSEQ', 'holdings', [have(), have({ provider: 'UNICREDIT', isin: 'LU1' })]);
+  assert.equal(p.ok, true);
+});
+
+test('detectStatement: rozpozná typ výpisu, jinak null', () => {
+  assert.deepEqual(detectStatement(['VÝPIS Z MAJETKOVÉHO ÚČTU', 'CODYA investiční společnost']).kind, ['CODYA', 'holdings']);
+  assert.deepEqual(detectStatement(['VÝPIS TRANSAKCÍ', 'CODYA']).kind, ['CODYA', 'transactions']);
+  assert.deepEqual(detectStatement(['UniCredit Bank', 'Výpis z majetkového účtu cenných papírů k 30.09.2026']).kind, ['UNICREDIT', 'holdings']);
+  assert.deepEqual(detectStatement(['Výpis z investičního účtu', 'www.conseq.cz']).kind, ['CONSEQ', 'holdings']);
+  assert.equal(detectStatement(['Conseq newsletter', 'Novinky na trzích']), null);
+});
+
+test('planAutoImport: EUR fond bez kurzu ve výpisu převezme uložený kurz (ne záložních 25)', () => {
+  const p = planAutoImport([got({ mena: 'EUR', kurzEUR: undefined, pocetCP: 100, aktualNAV: 1 })], 'CONSEQ', 'holdings',
+    [have({ mena: 'EUR', kurzEUR: 24.3 })]);
+  assert.equal(p.rows[0][FOND.kurzEUR], 24.3);
+  assert.equal(p.rows[0][FOND.aktualHodnotaCZK], 2430);
 });

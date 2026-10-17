@@ -246,3 +246,79 @@ export function buildFundRow(f) {
   row[FOND.poznamka] = f.poznamka || '';
   return row;
 }
+
+/* ── ROZPOZNÁNÍ TYPU VÝPISU ──
+   null = nejde o podporovaný výpis (newsletter, smlouva…). CONSEQ se
+   rozpozná jen podle hlavičky výpisu, ne podle samotného slova „Conseq",
+   protože z conseq.cz chodí i jiná PDF. */
+export function detectStatement(lines, allTokens = []) {
+  const upper = lines.join('\n').toUpperCase();
+  let provider, type, docLabel, funds;
+  if (upper.includes('VÝPIS Z MAJETKOVÉHO ÚČTU') && upper.includes('CODYA')) {
+    provider = 'CODYA'; type = 'holdings'; docLabel = 'majetkový výpis (aktuální NAV)';
+    funds = parseCodyaHoldings(lines);
+  } else if (upper.includes('VÝPIS TRANSAKCÍ') && upper.includes('CODYA')) {
+    provider = 'CODYA'; type = 'transactions'; docLabel = 'výpis transakcí (nákupní NAV)';
+    funds = parseCodyaTransactions(lines);
+  } else if (upper.includes('UNICREDIT') && upper.includes('MAJETKOVÉHO ÚČTU CENNÝCH PAPÍRŮ')) {
+    provider = 'UNICREDIT'; type = 'holdings'; docLabel = 'výpis z majetkového účtu CP';
+    funds = parseUnicredit(allTokens);
+  } else if (upper.includes('VÝPIS Z INVESTIČNÍHO ÚČTU') && upper.includes('CONSEQ')) {
+    provider = 'CONSEQ'; type = 'holdings'; docLabel = 'výpis z investičního účtu';
+    funds = parseConseq(lines);
+  } else return null;
+  funds.forEach(f => { f.provider = provider; });
+  return { provider, type, docLabel, kind: [provider, type], funds };
+}
+
+// "31.8.2026" / "30.06.2026" / ISO timestamp ze Sheets → "yyyy-mm-dd" ('' když nejde)
+function isoOf(v) {
+  const s = String(v || '');
+  const m = s.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s);
+    return s.includes('T') && !isNaN(d) ? d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' }) : s.slice(0, 10);
+  }
+  return '';
+}
+
+/* ── AUTOMATICKÝ IMPORT: pojistky ──
+   Vrací { ok:true, rows } (bezpečné uložit bez náhledu), nebo
+   { ok:false, reason } → výpis zůstane ve frontě a appka ukáže banner
+   k ruční kontrole. `existing` = state.investments. */
+export function planAutoImport(funds, provider, type, existing) {
+  if (!funds || !funds.length) return { ok: false, reason: 've výpisu nejsou žádné fondy' };
+  const bad = funds.find(f => !(f.pocetCP > 0) || !(f.aktualNAV > 0));
+  if (bad && type !== 'transactions') return { ok: false, reason: `nulový počet kusů nebo kurz u ${bad.isin}` };
+
+  const mine = (existing || []).filter(e => e.provider === provider);
+  const byIsin = new Map(mine.map(e => [e.isin, e]));
+  if (type === 'holdings') {
+    const gone = mine.find(e => !funds.some(f => f.isin === e.isin));
+    if (gone) return { ok: false, reason: `ve výpisu chybí fond ${gone.isin}` };
+  }
+
+  const out = [];
+  for (const f0 of funds) {
+    const f = { ...f0 };
+    const e = byIsin.get(f.isin);
+    if (e) {
+      // Výpis CODYA kurz EUR neuvádí → vzít uložený (jinak by se zapsal záložní 25).
+      if (f.mena === 'EUR' && !f.kurzEUR && e.kurzEUR > 0) f.kurzEUR = e.kurzEUR;
+      if (f.nakupNAV > 0 && e.nakupNAV > 0 && Math.abs(f.nakupNAV - e.nakupNAV) > 1e-6)
+        return { ok: false, reason: `dokoupení ${f.isin} za jinou cenu — zkontroluj nákupní cenu` };
+      // Novější kurz (typicky stažený z webu fondu) se starším z výpisu nepřepíše.
+      const eDate = isoOf(e.aktualNAVdatum), fDate = isoOf(f.aktualNAVdatum);
+      if (e.aktualNAV > 0 && eDate && fDate && eDate > fDate) {
+        f.aktualNAV = e.aktualNAV;
+        f.aktualNAVdatum = e.aktualNAVdatum;
+      }
+      const oldV = (e.pocetCP || 0) * (e.aktualNAV || 0), newV = (f.pocetCP || 0) * (f.aktualNAV || 0);
+      if (type !== 'transactions' && oldV > 0 && Math.abs(newV / oldV - 1) > 0.5)
+        return { ok: false, reason: `hodnota ${f.isin} se změnila o víc než 50 %` };
+    }
+    out.push(buildFundRow(f));
+  }
+  return { ok: true, rows: out };
+}
