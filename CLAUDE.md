@@ -50,6 +50,8 @@ Column indices for `Transakce` rows are defined in `config.js` as `C` — always
 | `documents.js` | Stránka Dokumenty: seznam, hledání, složky, nahrání/úprava/smazání (GAS `uploadDocument`/`updateDocument`/`deleteDocument`) |
 | `documents-core.js` | Čistá logika dokumentů bez DOM/sítě, pokrytá `npm test` |
 | `investments.js` | Investment positions and account balances |
+| `inv-import.js` | Import investičních výpisů: ruční (náhled) i automatický z fronty `UcpImport` při otevření appky |
+| `inv-parse.js` | Čisté parsery výpisů CODYA/CONSEQ/UniCredit, `detectStatement`, pojistky `planAutoImport`, `buildFundRow` (pokryto `npm test`) |
 | `settings.js` | Settings page |
 | `table-filters.js` | Column filter popovers and amount sorting shared between dashboard and transactions |
 | `utils.js` | `parseRow`, date helpers (`fmtD`, `isoDate`, `parseTxDate`), `czk`, `scopedTxs`, `base`, `getBounds` |
@@ -71,3 +73,10 @@ Column indices for `Transakce` rows are defined in `config.js` as `C` — always
 When `gas-update.js` is changed, the new code must be manually copied into the GAS project at `script.google.com` and redeployed as a new Web App version. The `GAS_URL` in `config.js` must then be updated to the new deployment URL.
 
 The `checkMbankEmail()` function in GAS scans Gmail for mBank PDF attachments, saves them to Google Drive (`Finance-Vypisy` folder), and appends a row with `status='new'` to the `MbankImport` sheet. The app polls this sheet on load to show the import banner.
+
+### Investiční výpisy — automatika
+
+- Pondělní časovač `refreshNav` (Triggers → time-driven, týdně) stahuje kurzy CODYA/CONSEQ z webů (`NAV_SOURCES`, nový fond CONSEQ se dohledá sám podle ISIN — `navSourceFor`) a navíc projde poštu (`checkInvestEmail` = `checkUnicreditEmail` + `checkFundStatementsEmail`). Spustí se to jen z časovače (`e.triggerUid`), ne z tlačítka.
+- ZIP z UniCreditu je šifrovaný ZipCrypto; GAS ho rozšifruje (`zipDecryptToPlain`) heslem ze Script Properties `UCP_ZIP_PASSWORD`. Klíč k T212 je tamtéž (`T212_API_KEY`, `T212_API_SECRET`).
+- Zachycené výpisy čekají v listu `UcpImport` (status `new`). Appka je při otevření sama naimportuje, pokud projdou pojistkami v `planAutoImport`; jinak zůstanou v banneru s důvodem.
+
