@@ -207,6 +207,7 @@ function handleHash() {
 
 /* ── EXPOSE TO WINDOW (for inline onclick handlers) ── */
 window.nav = nav;
+window.renderCharts = renderCharts; // tlačítko ✕ u úpravy bilance
 window.openTx = openTx;
 window.openEdit = openEdit;
 window.openVyrovnani = openVyrovnani;
