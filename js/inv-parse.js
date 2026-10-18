@@ -3,8 +3,9 @@
 // řádky (seskupené podle Y) a tokeny v pořadí obsahu PDF, viz inv-import.js.
 
 import { FOND } from './config.js';
+import { fxOf, DEFAULT_EUR } from './inv-core.js';
 
-export const DEFAULT_EUR = 25; // fallback EUR/CZK, když výpis kurz neuvádí
+export { DEFAULT_EUR }; // fallback EUR/CZK, když výpis kurz neuvádí
 
 /* ── ČÍSLA / DATA ── */
 // České formáty s různým oddělovačem tisíců: CODYA/CONSEQ používají mezeru
@@ -224,8 +225,10 @@ export function parseConseq(lines) {
    částka (přesně tak dřív u CONSEQ zůstalo 505 000 Kč po nákupu fondu). */
 export function buildFundRow(f) {
   const mena = f.mena || 'CZK';
-  const kurzEUR = f.kurzEUR || (mena === 'EUR' ? DEFAULT_EUR : 1);
-  const fx = mena === 'EUR' ? kurzEUR : 1;
+  // Kurz měny fondu ke koruně (název sloupce kurzEUR je historický — platí
+  // pro jakoukoli měnu). Neznámý kurz u ne-EUR měny → hodnota v Kč prázdná.
+  const fx = fxOf({ mena, kurzEUR: f.kurzEUR });
+  const kurzEUR = fx;
   const pocetCP = f.pocetCP || 0, nakupNAV = f.nakupNAV || 0, aktualNAV = f.aktualNAV || 0;
   const castka = f.castka || 0;
   const row = new Array(FOND.vypisDatum + 1).fill('');
@@ -236,12 +239,12 @@ export function buildFundRow(f) {
   row[FOND.pocetCP] = pocetCP || '';
   row[FOND.nakupNAV] = nakupNAV || '';
   row[FOND.nakupDatum] = f.nakupDatum || '';
-  row[FOND.investovanoCZK] = castka ? Math.round(castka * fx) : (nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '');
+  row[FOND.investovanoCZK] = !fx ? '' : castka ? Math.round(castka * fx) : (nakupNAV ? Math.round(pocetCP * nakupNAV * fx) : '');
   row[FOND.aktualNAV] = aktualNAV || '';
   row[FOND.aktualNAVdatum] = f.aktualNAVdatum || '';
-  row[FOND.aktualHodnotaCZK] = aktualNAV ? Math.round(pocetCP * aktualNAV * fx) : '';
+  row[FOND.aktualHodnotaCZK] = aktualNAV && fx ? Math.round(pocetCP * aktualNAV * fx) : '';
   row[FOND.poplatek] = f.poplatek || '';
-  row[FOND.kurzEUR] = mena === 'EUR' ? kurzEUR : '';
+  row[FOND.kurzEUR] = mena !== 'CZK' && kurzEUR ? kurzEUR : '';
   row[FOND.hotovostCZK] = typeof f.hotovostCZK === 'number' ? f.hotovostCZK : '';
   row[FOND.poznamka] = f.poznamka || '';
   // Datum výpisu, ze kterého pochází počet kusů — podle něj se pozná starší výpis.

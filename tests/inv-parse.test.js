@@ -199,3 +199,11 @@ test('planAutoImport: EUR fond bez kurzu ve výpisu převezme uložený kurz (ne
   assert.equal(p.rows[0][FOND.kurzEUR], 24.3);
   assert.equal(p.rows[0][FOND.aktualHodnotaCZK], 2430);
 });
+
+test('buildFundRow: fond v USD se přepočte svým kurzem (dřív jako by byl v Kč)', () => {
+  const r = buildFundRow({ provider: 'UNICREDIT', isin: 'LU2', nazev: 'U', mena: 'USD', pocetCP: 10, aktualNAV: 100, kurzEUR: 23 });
+  assert.equal(r[FOND.aktualHodnotaCZK], 23000);
+  assert.equal(r[FOND.kurzEUR], 23);
+  const bez = buildFundRow({ provider: 'UNICREDIT', isin: 'LU3', nazev: 'U', mena: 'USD', pocetCP: 10, aktualNAV: 100 });
+  assert.equal(bez[FOND.aktualHodnotaCZK], '');
+});

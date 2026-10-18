@@ -165,3 +165,22 @@ test('saveSettings: uložení jen limitů nepřepíše účty a bilanci', () => 
   assert.deepEqual(sheets.Nastaveni[1], [20000, 'U', 'M', 'S', '{"Jídlo":9000}']);
   assert.equal(sheets.Nastaveni[0][4], 'limity');
 });
+
+test('yahooRange: historie S&P pokryje i nejstarší nákup (dřív jen 1 rok)', () => {
+  const { ctx } = makeGas({});
+  const r = (from) => vm.runInContext(`yahooRange(new Date(${JSON.stringify(from)}), new Date('2026-10-18'))`, ctx);
+  assert.equal(r('2026-05-01'), '2y');
+  assert.equal(r('2024-01-01'), '5y');
+  assert.equal(r('2019-01-01'), '10y');
+  assert.equal(r('2010-01-01'), 'max');
+  assert.equal(vm.runInContext(`yahooRange(null, new Date('2026-10-18'))`, ctx), '2y');
+});
+
+test('removeSoldT212: prodaná pozice zmizí, souhrn a ostatní fondy zůstanou', () => {
+  const sheets = { Fondy: [['provider', 'isin'], ['T212', 'AAPL_US_EQ'], ['CODYA', 'CZ0008042892'], ['T212', 'MSFT_US_EQ'], ['T212', 'T212_CASH']] };
+  const { ctx } = makeGas(sheets);
+  ctx.__keep = ['MSFT_US_EQ', 'T212_CASH'];
+  const n = vm.runInContext(`removeSoldT212(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Fondy'), __keep)`, ctx);
+  assert.equal(n, 1);
+  assert.deepEqual(sheets.Fondy.map(r => r[1]), ['isin', 'CZ0008042892', 'MSFT_US_EQ', 'T212_CASH']);
+});

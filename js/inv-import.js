@@ -3,7 +3,8 @@ import { state } from './state.js';
 import { toast } from './app.js';
 import { loadInvestmentData } from './investments.js';
 import { fetchSheet, postJson } from './utils.js';
-import { DEFAULT_EUR, detectStatement, planAutoImport, buildFundRow } from './inv-parse.js';
+import { detectStatement, planAutoImport, buildFundRow } from './inv-parse.js';
+import { DEFAULT_EUR, fxOf, mergeTopUp } from './inv-core.js';
 import { escHtml, jsArg } from './html.js';
 
 // Heslo k zaheslovaným výpisům (UniCredit) — jen localStorage, nikdy v kódu
@@ -98,12 +99,25 @@ async function procInvFile(src, srcName) {
     if (!st) throw new Error('Neznámý typ výpisu. Podporováno: CODYA (majetkový výpis / transakce), CONSEQ a UniCredit (majetkový účet CP).');
     if (!st.funds.length) throw new Error('Ve výpisu se nepodařilo najít žádné fondy (ISIN). Zkus jiný soubor.');
     status.style.display = 'none';
-    showInvPreview(st.funds, st.provider, st.docLabel, fname);
+    showInvPreview(withTopUps(st.funds, st.provider), st.provider, st.docLabel, fname);
   } catch (e) {
     status.innerHTML = `<div class="card" style="border-color:var(--red);padding:16px">
       <p style="color:var(--red);font-weight:600">Chyba: ${escHtml(e.message)}</p>
       <p style="color:var(--text2);font-size:12px;margin-top:6px">Podporované výpisy: CODYA (majetkový výpis + transakce), CONSEQ a UniCredit.</p></div>`;
   }
+}
+
+/* Výpis CONSEQ za období uvádí jen nákupy v tom období — u dokoupeného
+   fondu by „investováno" přepsal jen novým nákupem a dřívější vklady by
+   zmizely. Dokoupení se proto přičte k uloženému a nákupní cena zprůměruje
+   (náhled ukáže výsledek, jde ho ještě opravit). */
+function withTopUps(funds, provider) {
+  if (provider !== 'CONSEQ') return funds;
+  return funds.map(f => {
+    const ex = (state.investments || []).find(e => e.provider === provider && e.isin === f.isin);
+    const m = mergeTopUp(ex, f, fxOf(f));
+    return m ? { ...f, ...m, poznamka: f.poznamka || 'dokoupeno — přičteno k dřívějším nákupům' } : f;
+  });
 }
 
 /* ── NÁHLED (editovatelný) ── */
@@ -115,7 +129,7 @@ function showInvPreview(funds, provider, docType, fname) {
     const focus = FUND_FOCUS[f.isin] || '';
     return `<tr>
       <td style="min-width:150px"><input id="if-nazev-${i}" type="text" value="${escHtml(f.nazev || '')}"/><div style="font-size:10px;color:var(--text3);margin-top:2px">${escHtml(f.isin)} · ${escHtml(focus)}</div></td>
-      <td><select id="if-mena-${i}" class="sel" style="font-size:11px;padding:3px 6px"><option ${f.mena === 'CZK' ? 'selected' : ''}>CZK</option><option ${f.mena === 'EUR' ? 'selected' : ''}>EUR</option></select></td>
+      <td><select id="if-mena-${i}" class="sel" style="font-size:11px;padding:3px 6px">${[...new Set(['CZK', 'EUR', f.mena || 'CZK'])].map(m => `<option ${(f.mena || 'CZK') === m ? 'selected' : ''}>${escHtml(m)}</option>`).join('')}</select></td>
       <td><input id="if-pocet-${i}" type="number" value="${f.pocetCP || ''}" style="width:90px"/></td>
       <td><input id="if-nakup-${i}" type="number" step="0.0001" value="${f.nakupNAV || ''}" style="width:80px" placeholder="—"/></td>
       <td><input id="if-aktual-${i}" type="number" step="0.0001" value="${f.aktualNAV || ''}" style="width:80px" placeholder="—"/></td>
@@ -128,7 +142,7 @@ function showInvPreview(funds, provider, docType, fname) {
       <div style="font-size:13px"><strong>${escHtml(provider)}</strong> · ${escHtml(docType)}<div style="font-size:11px;color:var(--text3)">${escHtml(fname)} — ${funds.length} fondů · zkontroluj a uprav hodnoty</div></div>
       <div style="display:flex;gap:8px"><button class="btnp" onclick="confirmInvImport()">💾 Uložit do portfolia</button><button class="btn" onclick="document.getElementById('invImpResults').style.display='none'">Zrušit</button></div>
     </div>
-    <div class="tw"><table><thead><tr><th>Fond</th><th>Měna</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Kurz EUR</th><th>Hotovost CZK</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fond</th><th>Měna</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Kurz měny</th><th>Hotovost CZK</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 
@@ -146,7 +160,7 @@ export async function confirmInvImport() {
       pocetCP: num('if-pocet-', f.pocetCP),
       nakupNAV: num('if-nakup-', f.nakupNAV),
       aktualNAV: num('if-aktual-', f.aktualNAV),
-      kurzEUR: num('if-kurz-', f.kurzEUR) || (mena === 'EUR' ? DEFAULT_EUR : 1),
+      kurzEUR: num('if-kurz-', f.kurzEUR) || (mena === 'EUR' ? DEFAULT_EUR : mena === 'CZK' ? 1 : 0),
       hotovostCZK: num('if-hotovost-', f.hotovostCZK),
     });
   });

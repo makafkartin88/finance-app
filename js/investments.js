@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { czk, fetchSheet, fetchSheets, postJson } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
+import { invCZK, curCZK, providerTotals, annualPct, xirr, providerFlows, navAge } from './inv-core.js';
 
 /* ============================================================
    Stránka Investice — pohledy CODYA, CONSEQ (fondy, klíč ISIN) a
@@ -12,7 +13,6 @@ import { isInvestmentsAllowed } from './auth.js';
    T212: pozice v měně účtu (headline z /account/cash, ne rekonstrukce).
    ============================================================ */
 
-const DEFAULT_EUR = 25;
 let activeTab = 'codya';
 let _lastRefresh = null; // { updated, failed[], eur, when } — feedback z posledního refreshe
 
@@ -155,11 +155,6 @@ function czDate(s) {
   const iso = normDate(s);
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + 'T00:00:00') : null;
 }
-// Anualizace: z výnosu za `days` dní → tempo p.a. (extrapolace)
-function annualize(totalRet, days) {
-  if (!days || days < 1) return 0;
-  return (Math.pow(1 + totalRet, 365 / days) - 1) * 100;
-}
 
 function parseFundRow(r) {
   const num = i => { const n = parseFloat(String(r[i]).replace(/[\s ]/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; };
@@ -185,14 +180,11 @@ function parseFundRow(r) {
   };
 }
 
-/* ── VÝPOČTY ──
+/* ── VÝPOČTY ── (invCZK/curCZK/fxOf v inv-core.js)
    T212 pozice nemají spolehlivou CZK hodnotu (quantity×cena je v měně
    NÁSTROJE, ne nutně účtu) → u nich se NEDOPOČÍTÁVÁ fallback, jen se vezme
    uložené pole (prázdné pro pozice, vyplněné pro souhrnný řádek T212_CASH).
    Jinak by se do CZK součtů (donut, karty) přimíchala špatná měna. */
-const fx = f => f.mena === 'EUR' ? (f.kurzEUR || DEFAULT_EUR) : 1;
-const invCZK = f => f.provider === 'T212' ? (f.investovanoCZK || 0) : (f.investovanoCZK || Math.round(f.pocetCP * f.nakupNAV * fx(f)));
-const curCZK = f => f.provider === 'T212' ? (f.aktualHodnotaCZK || 0) : (f.aktualHodnotaCZK || Math.round(f.pocetCP * f.aktualNAV * fx(f)));
 const navPct = f => f.nakupNAV ? (f.aktualNAV / f.nakupNAV - 1) * 100 : 0;
 const pctTxt = p => (p >= 0 ? '+' : '') + p.toFixed(1).replace('.', ',') + ' %';
 
@@ -395,13 +387,13 @@ function rebaseFrom(pts, fromIso) {
 }
 
 // Nejnovější bod TrhHist k danému datu (nebo dřív) — pro srovnání "S&P k datu X",
-// ne k dnešku. Fallback na první dostupný bod, pokud je datum před historií.
+// ne k dnešku. Datum před začátkem historie → null: dřív se tiše vzal první
+// bod, takže S&P se měřilo za kratší období než fondy.
 function trhAtDate(iso) {
   const th = (state.trhHist || []).slice().sort((a, b) => a.datum < b.datum ? -1 : 1);
-  if (!th.length) return null;
   let row = null;
   for (const r of th) { if (r.datum <= iso) row = r; else break; }
-  return row || th[0];
+  return row;
 }
 // S&P (CZK) rebasovaná na 100 k danému startovnímu datu
 function spSeries(startISO) {
@@ -447,7 +439,7 @@ function comparisonCard() {
     const endIso = rows.map(r => r.to).sort().pop();
     const a = trhAtDate(anchorIso), b = trhAtDate(endIso);
     if (a && b && a.spCzk > 0 && a.datum !== b.datum) {
-      rows.push({ label: 'S&P 500 (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
+      rows.push({ label: 'S&P 500 s dividendami (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
         from: a.datum, to: b.datum, bench: true });
     }
   }
@@ -481,7 +473,7 @@ function comparisonCard() {
     ${body}
     ${thin.length ? `<div style="font-size:11px;color:var(--text2);background:var(--surface2);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">${thin.join(', ')} — v tomhle období zatím není dost historie na spočítání výnosu (potřeba aspoň dvě ocenění). Historie se sbírá při každé aktualizaci kurzů.</div>` : ''}
     ${skewed ? `<div style="font-size:11px;color:var(--amber-text);background:var(--amber-bg);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">⚠️ Řádky s výstrahou nezačínají přesně ${czFromIso(_cmpFrom)} — fond k tomu dni neměl ocenění, použilo se poslední předchozí (datum je u řádku). Jejich období je tím pádem o něco delší, ber to při srovnání v potaz.</div>` : ''}
-    <div style="font-size:11px;color:var(--text3);margin-top:10px">Výnos je očištěný o vklady (dokup v průběhu období se nepočítá jako zhodnocení), takže jde poměřovat mezi sebou. Fondy CODYA/CONSEQ se oceňují měsíčně — kotvou je poslední skutečné ocenění k zvolenému datu, proto se u každého řádku zobrazuje, z jakých dat se počítá. S&P je zarovnané na stejný konec jako fondy.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">Nově koupený fond se nepočítá jako zhodnocení (jen navýší hodnotu v Kč). Dokoupení do už drženého fondu historie zatím nerozliší — kdyby k němu v období došlo, výnos toho poskytovatele vyjde vyšší, než byl. Fondy CODYA/CONSEQ se oceňují měsíčně — kotvou je poslední skutečné ocenění k zvolenému datu, proto se u každého řádku zobrazuje, z jakých dat se počítá. S&P je zarovnané na stejný konec jako fondy.</div>
   </div>`;
 }
 
@@ -638,24 +630,22 @@ function renderProviderView(tabId, provider) {
     return;
   }
 
-  const invested = funds.reduce((s, f) => s + invCZK(f), 0);
-  const current = funds.reduce((s, f) => s + curCZK(f), 0);
-  const cash = funds.reduce((s, f) => s + (f.hotovostCZK || 0), 0);
-  const gain = current - invested;
-  const gainPct = invested ? (gain / invested) * 100 : 0;
+  // Fond bez nákupní ceny (UniCredit výpis ji neuvádí) se do zisku nepočítá:
+  // jeho hodnota se ukáže zvlášť, ostatní fondy mají zisk dál vidět.
+  const t = providerTotals(funds);
+  const { invested, current, cash, gain } = t;
+  const gainPct = t.gainPct || 0;
   const totalWithCash = current + cash;
-  // UniCredit výpis uvádí jen stav k datu, ne nákupní ceny — bez nich nelze
-  // spočítat zisk. Zobrazit ho jako „current − 0" by znamenalo tvrdit, že
-  // je celá hodnota portfolia výnos, proto se u chybějící nákupní ceny
-  // ukáže „—" a vysvětlivka. Doplnit ji jde ručně v náhledu importu.
   const hasCost = invested > 0;
+  const fondu = n => `${n} ${n === 1 ? 'fond' : n < 5 ? 'fondy' : 'fondů'}`;
+  const uncostedNote = t.uncosted ? `${fondu(t.uncosted)} bez nákupní ceny (${czk(t.uncostedCurrent)}) se nepočítá` : '';
 
   // metric karty
   const cards = `<div class="mgrid">
-    <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${hasCost ? czk(invested) : '—'}</div><div class="ms">${funds.length} ${funds.length === 1 ? 'fond' : funds.length < 5 ? 'fondy' : 'fondů'}${hasCost ? (funds.some(f => f.poplatek) ? ' · vč. poplatků navíc' : '') : ' · výpis neuvádí nákupní ceny'}</div></div>
-    <div class="mc" style="border-left-color:var(--green)"><div class="ml">Aktuální hodnota fondů</div><div class="mv">${czk(current)}</div><div class="ms">${cash ? 'volná hotovost ' + czk(cash) : 'k datu posledního výpisu'}</div></div>
-    <div class="mc" style="border-left-color:${!hasCost ? 'var(--border2)' : (gain >= 0 ? 'var(--green)' : 'var(--red)')}"><div class="ml">Zisk / ztráta</div><div class="mv ${hasCost ? (gain >= 0 ? 'green' : 'red') : ''}">${hasCost ? (gain >= 0 ? '+' : '') + czk(gain) : '—'}</div><div class="ms">${hasCost ? 'oproti nákupní ceně' : 'nákupní cena není ve výpisu'}</div></div>
-    <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${hasCost ? (gainPct >= 0 ? 'green' : 'red') : ''}">${hasCost ? pctTxt(gainPct) : '—'}</div><div class="ms">${cash ? 'celkem u ' + provider + ' ' + czk(totalWithCash) : provider}${funds[0].poznamka ? ' · ' + funds[0].poznamka : ''}</div></div>
+    <div class="mc" style="border-left-color:var(--blue)"><div class="ml">Investováno</div><div class="mv">${hasCost ? czk(invested) : '—'}</div><div class="ms">${fondu(funds.length)}${hasCost ? (funds.some(f => f.poplatek) ? ' · vč. poplatků navíc' : '') : ' · výpis neuvádí nákupní ceny'}</div></div>
+    <div class="mc" style="border-left-color:var(--green)"><div class="ml">Aktuální hodnota fondů</div><div class="mv">${czk(current)}</div><div class="ms">${cash ? 'volná hotovost ' + czk(cash) : 'k datu posledního ocenění'}</div></div>
+    <div class="mc" style="border-left-color:${!hasCost ? 'var(--border2)' : (gain >= 0 ? 'var(--green)' : 'var(--red)')}"><div class="ml">Zisk / ztráta</div><div class="mv ${hasCost ? (gain >= 0 ? 'green' : 'red') : ''}">${hasCost ? (gain >= 0 ? '+' : '') + czk(gain) : '—'}</div><div class="ms">${hasCost ? (uncostedNote || 'oproti nákupní ceně') : 'nákupní cena není ve výpisu'}</div></div>
+    <div class="mc" style="border-left-color:var(--amber)"><div class="ml">Výnos</div><div class="mv ${hasCost ? (gainPct >= 0 ? 'green' : 'red') : ''}">${hasCost ? pctTxt(gainPct) : '—'}</div><div class="ms">${cash ? 'celkem u ' + escHtml(provider) + ' ' + czk(totalWithCash) : escHtml(provider)}${funds[0].poznamka ? ' · ' + escHtml(funds[0].poznamka) : ''}</div></div>
   </div>`;
 
   // tabulka fondů
@@ -666,24 +656,30 @@ function renderProviderView(tabId, provider) {
     const focus = FUND_FOCUS[f.isin] || '';
     const navCol = p >= 0 ? 'ap' : 'an';       // NAV % — barva dle vlastního znaménka
     const czkCol = dCZK >= 0 ? 'ap' : 'an';    // Δ CZK (po kurzu) — může mít jiné znaménko než NAV %
+    const age = navAge(f);
+    const navDateCell = !f.aktualNAVdatum ? '—'
+      : `${escHtml(f.aktualNAVdatum)}${age && age.stale ? ` <span title="Kurz je ${age.days} dní starý — web fondu ani výpis zatím nové ocenění nedal" style="color:var(--amber-text);background:var(--amber-bg);border-radius:4px;padding:0 4px;font-size:10px">⚠ ${age.days} dní</span>` : ''}`;
     return `<tr>
-      <td><div style="font-weight:600">${escHtml(f.nazev || f.isin)}</div><div style="font-size:11px;color:var(--text3)">${escHtml(focus)}${f.mena === 'EUR' ? ' · EUR' : ''}</div></td>
-      <td style="color:var(--text2);white-space:nowrap">${f.nakupDatum || '—'}</td>
+      <td><div style="font-weight:600">${escHtml(f.nazev || f.isin)}</div><div style="font-size:11px;color:var(--text3)">${escHtml(focus)}${f.mena && f.mena !== 'CZK' ? ' · ' + escHtml(f.mena) : ''}</div></td>
+      <td style="color:var(--text2);white-space:nowrap">${escHtml(f.nakupDatum) || '—'}</td>
       <td style="color:var(--text2);white-space:nowrap">${f.pocetCP.toLocaleString('cs-CZ')}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
       <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
+      <td style="color:var(--text2);white-space:nowrap">${navDateCell}</td>
       <td class="${navCol}" style="white-space:nowrap;font-weight:700">${f.nakupNAV && f.aktualNAV ? pctTxt(p) : '—'}</td>
-      <td class="${czkCol}" style="white-space:nowrap">${f.nakupNAV && f.aktualNAV ? (dCZK >= 0 ? '+' : '') + czk(dCZK) : '—'}</td>
+      <td class="${czkCol}" style="white-space:nowrap">${f.nakupNAV && f.aktualNAV && invCZK(f) ? (dCZK >= 0 ? '+' : '') + czk(dCZK) : '—'}</td>
       <td style="white-space:nowrap;font-weight:600">${czk(curCZK(f))}</td>
     </tr>`;
   }).join('');
 
-  const cashRow = cash ? `<div class="metric-row" style="margin-top:12px"><div><strong>Volná hotovost</strong><span>nezainvestováno u ${provider}</span></div><strong>${czk(cash)}</strong></div>` : '';
+  const cashRow = cash ? `<div class="metric-row" style="margin-top:12px"><div><strong>Volná hotovost</strong><span>nezainvestováno u ${escHtml(provider)}</span></div><strong>${czk(cash)}</strong></div>` : '';
 
-  // ── VÝKONNOST & SROVNÁNÍ (období, anualizace, S&P 500) ──
+  // ── VÝKONNOST & SROVNÁNÍ (období, roční výnos, S&P 500) ──
+  // Jen fondy s nákupní cenou — u ostatních nevíme, kolik do nich šlo.
+  const costed = funds.filter(f => invCZK(f) > 0);
   const SAVINGS_PA = 4; // referenční spořák % p.a. (orientační)
-  const startIsos = funds.map(f => normDate(f.nakupDatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-  const navIsos = funds.map(f => normDate(f.aktualNAVdatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const startIsos = costed.map(f => normDate(f.nakupDatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const navIsos = costed.map(f => normDate(f.aktualNAVdatum)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   const startIso = startIsos[0] || null;
   const navIso = navIsos.length ? navIsos[navIsos.length - 1] : null;
   const startDate = startIso ? czDate(startIso) : null;
@@ -693,39 +689,38 @@ function renderProviderView(tabId, provider) {
     const days = Math.max(Math.round((navDate - startDate) / 864e5), 1);
     const months = (days / 30.44);
     const periodRet = gain / invested;              // frakce
-    const annPct = annualize(periodRet, days);
+    // Roční výnos jen po roce držby (kratší období „přepočtené na rok" je
+    // šum). XIRR bere v potaz, KDY se do kterého fondu investovalo — dřív se
+    // počítalo, jako by všechny peníze ležely od prvního nákupu.
+    const x = days >= 365 ? xirr(providerFlows(costed)) : null;
+    const annTxt = x != null ? `~${(x * 100).toFixed(1).replace('.', ',')} % p.a. (XIRR — podle dat nákupů)` : 'roční výnos se ukáže po roce držby';
     const perLabel = months >= 1.5 ? `${months.toFixed(1).replace('.', ',')} měsíce` : `${days} dní`;
-    const mkt = (state.market || []).find(m => m.provider === provider);
     let mktRows = '';
     // S&P se srovnává k datu NAV fondu (ne k dnešku) — jinak se do srovnání
-    // přimíchá pohyb trhu za dny, které fond ještě nezažil.
-    const navRow = navIso ? trhAtDate(navIso) : null;
-    const useCzk = mkt && mkt.spStartCzk > 0 && navRow && navRow.spCzk > 0 && navRow.fx > 0;
-    const spA = useCzk ? mkt.spStartCzk : (mkt && mkt.spStart);
-    const spB = useCzk ? navRow.spCzk : (navRow && navRow.spUsd);
-    if (mkt && spA > 0 && spB > 0) {
-      const mDays = Math.max(days, 1);
-      const mktRet = spB / spA - 1;
-      const mktAnn = annualize(mktRet, mDays);
+    // přimíchá pohyb trhu za dny, které fond ještě nezažil. Jen v CZK: dřív
+    // se bez kurzu tiše srovnávalo s USD řadou (jiná měna, jiné číslo).
+    const a = trhAtDate(startIso), b = navIso ? trhAtDate(navIso) : null;
+    if (a && b && a.spCzk > 0 && b.spCzk > 0 && a.datum !== b.datum) {
+      const mktRet = b.spCzk / a.spCzk - 1;
+      const mktAnn = annualPct(mktRet, days);
       const diffPP = (periodRet - mktRet) * 100;    // procentní body za období
-      // Debug rozklad: index v USD × pohyb kurzu USD/CZK = výsledek v CZK
+      // Rozklad: index v USD × pohyb kurzu USD/CZK = výsledek v CZK
       let debug = '';
-      if (useCzk && mkt.spStart > 0 && navRow.spUsd > 0) {
-        const idxUsdPct = (navRow.spUsd / mkt.spStart - 1) * 100;
-        const fxStart = mkt.spStartCzk / mkt.spStart, fxCur = navRow.fx;
-        const fxPct = (fxCur / fxStart - 1) * 100;
+      if (a.spUsd > 0 && b.spUsd > 0 && a.fx > 0 && b.fx > 0) {
+        const idxUsdPct = (b.spUsd / a.spUsd - 1) * 100;
+        const fxPct = (b.fx / a.fx - 1) * 100;
         debug = `<div style="font-size:11px;color:var(--text3);margin:2px 0 0 12px;line-height:1.6">
-          ↳ index ${idxUsdPct >= 0 ? '+' : ''}${idxUsdPct.toFixed(1).replace('.', ',')} % (USD) × kurz USD/CZK ${fxStart.toFixed(2).replace('.', ',')}→${fxCur.toFixed(2).replace('.', ',')} (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(1).replace('.', ',')} %) = ${pctTxt(mktRet * 100)} v CZK</div>`;
+          ↳ index ${idxUsdPct >= 0 ? '+' : ''}${idxUsdPct.toFixed(1).replace('.', ',')} % (USD) × kurz USD/CZK ${a.fx.toFixed(2).replace('.', ',')}→${b.fx.toFixed(2).replace('.', ',')} (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(1).replace('.', ',')} %) = ${pctTxt(mktRet * 100)} v CZK</div>`;
       }
       mktRows = `
-        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>americký trh${useCzk ? ' (v CZK)' : ''} · k datu NAV ${czFromIso(navIso)} · ~${(mktAnn).toFixed(1).replace('.', ',')} % p.a.</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>${debug}
-        <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500${useCzk ? ' (korigováno kurzem USD/CZK)' : ''} za ${perLabel} (${czFromIso(startIso)} → ${czFromIso(navIso)}).</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
+        <div class="metric-row"><div><strong>S&amp;P 500 za stejné období</strong><span>s dividendami, v CZK · k datu NAV ${czFromIso(navIso)}${mktAnn != null ? ` · ~${mktAnn.toFixed(1).replace('.', ',')} % p.a.` : ''}</span></div><strong class="${mktRet >= 0 ? 'ap' : 'an'}">${pctTxt(mktRet * 100)}</strong></div>${debug}
+        <div class="insight insight-badged" style="margin-top:10px"><div><strong>${diffPP >= 0 ? '✅ Předbíháš trh' : '⚠️ Zaostáváš za trhem'}</strong><span>Tvé fondy vs. S&amp;P 500 (korigováno kurzem USD/CZK) za ${perLabel} (${czFromIso(startIso)} → ${czFromIso(navIso)}).${costed.length > 1 ? ' Fondy koupené později jsou v tom období zainvestované kratší dobu, takže srovnání je orientační.' : ''}</span></div><strong class="insight-badge" style="color:${diffPP >= 0 ? 'var(--green)' : 'var(--red)'}">${diffPP >= 0 ? '+' : ''}${diffPP.toFixed(1).replace('.', ',')} pp</strong></div>`;
     } else {
-      mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po kliknutí na „🔄 Aktualizovat kurzy" (chybí historie k datu NAV).</div>`;
+      mktRows = `<div style="font-size:11px;color:var(--text3);margin-top:8px">Srovnání s S&amp;P 500 se doplní po aktualizaci kurzů (chybí historie indexu k datu nákupu nebo NAV).</div>`;
     }
     compCard = `<div class="card" style="margin-top:16px">
       <div class="card-hdr"><div class="ct">Výkonnost &amp; srovnání</div></div>
-      <div class="metric-row"><div><strong>Zhodnocení fondů</strong><span>za ${perLabel} · tempo ~${annPct.toFixed(1).replace('.', ',')} % p.a. (extrapolace)</span></div><strong class="${periodRet >= 0 ? 'ap' : 'an'}">${pctTxt(periodRet * 100)}</strong></div>
+      <div class="metric-row"><div><strong>Zhodnocení fondů</strong><span>za ${perLabel} · ${annTxt}</span></div><strong class="${periodRet >= 0 ? 'ap' : 'an'}">${pctTxt(periodRet * 100)}</strong></div>
       <div class="metric-row"><div><strong>Typický spořicí účet</strong><span>orientační reference</span></div><strong style="color:var(--text2)">~${SAVINGS_PA} % p.a.</strong></div>
       ${mktRows}
     </div>`;
@@ -733,9 +728,9 @@ function renderProviderView(tabId, provider) {
 
   el.innerHTML = cards + compCard + `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Fondy — nákupní vs. aktuální cena</div></div>
-    <div class="tw"><table><thead><tr><th>Fond</th><th>Nákup</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fond</th><th>Nákup</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Kurz k</th><th>Změna</th><th>Změna CZK</th><th>Hodnota</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${cashRow}
-    <div style="font-size:11px;color:var(--text3);margin-top:12px">Aktuální NAV k datu ${funds[0].aktualNAVdatum || '—'}${_lastRefresh && !_lastRefresh.error ? ` · 🔄 staženo z webu ${_lastRefresh.when.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}. Tyto fondy se oceňují měsíčně, nejde o realtime kurz.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Datum kurzu je u každého fondu${_lastRefresh && !_lastRefresh.error ? ` · 🔄 staženo z webu ${_lastRefresh.when.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}. Fondy se oceňují měsíčně se zpožděním, nejde o realtime kurz; ⚠ = kurz je starší, než by měl být.</div>
   </div>`;
 }
 

@@ -840,11 +840,28 @@ function refreshT212() {
       if (!sheet) { sheet = ss.insertSheet('Fondy'); sheet.appendRow(FOND_HEADER); }
       ensureFondyHeader(sheet);
       upsertFundRows(sheet, rows);
+      // Upsert jen přidává/aktualizuje — prodaná pozice by v listu zůstala
+      // navždy s poslední cenou. /portfolio vrací všechny držené pozice,
+      // takže co v něm není, je prodané.
+      removeSoldT212(sheet, rows.map(function (r) { return r[1]; }));
     } finally { lock.releaseLock(); }
     return jsonOut({ success: true, updated: rows.length, currency: currency, rate: rate, metaOk: metaOk, unresolved: unresolved });
   } catch (err) {
     return jsonOut({ error: err.message });
   }
+}
+
+// Smaže řádky T212, jejichž ticker už není v portfoliu (odspodu, ať
+// nesedí indexy). Vrací počet smazaných.
+function removeSoldT212(sheet, keepIsins) {
+  var keep = {};
+  for (var k = 0; k < keepIsins.length; k++) keep[keepIsins[k]] = true;
+  var data = sheet.getDataRange().getValues();
+  var removed = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (data[i][0] === 'T212' && !keep[data[i][1]]) { sheet.deleteRow(i + 1); removed++; }
+  }
+  return removed;
 }
 
 function t212Fetch(path, key) {
@@ -955,16 +972,37 @@ function refreshNav(e) {
         data[j][FOND_C.aktualNAV] = u.nav;
         if (u.datum) data[j][FOND_C.aktualNAVdatum] = u.datum;
         var mena = data[j][FOND_C.mena];
-        var kurz = (mena === 'EUR') ? (eur || numCz(data[j][FOND_C.kurzEUR]) || 25) : 1;
+        // Jiná měna než CZK/EUR (USD u UniCreditu) → uložený kurz z výpisu.
+        // Bez něj hodnotu v Kč nepřepočítávat (dřív kurz 1 = jako by šlo o Kč).
+        var kurz = (!mena || mena === 'CZK') ? 1
+          : (mena === 'EUR') ? (eur || numCz(data[j][FOND_C.kurzEUR]) || 25)
+          : numCz(data[j][FOND_C.kurzEUR]);
         if (mena === 'EUR' && eur) data[j][FOND_C.kurzEUR] = eur;
-        data[j][FOND_C.aktualHodnotaCZK] = Math.round(numCz(data[j][FOND_C.pocetCP]) * u.nav * kurz);
+        if (kurz) data[j][FOND_C.aktualHodnotaCZK] = Math.round(numCz(data[j][FOND_C.pocetCP]) * u.nav * kurz);
       }
       sheet.getDataRange().setValues(data);
     } finally { lock.releaseLock(); }
 
-    // S&P 500 + USD/CZK z Yahoo (jednou, sdíleno pro summary i historii)
-    var sp = fetchYahoo('%5EGSPC');       // ^GSPC
-    var fx = fetchYahoo('USDCZK%3DX');    // USDCZK=X
+    // S&P 500 + USD/CZK z Yahoo (jednou, sdíleno pro summary i historii).
+    // ^SP500TR = index VČETNĚ reinvestovaných dividend — fondy dividendy
+    // nevyplácí, takže srovnání s holým ^GSPC (bez ~1,5 % ročně) by trh
+    // podhodnocovalo. Rozsah pokryje i nejstarší nákup (dřív natvrdo 1 rok →
+    // u starších fondů srovnání tiše začínalo jinde). Při chybě se NEpřepíná
+    // na jiný index — raději ohlásit chybu než míchat dvě různé řady.
+    var earliest = null;
+    for (var ei2 = 1; ei2 < data.length; ei2++) {
+      var pd0 = parseCzDate(data[ei2][6]); // nakupDatum
+      if (pd0 && (!earliest || pd0 < earliest)) earliest = pd0;
+    }
+    var range = yahooRange(earliest, new Date());
+    var sp = fetchYahoo('%5ESP500TR', range); // ^SP500TR
+    var fx = fetchYahoo('USDCZK%3DX', range); // USDCZK=X
+    // TrhHist nenafukovat roky před prvním nákupem (appka ho čte při každém
+    // otevření) — stačí rezerva, aby existoval bod před datem nákupu.
+    if (earliest && sp && sp.pairs) {
+      var cut = new Date(earliest.getTime() - 40 * 864e5);
+      sp.pairs = sp.pairs.filter(function (p) { return p.t >= cut; });
+    }
     // Summary karta → list Trh (per provider, i v CZK přes USD/CZK)
     var market = updateMarket(ss, data, sp, fx);
     if (!market.ok) { failed.push('S&P500'); log.push(market.err || 'S&P: nenačteno'); }
@@ -1086,10 +1124,21 @@ function updateHistory(ss, fondyData, sp, fx) {
   } catch (e) { return { ok: false, err: 'historie: ' + e.message }; }
 }
 
+// Nejkratší rozsah Yahoo, který pokryje nejstarší nákup (+ měsíc rezerva,
+// aby existoval bod NA/PŘED datem nákupu).
+function yahooRange(earliest, now) {
+  if (!earliest) return '2y';
+  var years = (now - earliest) / 864e5 / 365 + 0.1;
+  if (years <= 2) return '2y';
+  if (years <= 5) return '5y';
+  if (years <= 10) return '10y';
+  return 'max';
+}
+
 // Obecný fetch denní řady z Yahoo Finance (symbol už URL-enkódovaný).
-function fetchYahoo(symbol) {
+function fetchYahoo(symbol, range) {
   try {
-    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol + '?range=1y&interval=1d';
+    var url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol + '?range=' + (range || '2y') + '&interval=1d';
     var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
     var code = resp.getResponseCode();
     if (code !== 200) return { err: 'HTTP ' + code };
