@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { czk, base } from './utils.js';
 import { toast } from './app.js';
+import { persistCfg } from './settings.js';
 
 export function renderBudgets() {
   const month = document.getElementById('bMonth')?.value || '';
@@ -25,12 +26,14 @@ export function renderBudLimForm() {
   ).join('');
 }
 
-export function saveLimits() {
+export async function saveLimits() {
   Object.keys(state.limits).forEach(c => {
     const v = parseInt(document.getElementById('bl-'+c)?.value) || 0;
     state.limits[c] = v;
   });
   localStorage.setItem('finlim', JSON.stringify(state.limits));
   renderBudgets();
-  toast('Limity uloženy','ok');
+  // Limity jsou sdílené (list Nastaveni) — stejné na všech zařízeních.
+  const ok = await persistCfg();
+  toast(ok ? 'Limity uloženy' : 'Uloženo jen v tomhle prohlížeči — zápis na server selhal', ok ? 'ok' : 'err');
 }

@@ -18,6 +18,7 @@ function makeGas(sheets, { props = {}, lookupEmail = null } = {}) {
         setValues: (vals) => vals.forEach((v, i) => { rows[r - 1 + i] = rows[r - 1 + i] || []; v.forEach((x, j) => { rows[r - 1 + i][c - 1 + j] = x; }); }),
         setValue: (x) => { rows[r - 1] = rows[r - 1] || []; rows[r - 1][c - 1] = x; },
         setNumberFormat() { return this; },
+        getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (rows[r - 1 + i] || [])[c - 1 + j] ?? '')),
       }),
     };
   };
@@ -155,4 +156,12 @@ test('parseCpiCsv: z výběru ČSÚ vezme jen bazický index úhrnu za ČR, měs
     '"Index spotřebitelských cen (životních nákladů)","Bazický index (2025 = 100)","Česko","Domácnosti celkem","Potraviny","","říjen 2026","99.0","procento","%","",""',
   ].join('\n');
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.parseCpiCsv(csv))), [['2026-09', 102.6], ['2026-10', 103.1]]);
+});
+
+test('saveSettings: uložení jen limitů nepřepíše účty a bilanci', () => {
+  const sheets = { Nastaveni: [['bilanceOffset', 'bilanceUcet', 'uctyMartin', 'uctySarka'], [20000, 'U', 'M', 'S']] };
+  const { ctx } = makeGas(sheets);
+  assert.equal(post(ctx, { action: 'saveSettings', limity: '{"Jídlo":9000}' }).success, true);
+  assert.deepEqual(sheets.Nastaveni[1], [20000, 'U', 'M', 'S', '{"Jídlo":9000}']);
+  assert.equal(sheets.Nastaveni[0][4], 'limity');
 });

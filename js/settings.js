@@ -11,7 +11,8 @@ export async function persistCfg() {
       bilanceOffset: state.cfg.bilanceOffset,
       bilanceUcet: state.cfg.bilanceUcet,
       uctyMartin: state.cfg.uctyMartin,
-      uctySarka: state.cfg.uctySarka
+      uctySarka: state.cfg.uctySarka,
+      limity: JSON.stringify(state.limits)
     });
     return true;
   } catch (e) { return false; }

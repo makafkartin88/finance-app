@@ -3,6 +3,7 @@ import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
 import { yrChartSVG, mountScrollChart } from './charts.js';
+import { summarize, completedMonths } from './tx-core.js';
 
 const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
 
@@ -19,17 +20,17 @@ export function renderDash() {
     drillChip.style.display = drillTxt ? 'inline-flex' : 'none';
   }
 
-  const income = b.filter(t => t.typ === 'Příjem').reduce((s,t) => s+t.castka, 0);
-  const exp = b.filter(t => t.typ === 'Výdaj' && t.kategorie !== 'Investice').reduce((s,t) => s+t.castka, 0);
-  const inv = b.filter(t => t.kategorie === 'Investice').reduce((s,t) => s+t.castka, 0);
-  const sav = income - exp - inv;
-  const sr = income > 0 ? Math.round((sav/income)*100) : 0;
+  // Jedna definice pro Přehled i Grafy (tx-core.js summarize): úspora =
+  // příjem − spotřeba; investice se do úspory počítají (dřív se odečítaly).
+  const sum = summarize(b);
+  const income = sum.income, exp = sum.spending, inv = sum.invested, sav = sum.savings;
+  const sr = Math.round(sum.savingsRate * 100);
 
   document.getElementById('m1').textContent = '+'+czk(income);
   document.getElementById('m2').textContent = '-'+czk(exp);
   const m3 = document.getElementById('m3');
   m3.textContent = (sav >= 0 ? '+' : '')+czk(sav); m3.className = 'mv '+(sav >= 0 ? 'green' : 'red');
-  document.getElementById('m3s').textContent = sr+'% míra úspor';
+  document.getElementById('m3s').textContent = `${sr} % míra úspor${inv ? ' · z toho investováno ' + czk(inv) : ''}`;
   // Prům. bilance/měs. — reaguje na filtr z cash flow grafu (drill na měsíc),
   // stejně jako příjmy/výdaje/úspora výše (počítá z 'b', ne z celého rozsahu).
   const monthMap = {};
@@ -39,7 +40,10 @@ export function renderDash() {
     if (t.typ === 'Příjem') monthMap[t.mesic].inc += t.castka;
     else if (t.typ === 'Výdaj') monthMap[t.mesic].exp += t.castka;
   });
-  const monthBalances = Object.values(monthMap).map(m => m.inc - m.exp);
+  // Průměr bez právě běžícího (neúplného) měsíce, pokud jsou i jiné.
+  const MN = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const nowM = `${MN[new Date().getMonth() + 1]} ${new Date().getFullYear()}`;
+  const monthBalances = completedMonths(Object.keys(monthMap), nowM).map(k => monthMap[k].inc - monthMap[k].exp);
   const avgBalance = monthBalances.length ? monthBalances.reduce((s, v) => s + v, 0) / monthBalances.length : 0;
   const m4el = document.getElementById('m4');
   m4el.textContent = (avgBalance >= 0 ? '+' : '') + czk(avgBalance);

@@ -3,6 +3,7 @@ import { GAS_URL } from './config.js';
 import { state } from './state.js';
 import { parseRow, fetchSheet, postJson } from './utils.js';
 import { newId } from './tx-core.js';
+import { ACCT_RE, normAccount, guessCategory, isSavingsTransfer, matchDuplicates } from './mbank-core.js';
 import { toast, boot } from './app.js';
 
 // Heslo k PDF výpisu — jen localStorage, nikdy v kódu (repo je veřejné)
@@ -94,13 +95,6 @@ async function procMbankFile(src, srcName) {
    Výpis uvádí protistranu ve tvaru "000000-1111111111/3030", uživatel si
    ale v nastavení může zapsat "1111111111/3030" — normalizace obojí srovná
    (zahodí mezery a vedoucí nuly v předčíslí i čísle). */
-const ACCT_RE = /(?:(\d{1,6})-)?(\d{2,10})\/(\d{4})/;
-function normAccount(s) {
-  const m = String(s || '').replace(/\s/g, '').match(ACCT_RE);
-  if (!m) return '';
-  const pre = m[1] ? String(parseInt(m[1], 10)) : '0';
-  return (pre === '0' ? '' : pre + '-') + String(parseInt(m[2], 10)) + '/' + m[3];
-}
 // "účty z nastavení" (jeden na řádek / oddělené čárkou) → Set normalizovaných
 function acctSet(raw) {
   return new Set(String(raw || '').split(/[\n,;]+/).map(normAccount).filter(Boolean));
@@ -176,15 +170,10 @@ export function parseMbankItems(items) {
       // 1) VLASTNÍ PŘEVOD — always between own mBank accounts
       // 2) Any incoming transfer where counterparty account is own mBank account (670100-xxxxxxxx/6210)
       const mainUp = mainDesc.toUpperCase();
-      const contAccount = cont[1] || '';
-      const bilUcet = (state.cfg.bilanceUcet || '').trim();
-      const isOwnAccount = bilUcet ? contAccount.startsWith(bilUcet) : /^670100-\d+\/6210/.test(contAccount);
       if (mainUp.startsWith('VLASTNÍ PŘEVOD')) { i = j; continue; }
-      if (isOwnAccount && (
-        mainUp.startsWith('PŘÍCHOZÍ PLATBA Z MBANK') ||
-        mainUp.startsWith('PŘÍCHOZÍ OKAMŽITÁ PLATBA') ||
-        mainUp.startsWith('PŘÍCHOZÍ PLATBA')
-      )) { i = j; continue; }
+      // Převod na/ze spořicího účtu (v obou směrech) není příjem ani výdaj.
+      const cpAccAny = normAccount(cont.find(c => ACCT_RE.test(c)) || '');
+      if (isSavingsTransfer(cpAccAny, state.cfg.bilanceUcet)) { i = j; continue; }
 
       const { popis, protistrana, metoda } = splitDesc(mainDesc, cont);
       // For PLATBA KARTOU cont structure differs — poznamka not applicable
@@ -213,7 +202,7 @@ export function parseMbankItems(items) {
         popis,
         castka:      Math.abs(amt),
         typ:         txTyp,
-        kategorie:   guessCategory(popis, protistrana),
+        kategorie:   guessCategory(popis, protistrana, txTyp),
         ucet:        'Společný účet',
         metoda:      metoda || 'Převod',
         protistrana,
@@ -221,13 +210,15 @@ export function parseMbankItems(items) {
         osoba:       rowOsoba,
         bilance,
         _cpAcc:      cpAcc,
-        _dupTx: findDuplicate(dateStr, Math.abs(amt), txTyp)
       });
     } else {
       i++;
     }
   }
 
+  // Duplicity se párují 1 : 1 proti už uloženým transakcím (mbank-core.js).
+  const dups = matchDuplicates(transactions, state.txs);
+  transactions.forEach((t, k) => { t._dupTx = dups[k]; });
   return transactions;
 }
 
@@ -266,31 +257,6 @@ function splitDesc(mainDesc, cont) {
 function mbankDateToIso(czDate) {
   const [d, m, y] = czDate.split('.');
   return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-}
-
-function findDuplicate(czDate, amt, typ) {
-  const isoMs = Date.parse(mbankDateToIso(czDate));
-  if (isNaN(isoMs)) return null;
-  return state.txs.find(t => {
-    if (t.typ !== typ) return false;
-    const tMs = new Date(t.datum).getTime();
-    if (isNaN(tMs)) return false;
-    return Math.abs(tMs - isoMs) <= 2 * 86400000
-      && Math.abs(t.castka - amt) / Math.max(amt, 0.01) <= 0.10;
-  }) || null;
-}
-
-function guessCategory(popis, protistrana) {
-  const text = (popis + ' ' + protistrana).toLowerCase();
-  if (/nájem|nájemné|hypotéka|elektřina|plyn|voda|internet|ikea|obi|hornbach|sconto|action b/.test(text)) return 'Bydlení';
-  if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny|rossmann/.test(text)) return 'Jídlo';
-  if (/shell|benzín|čerpací|parkoviště|parking|dpp|pid|lítačka|vlak|bus/.test(text)) return 'Doprava';
-  if (/kino|cinema|spotify|netflix|steam|xbox|restaurace|hospoda|kavárna|pho |sushi|pizz/.test(text)) return 'Zábava';
-  if (/lékárna|doktor|nemocnice|pojišt|zdraví/.test(text)) return 'Zdraví';
-  if (/trading 212|degiro|fond|etf|akcie|investic/.test(text)) return 'Investice';
-  if (/příchozí|mzda|výplata|plat/.test(text)) return 'Příjem';
-  if (/sinsay|h&m|zara|reserved|m&s|marks|primark|pepco/.test(text)) return 'Ostatní';
-  return 'Ostatní';
 }
 
 /* ── PREVIEW TABLE ── */

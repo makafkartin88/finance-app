@@ -27,3 +27,26 @@ export function normMonth(v) {
   }
   return s.slice(0, 7);
 }
+
+/* Souhrn za období — jedna definice pro Přehled i Grafy:
+   - spotřeba (spending) = výdaje mimo kategorii Investice
+   - investováno = výdaje v kategorii Investice
+   - úspora = příjem − spotřeba (investice jsou úspora, ne útrata)
+   - volné peníze (cashLeft) = úspora − investováno
+   Vyrovnání mezi Martinem a Šárkou se nepočítá do ničeho. */
+export function summarize(txs) {
+  let income = 0, spending = 0, invested = 0;
+  for (const t of txs) {
+    if (t.typ === 'Příjem') income += t.castka;
+    else if (t.typ === 'Výdaj') { if (t.kategorie === 'Investice') invested += t.castka; else spending += t.castka; }
+  }
+  const savings = income - spending;
+  return { income, spending, invested, savings, cashLeft: savings - invested, savingsRate: income > 0 ? savings / income : 0 };
+}
+
+// Měsíce do průměru — bez právě běžícího měsíce (ještě neúplný), pokud
+// jsou k dispozici i jiné.
+export function completedMonths(months, currentMonth) {
+  const done = months.filter(m => m !== currentMonth);
+  return done.length ? done : months;
+}

@@ -579,23 +579,26 @@ function handleUpsertFund(body) {
 // sdílený řádek (ne per-uživatel), protože bilance vzájemných příspěvků a
 // rozpoznávání převodů mezi Martinem a Šárkou při mBank importu potřebuje
 // znát účty obou najednou, ne jen toho, kdo je zrovna přihlášený.
-var NASTAVENI_HEADER = ['bilanceOffset', 'bilanceUcet', 'uctyMartin', 'uctySarka'];
+// limity = rozpočtové limity kategorií (JSON) — dřív jen v prohlížeči,
+// takže každé zařízení mělo jiné.
+var NASTAVENI_HEADER = ['bilanceOffset', 'bilanceUcet', 'uctyMartin', 'uctySarka', 'limity'];
 
 function handleSaveSettings(body) {
-  try {
+  return withLock(function () {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Nastaveni');
     if (!sheet) { sheet = ss.insertSheet('Nastaveni'); sheet.appendRow(NASTAVENI_HEADER); }
+    sheet.getRange(1, 1, 1, NASTAVENI_HEADER.length).setValues([NASTAVENI_HEADER]);
+    var cur = sheet.getLastRow() >= 2 ? sheet.getRange(2, 1, 1, NASTAVENI_HEADER.length).getValues()[0] : [];
     sheet.getRange(2, 1, 1, NASTAVENI_HEADER.length).setValues([[
-      body.bilanceOffset != null ? body.bilanceOffset : '',
-      body.bilanceUcet || '',
-      body.uctyMartin || '',
-      body.uctySarka || ''
+      body.bilanceOffset != null ? body.bilanceOffset : (cur[0] != null ? cur[0] : ''),
+      body.bilanceUcet != null ? body.bilanceUcet : (cur[1] || ''),
+      body.uctyMartin != null ? body.uctyMartin : (cur[2] || ''),
+      body.uctySarka != null ? body.uctySarka : (cur[3] || ''),
+      body.limity != null ? body.limity : (cur[4] || '')
     ]]);
     return jsonOut({ success: true });
-  } catch (err) {
-    return jsonOut({ error: err.message });
-  }
+  });
 }
 
 // ── DOKUMENTY ──

@@ -109,6 +109,14 @@ function applyNastaveni(nR) {
     state.cfg.uctyMartin = row[2] || '';
     state.cfg.uctySarka = row[3] || '';
     try { localStorage.setItem('fincfg', JSON.stringify(state.cfg)); } catch (e) { /* plná quota */ }
+    try {
+      const lim = row[4] ? JSON.parse(row[4]) : null;
+      if (lim && typeof lim === 'object') {
+        Object.assign(state.limits, lim);
+        localStorage.setItem('finlim', JSON.stringify(state.limits));
+        renderBudgets(); renderBudLimForm();
+      }
+    } catch (e) { /* poškozený JSON limitů → zůstanou dosavadní */ }
     renderCharts();
     // initSettings je bez efektu, pokud stránka Nastavení není zrovna
     // otevřená (nav() ji stejně volá znovu při přepnutí) — ale POKUD

@@ -1,6 +1,6 @@
 import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
-import { fmtD, czk, parseRow, base, postJson } from './utils.js';
+import { fmtD, czk, parseRow, base, postJson, isoDate } from './utils.js';
 import { newId } from './tx-core.js';
 import { toast, boot } from './app.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
@@ -97,7 +97,7 @@ export function openTx(idx) {
   populateOpisList();
   state.editIdx = idx !== undefined ? idx : null;
   document.getElementById('txTitle').textContent = state.editIdx !== null ? 'Upravit transakci' : 'Přidat transakci';
-  const today = new Date().toISOString().split('T')[0];
+  const today = isoDate(new Date()); // místní datum (toISOString je v UTC → mezi 0 a 2 h „včera")
   if (state.editIdx !== null) {
     const t = state.txs[state.editIdx];
     // t.datum je buď "M/D/YYYY" (lokálně přidaná transakce), nebo ISO
