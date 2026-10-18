@@ -307,12 +307,17 @@ function readSheetsFor(who, names) {
 }
 
 // ── ZÁPIS: společné pomocníky ──
-var ID_COL = { Transakce: 14, Recurring: 0 };
+var ID_COL = { Transakce: 14, Recurring: 0, Mzdy: 0 };
 function idColFor(sheetName) { return ID_COL.hasOwnProperty(sheetName) ? ID_COL[sheetName] : 14; }
 
 function findRowById(sheet, idCol, id) {
   var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) if (String(data[i][idCol]) === String(id)) return i;
+  for (var i = 1; i < data.length; i++) {
+    var v = data[i][idCol];
+    // Id měsíce 'YYYY-MM' (list Mzdy) si Sheets převede na datum.
+    var key = v instanceof Date ? Utilities.formatDate(v, 'Europe/Prague', 'yyyy-MM') : String(v);
+    if (key === String(id)) return i;
+  }
   return -1;
 }
 
@@ -968,6 +973,8 @@ function refreshNav(e) {
     // CODYA a CONSEQ → fronta, kterou appka při otevření sama naimportuje.
     // Z tlačítka v appce se nevolá — zdržovalo by to aktualizaci kurzů.
     if (e && e.triggerUid) {
+      try { log.push(syncInflation()); }
+      catch (ei) { failed.push('INFLACE'); log.push('Inflace z ČSÚ: ' + ei.message); }
       try { log.push('Záloha: ' + weeklyBackup()); }
       catch (eb) { failed.push('ZÁLOHA'); log.push('Záloha selhala: ' + eb.message); }
       try { healthCheck().forEach(function (w) { failed.push('KONTROLA'); log.push(w); }); }
@@ -1119,6 +1126,52 @@ function histIso(v) {
   var m = s.match(/(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/);
   if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
   return s;
+}
+
+// ── INFLACE: index spotřebitelských cen z ČSÚ ──
+// Předpřipravený výběr DataStatu CEN0101ET03 (měsíční indexy, ~35 KB, posledních
+// ~13 měsíců). Celá datová sada má 67 MB — na UrlFetch moc. Bazický index
+// (2025 = 100) za úhrn ČR se týdně připíše do listu Inflace [mesic, index];
+// appka ho napojí na historickou tabulku v js/inflation-data.js.
+var CZ_MONTHS = { 'leden': 1, 'únor': 2, 'březen': 3, 'duben': 4, 'květen': 5, 'červen': 6, 'červenec': 7,
+  'srpen': 8, 'září': 9, 'říjen': 10, 'listopad': 11, 'prosinec': 12 };
+
+function parseCpiCsv(text) {
+  var rows = Utilities.parseCsv ? Utilities.parseCsv(text) : text.split('\n').map(function (l) {
+    return (l.match(/"([^"]*)"/g) || []).map(function (x) { return x.slice(1, -1); });
+  });
+  var h = rows[0] || [], ix = {};
+  h.forEach(function (n, i) { ix[n] = i; });
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r || r.length < h.length) continue;
+    if (!/Bazický index \(2025 = 100\)/.test(r[ix['Typ indexu']]) || r[ix['Území']] !== 'Česko' ||
+        r[ix['Skupiny domácností']] !== 'Domácnosti celkem' || r[ix['Klasifikace COICOP 2018-Oddíl']] !== 'Úhrn') continue;
+    var m = String(r[ix['Měsíce']]).match(/^(\S+)\s+(\d{4})$/);
+    var mon = m && CZ_MONTHS[m[1]];
+    var v = parseFloat(String(r[ix['Hodnota']]).replace(',', '.'));
+    if (mon && v > 0) out.push([m[2] + '-' + ('0' + mon).slice(-2), v]);
+  }
+  return out.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+}
+
+function syncInflation() {
+  var resp = UrlFetchApp.fetch('https://data.csu.gov.cz/api/dotaz/v1/data/vybery/CEN0101ET03?format=CSV', { muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) throw new Error('ČSÚ HTTP ' + resp.getResponseCode());
+  var fresh = parseCpiCsv(resp.getContentText('UTF-8'));
+  if (!fresh.length) throw new Error('ČSÚ: ve výběru nebyl bazický index (změnil se formát?)');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Inflace');
+  if (!sh) { sh = ss.insertSheet('Inflace'); sh.appendRow(['mesic', 'index2025']); sh.getRange('A:A').setNumberFormat('@'); }
+  var have = {}, v = sh.getDataRange().getValues();
+  for (var i = 1; i < v.length; i++) have[normMonthGas(v[i][0])] = i + 1;
+  var added = 0;
+  fresh.forEach(function (r) {
+    if (have[r[0]]) sh.getRange(have[r[0]], 2).setValue(r[1]);   // ČSÚ občas revidovat nebude, ale ať to sedí
+    else { sh.appendRow(r); added++; }
+  });
+  return 'Inflace: ' + fresh[fresh.length - 1][0] + ' (' + added + ' nových měsíců)';
 }
 
 // ── TÝDENNÍ ZÁLOHA TABULKY ── kopie do Finance-Backup, drží se 12 posledních.

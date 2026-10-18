@@ -134,3 +134,25 @@ test('auth: cizí Google účet (není na whitelistu) neprojde', () => {
   const { ctx } = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'cizi@example.com' });
   assert.match(post(ctx, { action: 'read', sheets: ['Transakce'], idToken: tok }).error, /Nepřihlášený/);
 });
+
+test('updateRow Mzdy: najde měsíc, i když ho Sheets převedl na datum (žádný duplicitní řádek)', () => {
+  const sheets = { Mzdy: [] };
+  const { ctx } = makeGas(sheets);
+  const d = (iso) => vm.runInContext(`new Date('${iso}')`, ctx); // Date z realmu GAS kontextu
+  sheets.Mzdy.push(['id'], [d('2026-08-01T00:00:00Z'), 'x'], [d('2026-09-01T00:00:00Z'), 'old']);
+  assert.equal(post(ctx, { action: 'updateRow', sheet: 'Mzdy', id: '2026-09', values: ['2026-09', 'new'] }).success, true);
+  assert.equal(sheets.Mzdy.length, 3);
+  assert.equal(sheets.Mzdy[2][1], 'new');
+});
+
+test('parseCpiCsv: z výběru ČSÚ vezme jen bazický index úhrnu za ČR, měsíce → YYYY-MM', () => {
+  const { ctx } = makeGas({ X: [[]] });
+  const csv = [
+    '"Ukazatel","Typ indexu","Území","Skupiny domácností","Klasifikace COICOP 2018-Oddíl","Klasifikace COICOP 2018-Skupina a třída","Měsíce","Hodnota","MJ_TEXT","MJ_SYMBOL","POZNAMKA","POZNAMKA_TEXT"',
+    '"Index spotřebitelských cen (životních nákladů)","Bazický index (2025 = 100)","Česko","Domácnosti celkem","Úhrn","","září 2026","102.6","procento","%","",""',
+    '"Index spotřebitelských cen (životních nákladů)","Bazický index (2025 = 100)","Česko","Domácnosti celkem","Úhrn","","říjen 2026","103.1","procento","%","",""',
+    '"Index spotřebitelských cen (životních nákladů)","Meziroční index","Česko","Domácnosti celkem","Úhrn","","říjen 2026","102.5","procento","%","",""',
+    '"Index spotřebitelských cen (životních nákladů)","Bazický index (2025 = 100)","Česko","Domácnosti celkem","Potraviny","","říjen 2026","99.0","procento","%","",""',
+  ].join('\n');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.parseCpiCsv(csv))), [['2026-09', 102.6], ['2026-10', 103.1]]);
+});

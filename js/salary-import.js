@@ -5,6 +5,7 @@ import { toast } from './app.js';
 import { renderSalary, MONTH_NAMES } from './salary.js';
 import { isSalaryAllowed } from './auth.js';
 import { fetchSheet, postJson } from './utils.js';
+import { cpiWith } from './inflation-data.js';
 
 /* ── HESLO K PDF (fixní, uložené lokálně — nikdy do repa) ── */
 function getSalaryPwd() { return localStorage.getItem('salaryPdfPwd') || ''; }
@@ -216,7 +217,12 @@ export async function confirmSalaryImport() {
   row[MZ.multisport] = p.multisport; row[MZ.soubor] = p.soubor || '';
 
   try {
-    const d = await postJson({ sheet: 'Mzdy', values: [row] });
+    // Stejný měsíc znovu (opravená páska) → přepsat, ne přidat druhý řádek
+    // (dřív se pak měsíc v grafu i součtech započítal dvakrát).
+    const exists = state.salary.some(s => s.id === id);
+    if (exists) await postJson({ action: 'updateRow', sheet: 'Mzdy', id, values: row });
+    else await postJson({ sheet: 'Mzdy', values: [row] });
+    state.salary = state.salary.filter(s => s.id !== id);
     state.salary.push(parseSalaryRow(row));
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
     toast(`Páska ${id} uložena`, 'ok');
@@ -264,8 +270,10 @@ export function parseSalaryRow(r) {
 
 // `pre`/`preImport` = už načtené odpovědi listů Mzdy / MzdyImport
 // (z dávkového fetchSheets v app.js). Bez nich si je loader načte sám.
-export async function loadSalaryData(pre, preImport) {
+export async function loadSalaryData(pre, preImport, preInflace) {
   if (!isSalaryAllowed()) return;
+  // Nové měsíce indexu cen, které GAS týdně stahuje z ČSÚ (list Inflace).
+  state.cpi = cpiWith(preInflace && Array.isArray(preInflace.values) ? preInflace.values.slice(1) : []);
   try {
     const d = pre || await fetchSheet(GAS_URL + '?sheet=Mzdy');
     if (d.error) { state.salary = []; state._salaryLoaded = true; renderSalary(); return; } // list ještě neexistuje

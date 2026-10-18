@@ -19,6 +19,7 @@ export const state = {
   _invLoaded: false,     // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   _invFresh: false,      // true až po načtení Fondy ze sítě (ne z cache) — podmínka automatického importu
   salary: [],            // parsované výplatní pásky (list Mzdy)
+  cpi: null,             // index cen ČSÚ (tabulka + list Inflace), viz inflation-data.js
   _salaryLoaded: false,  // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"
   docs: [],              // dokumenty (list Dokumenty), viz documents-core.js
   _docsLoaded: false,    // true po prvním pokusu o fetch — rozlišuje "načítá se" od "opravdu prázdné"

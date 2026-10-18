@@ -71,13 +71,13 @@ export async function loadSheets() {
     //    ani nestahují (gating stejný jako v samotných loaderech).
     const names = ['Recurring', 'MbankImport', 'Nastaveni', 'Dokumenty'];
     if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist');
-    if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport');
+    if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport', 'Inflace');
     fetchSheets(names).then(s => {
       loadInvestmentData(isInvestmentsAllowed() ? s : undefined);
       if (isInvestmentsAllowed()) loadUcpNotification();
       loadRecurring(s.Recurring).then(autoGenerateRecurring);
       loadMbankNotification(s.MbankImport);
-      loadSalaryData(s.Mzdy, s.MzdyImport);
+      loadSalaryData(s.Mzdy, s.MzdyImport, s.Inflace);
       applyNastaveni(s.Nastaveni);
       loadDocuments(s.Dokumenty);
     }).catch(() => {

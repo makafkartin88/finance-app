@@ -1,6 +1,8 @@
+import { escHtml } from './html.js';
 import { state } from './state.js';
 import { czk } from './utils.js';
 import { cumulativeInflation } from './inflation-data.js';
+import { compOf, detectChanges, levelAt, typicalNet, yearSummaries } from './salary-core.js';
 import { mountScrollChart, yearAxisMarks } from './charts.js';
 
 export const MONTH_NAMES = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
@@ -106,6 +108,7 @@ export function renderSalary() {
     document.getElementById('salInflation').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
     document.getElementById('salTarif').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
     document.getElementById('salPremie').innerHTML = stillLoading ? '' : '<div class="empty">Žádná data</div>';
+    { const y = document.getElementById('salYears'); if (y) y.innerHTML = ''; }
     document.getElementById('salBody').innerHTML = '';
     if (empty) empty.style.display = (all.length || stillLoading) ? 'none' : 'block';
     return;
@@ -185,62 +188,69 @@ export function renderSalary() {
     ${focus.multisport ? `<div class="metric-row"><div><strong>Multisport</strong><span>srážka ze mzdy</span></div><strong class="an">−${czk(focus.multisport)}</strong></div>` : ''}
     <div class="metric-row" style="border-top:2px solid var(--border2)"><div><strong>K výplatě na účet</strong><span>čistá ${czk(focus.cistaMzda)}</span></div><strong style="font-size:15px">${czk(focus.kVyplate)}</strong></div>`;
 
-  /* ── ZÁKLAD + PRÉMIE: detekce skokových změn (ratchet — ignoruje proraci) ──
-     Prémie klesá jen prorací (dovolená/neodprac.), nikdy nestoupne nad
-     smluvní úroveň → běžící max zachytí jen skutečná navýšení (55k → 60k). */
-  const compOf = s => (s.tarif || 0) + (s.premie || 0);
-  const currentComp = Math.max(...all.map(compOf), 0);
-  const compChanges = [];
-  let plateau = 0;
-  all.forEach(s => {
-    const c = compOf(s);
-    if (c > plateau * 1.03) { compChanges.push({ s, comp: c, prev: plateau || null }); plateau = c; }
-    else if (c > plateau) plateau = c;
-  });
-  const lastChange = compChanges[compChanges.length - 1] || { s: all[0], comp: currentComp, prev: null };
+  /* ── ZÁKLAD + PRÉMIE: změny smluvní úrovně (viz salary-core.js) ── */
+  const changes = detectChanges(all);
+  const lastAll = all[all.length - 1];
+  const lastChange = changes[changes.length - 1] || { s: all[0], comp: compOf(all[0]), prev: null };
   const plateauStart = lastChange.s;
+  const currentComp = lastChange.comp; // potvrzená smluvní úroveň, ne historické maximum
 
-  /* ── INFLAČNÍ POMOCNÍK & VYJEDNÁVÁNÍ (na bázi základ+prémie) ── */
+  /* ── INFLAČNÍ POMOCNÍK & VYJEDNÁVÁNÍ ── */
   const baseSel = document.getElementById('salBaseline');
   const prevBase = baseSel.value;
-  const lastAll = all[all.length - 1];
   baseSel.innerHTML = all.map(s =>
-    `<option value="${s.id}">${MONTH_NAMES[s.mesic]} ${s.rok} — základ+prémie ${czk(compOf(s))}</option>`
+    `<option value="${escHtml(s.id)}">${MONTH_NAMES[s.mesic]} ${s.rok} — úroveň ${czk(levelAt(changes, all, s.id))}</option>`
   ).join('');
-  // Default základna = měsíc poslední skokové změny (uživatel může přepnout)
+  // Výchozí základna = začátek poslední změny (uživatel může přepnout)
   baseSel.value = [...baseSel.options].some(o => o.value === prevBase) ? prevBase : plateauStart.id;
   const base = all.find(s => s.id === baseSel.value) || plateauStart;
-  const baseComp = compOf(base);
+  // Základna = úroveň platná v měsíci, ne poměrně krácená částka toho měsíce.
+  const baseComp = levelAt(changes, all, base.id);
 
-  const infl = cumulativeInflation(base.id, lastAll.id);
-  const suggested = Math.round(baseComp * (1 + infl.pct / 100)); // mzda držící kupní sílu
-  const inflAbs = suggested - baseComp;      // o kolik inflace zvedla cenovou hladinu
-  const gapAbs = suggested - currentComp;    // kolik chybí, aby držel krok
-  const estWarn = infl.monthsMissing > 0;
+  const infl = cumulativeInflation(base.id, lastAll.id, state.cpi || undefined);
+  const suggested = Math.round(baseComp * (1 + infl.pct / 100));
+  const inflAbs = suggested - baseComp;
+  const gapAbs = suggested - currentComp;
+
+  // Kupní síla = čistá mzda (od 2024 např. nemocenské pojištění snížilo
+  // čistou i bez změny hrubé). Typická čistá = medián v období.
+  const nextChange = changes.find(ch => ch.s.id > base.id);
+  const baseEnd = nextChange ? all[nextChange.idx - 1]?.id || base.id : lastAll.id;
+  const netThen = typicalNet(all, base.id, baseEnd);
+  const netNow = typicalNet(all, plateauStart.id, lastAll.id);
+  const netNeeded = Math.round(netThen * (1 + infl.pct / 100));
+  const netGap = netNeeded - netNow;
+  const pct1 = v => v.toFixed(1).replace('.', ',');
 
   document.getElementById('salInflation').innerHTML = `
-    <div class="metric-row"><div><strong>Poslední změna mzdy</strong><span>${MONTH_NAMES[plateauStart.mesic]} ${plateauStart.rok} · aktuální základ+prémie</span></div><strong>${czk(currentComp)}</strong></div>
-    <div class="metric-row"><div><strong>Kumulativní inflace</strong><span>od ${MONTH_NAMES[base.mesic]} ${base.rok} k dnešku</span></div><strong>${infl.pct.toFixed(1).replace('.', ',')} % · ${czk(inflAbs)}</strong></div>
+    <div class="metric-row"><div><strong>Poslední změna mzdy</strong><span>${MONTH_NAMES[plateauStart.mesic]} ${plateauStart.rok} · současná úroveň základ+prémie</span></div><strong>${czk(currentComp)}</strong></div>
+    <div class="metric-row"><div><strong>Kumulativní inflace</strong><span>od ${MONTH_NAMES[base.mesic]} ${base.rok} do ${MONTH_NAMES[lastAll.mesic]} ${lastAll.rok} (poslední páska)</span></div><strong>${pct1(infl.pct)} % · ${czk(inflAbs)}</strong></div>
     <div class="metric-row"><div><strong>Mzda držící krok s inflací</strong><span>${czk(baseComp)} × inflace</span></div><strong>${czk(suggested)}</strong></div>
+    <div class="metric-row"><div><strong>Čistá mzda vs. inflace</strong><span>typicky ${czk(netThen)} → teď ${czk(netNow)}, kupní síla by chtěla ${czk(netNeeded)}</span></div><strong class="${netGap > 0 ? 'an' : 'ap'}">${netGap > 0 ? '−' + czk(netGap) : '+' + czk(-netGap)}</strong></div>
     <div class="insight insight-badged" style="margin-top:10px">
       <div><strong>${gapAbs > 0 ? '⚠️ Zaostáváš za inflací' : '✅ Držíš krok'}</strong>
       <span>${gapAbs > 0
-        ? `Aby základ+prémie (${czk(currentComp)}) od ${plateauStart.mesic}/${plateauStart.rok} udržel kupní sílu, měl by dnes být aspoň ${czk(suggested)} — tj. o ${czk(gapAbs)} víc. Podklad pro vyjednávání.`
-        : `Základ+prémie ${czk(currentComp)} kupní sílu drží i po inflaci ${infl.pct.toFixed(1).replace('.', ',')} %.`}</span></div>
+        ? `Aby základ+prémie (${czk(currentComp)}) od ${plateauStart.mesic}/${plateauStart.rok} udržel kupní sílu, měl by dnes být aspoň ${czk(suggested)} — tj. o ${czk(gapAbs)} víc. Pro firmu to znamená náklad ${czk(Math.round(gapAbs * 1.338))} měsíčně navíc.`
+        : `Základ+prémie ${czk(currentComp)} kupní sílu drží i po inflaci ${pct1(infl.pct)} %.`}</span></div>
       <strong class="insight-badge" style="color:${gapAbs > 0 ? 'var(--red)' : 'var(--green)'}">${gapAbs > 0 ? '+' : ''}${czk(gapAbs)}</strong>
     </div>
-    ${estWarn ? `<div style="font-size:11px;color:var(--text3);margin-top:8px">⚠️ Část období (${infl.monthsMissing} měs.) používá odhad inflace — čísla jsou orientační.</div>` : ''}`;
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Inflace z indexu spotřebitelských cen ČSÚ (data do ${escHtml(infl.lastKnown || '')}).${infl.monthsMissing > 0 ? ` ⚠️ Posledních ${infl.monthsMissing} měs. ČSÚ ještě nezveřejnil — odhad podle tempa za poslední rok.` : ''}</div>`;
 
   /* ── ZÁKLAD + PRÉMIE TIMELINE ── */
-  document.getElementById('salTarif').innerHTML = compChanges.map((ch, i) => {
-    const isLast = i === compChanges.length - 1;
-    const comp = isLast ? currentComp : ch.comp;   // poslední úroveň = smluvní max
-    const pct = ch.prev ? ((comp - ch.prev) / ch.prev) * 100 : null;
+  document.getElementById('salTarif').innerHTML = changes.map(ch => {
+    const pct = ch.prev ? ((ch.comp - ch.prev) / ch.prev) * 100 : null;
     return `<div class="metric-row">
-      <div><strong>${MONTH_NAMES[ch.s.mesic]} ${ch.s.rok}</strong><span>${pct === null ? 'první záznam' : 'zvýšení o ' + pct.toFixed(1).replace('.', ',') + ' %'} · základ ${czk(ch.s.tarif)} + prémie ${czk(comp - ch.s.tarif)}</span></div>
-      <strong class="${pct ? 'ap' : ''}">${czk(comp)}</strong>
+      <div><strong>${MONTH_NAMES[ch.s.mesic]} ${ch.s.rok}</strong><span>${pct === null ? 'první záznam' : (pct >= 0 ? 'zvýšení o ' : 'snížení o ') + pct1(Math.abs(pct)) + ' %'} · základ ${czk(ch.s.tarif)} + prémie ${czk(ch.comp - ch.s.tarif)}</span></div>
+      <strong class="${pct > 0 ? 'ap' : pct < 0 ? 'an' : ''}">${czk(ch.comp)}</strong>
     </div>`;
-  }).join('') + (compChanges.length <= 1 ? '<div class="insight" style="margin-top:10px"><strong>Beze změny</strong><span>Za sledované období se základ+prémie nezvedl — mrkni na inflačního pomocníka.</span></div>' : '');
+  }).join('') + (changes.length <= 1 ? '<div class="insight" style="margin-top:10px"><strong>Beze změny</strong><span>Za sledované období se základ+prémie nezměnil — mrkni na inflačního pomocníka.</span></div>' : '');
+
+  /* ── ROČNÍ SOUHRN ── */
+  const yEl = document.getElementById('salYears');
+  if (yEl) yEl.innerHTML = yearSummaries(all).slice().reverse().map(y => `<div class="metric-row">
+      <div><strong>${y.rok}</strong><span>${y.pocet} ${y.pocet === 1 ? "páska" : y.pocet < 5 ? "pásky" : "pásek"} · daň a pojistné ${pct1(y.sazba * 100)} % z hrubé · náklad zaměstnavatele ${czk(y.nakladZam)}</span></div>
+      <strong>${czk(y.cista)} <span style="font-weight:400;color:var(--text3);font-size:11px">čistá / ${czk(y.hruba)} hrubá</span></strong>
+    </div>`).join('');
 
   /* ── PRÉMIE V ČASE (rozsah, klikací) ── */
   const maxPrem = Math.max(...data.map(s => s.premie), 1);
