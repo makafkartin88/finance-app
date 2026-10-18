@@ -17,6 +17,7 @@
 // ============================================================
 
 function doGet(e) {
+  if (authEnforced()) return jsonOut({ error: 'Čtení jen přes přihlášenou appku (POST read).' });
   var sheetName = (e && e.parameter && e.parameter.sheet) || null;
   var sheetsParam = (e && e.parameter && e.parameter.sheets) || null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -62,6 +63,18 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
 
+    // ── KDO VOLÁ (Firebase ID token) + oprávnění ──
+    var who = verifyCaller(body.idToken);
+    delete body.idToken;
+    if (authEnforced() && !who) return jsonOut({ error: 'Nepřihlášený požadavek — přihlas se v appce znovu.' });
+    var denied = authorize(who, body);
+    if (denied) return jsonOut({ error: denied });
+
+    // ── ČTENÍ LISTŮ (POST, aby token nebyl v URL) ──
+    if (body.action === 'read') {
+      return jsonOut({ sheets: readSheetsFor(who, body.sheets || []) });
+    }
+
     // ── RECEIPT UPLOAD ──
     if (body.action === 'uploadReceipt') {
       return handleReceiptUpload(body);
@@ -99,7 +112,7 @@ function doPost(e) {
 
     // ── GET DRIVE FILE (base64) ──
     if (body.action === 'getDriveFile') {
-      return handleGetDriveFile(body);
+      return handleGetDriveFile(body, who);
     }
 
     // ── MARK PAYSLIP IMPORTED ──
@@ -196,6 +209,101 @@ function handleDeleteRow(body) {
     sheet.deleteRow(i + 1);
     return jsonOut({ success: true });
   });
+}
+
+// ============================================================
+// OVĚŘENÍ VOLAJÍCÍHO (Firebase ID token)
+// Appka posílá v každém POSTu `idToken` přihlášeného uživatele. Token se
+// ověří u Googlu (Identity Toolkit accounts:lookup — kontroluje podpis
+// i expiraci) a podle e-mailu se dohledají práva. Vynucuje se až se
+// Script Property AUTH_ENFORCE = 1; do té doby se jen ověřuje (bez
+// odmítání), ať se přechod dá vyzkoušet bez výpadku.
+// ============================================================
+var FIREBASE_WEB_API_KEY = 'AIzaSyBZAuuCcSsuiKA8UFLJoyKgUUcWNzHPL58'; // veřejný klíč webové appky (je i v js/auth.js)
+
+// SHA-256 e-mailu → práva (stejné otisky jako AUTH_USERS v js/config.js)
+var AUTH_USERS_GAS = {
+  'd14e742dcc719565cd7a4766e3964f9680d3d8361a458f1f28a5f935afc1d1e6': { person: 'Martin', investments: true, salary: true },
+  'e77847f6d15bf76210fce7d8783776a4af7573c1837ae13765e1bf19a264a3f7': { person: 'Martin', investments: true, salary: true },
+  '1a3717be8c1b580778fbb4e309cbe70e3bcf6ca274f17e009673d96daf04b638': { person: 'Šárka', investments: false, salary: false }
+};
+
+function authEnforced() {
+  return PropertiesService.getScriptProperties().getProperty('AUTH_ENFORCE') === '1';
+}
+
+function sha256Hex(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+
+// Vrací { email, person, investments, salary } nebo null.
+function verifyCaller(token) {
+  if (!token) return null;
+  var cache = CacheService.getScriptCache();
+  var key = 'tok_' + sha256Hex(token).slice(0, 40);
+  var hit = cache.get(key);
+  var email = hit || null;
+  if (!email) {
+    var resp = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_WEB_API_KEY, {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ idToken: token })
+    });
+    if (resp.getResponseCode() !== 200) return null;
+    var u = (JSON.parse(resp.getContentText()).users || [])[0];
+    if (!u || !u.email || u.emailVerified === false) return null;
+    email = String(u.email).toLowerCase();
+    // Cache max. do expirace tokenu (a nejvýš 50 min).
+    var ttl = 3000;
+    try {
+      var payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(token.split('.')[1])).getDataAsString());
+      ttl = Math.max(0, Math.min(3000, Math.floor(payload.exp - Date.now() / 1000) - 60));
+    } catch (e) {}
+    if (ttl > 0) cache.put(key, email, ttl);
+  }
+  var role = AUTH_USERS_GAS[sha256Hex(email)];
+  if (!role) return null;
+  return { email: email, person: role.person, investments: role.investments, salary: role.salary };
+}
+
+var SALARY_SHEETS = { Mzdy: 1, MzdyImport: 1 };
+var INVEST_SHEETS = { Fondy: 1, Trh: 1, FondyHist: 1, TrhHist: 1, UcpImport: 1 };
+var SALARY_ACTIONS = { markPayslipImported: 1, checkPayslipEmail: 1 };
+var INVEST_ACTIONS = { upsertFund: 1, refreshNav: 1, refreshT212: 1, checkInvestEmail: 1, checkUnicreditEmail: 1, markUcpImported: 1 };
+
+// Bez vynucení se nic neodmítá (who může být null). S vynucením: mzda a
+// investice jen pro ty, kdo je mají povolené — i kdyby šli na server přímo.
+function authorize(who, body) {
+  if (!who) return '';
+  var a = body.action, sh = body.sheet;
+  if ((SALARY_ACTIONS[a] || (!a && SALARY_SHEETS[sh])) && !who.salary) return 'Bez oprávnění (mzda).';
+  if ((INVEST_ACTIONS[a] || (!a && INVEST_SHEETS[sh])) && !who.investments) return 'Bez oprávnění (investice).';
+  return '';
+}
+
+function sheetAllowed(who, name) {
+  if (!who) return !authEnforced();
+  if (SALARY_SHEETS[name] && !who.salary) return false;
+  if (INVEST_SHEETS[name] && !who.investments) return false;
+  return true;
+}
+
+function readSheetsFor(who, names) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = {};
+  names.forEach(function (nm) {
+    nm = String(nm).trim();
+    if (!nm) return;
+    if (!sheetAllowed(who, nm)) { out[nm] = { error: 'Bez oprávnění' }; return; }
+    var sh = ss.getSheetByName(nm);
+    if (!sh) { out[nm] = { error: 'List "' + nm + '" neexistuje' }; return; }
+    var values = sh.getDataRange().getValues();
+    // Dokumenty: soukromé („jen Martin/Šárka") se druhému vůbec nepošlou.
+    if (nm === 'Dokumenty' && who) values = values.filter(function (r, i) {
+      return i === 0 || !r[3] || r[3] === 'Oba' || r[3] === who.person;
+    });
+    out[nm] = { values: values };
+  });
+  return out;
 }
 
 // ── ZÁPIS: společné pomocníky ──
@@ -348,16 +456,19 @@ function isAppFile(file) {
   while (it.hasNext()) queue.push({ f: it.next(), d: 0 });
   while (queue.length) {
     var x = queue.shift();
-    if (/^Finance-/.test(x.f.getName())) return true;
+    if (/^Finance-/.test(x.f.getName())) return x.f.getName();
     if (x.d < 2) { var up = x.f.getParents(); while (up.hasNext()) queue.push({ f: up.next(), d: x.d + 1 }); }
   }
-  return false;
+  return '';
 }
 
-function handleGetDriveFile(body) {
+function handleGetDriveFile(body, who) {
   try {
     var file = DriveApp.getFileById(body.fileId);
-    if (!isAppFile(file)) return jsonOut({ error: 'Soubor není ze složek aplikace.' });
+    var area = isAppFile(file);
+    if (!area) return jsonOut({ error: 'Soubor není ze složek aplikace.' });
+    if (who && area === 'Finance-Vyplaty' && !who.salary) return jsonOut({ error: 'Bez oprávnění (mzda).' });
+    if (who && /^Finance-Vypisy-(CP|Fondy)$/.test(area) && !who.investments) return jsonOut({ error: 'Bez oprávnění (investice).' });
     var blob = file.getBlob();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,

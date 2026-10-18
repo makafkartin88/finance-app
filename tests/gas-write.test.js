@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 // Minimální podvržená tabulka: list = pole řádků (hlavička na indexu 0).
-function makeGas(sheets) {
+function makeGas(sheets, { props = {}, lookupEmail = null } = {}) {
   const lock = { held: false, tryLock() { if (this.held) return false; this.held = true; return true; }, releaseLock() { this.held = false; } };
   const sheetApi = (name) => {
     const rows = sheets[name];
@@ -29,7 +30,19 @@ function makeGas(sheets) {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     LockService: { getScriptLock: () => lock },
     ContentService: { createTextOutput: (t) => ({ t, setMimeType() { return JSON.parse(this.t); } }), MimeType: { JSON: 'json' } },
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 7) },
+    Utilities: {
+      formatDate: (d) => d.toISOString().slice(0, 7),
+      computeDigest: (_a, str) => [...crypto.createHash('sha256').update(str).digest()].map(b => (b > 127 ? b - 256 : b)),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+      base64DecodeWebSafe: (x) => [...Buffer.from(x, 'base64url')],
+      newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes).toString() }),
+    },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null }) },
+    CacheService: { getScriptCache: () => { const m = {}; return { get: k => m[k] ?? null, put: (k, v) => { m[k] = v; } }; } },
+    UrlFetchApp: { fetch: () => ({
+      getResponseCode: () => (lookupEmail ? 200 : 400),
+      getContentText: () => JSON.stringify({ users: lookupEmail ? [{ email: lookupEmail, emailVerified: true }] : [] }),
+    }) },
   });
   vm.runInContext(fs.readFileSync(new URL('../gas-update.js', import.meta.url), 'utf8'), ctx);
   return { ctx, lock };
@@ -85,4 +98,39 @@ test('deleteRow: maže podle id jako textu a pod zámkem; obsazený zámek → c
   lock.held = false;
   assert.equal(post(ctx, { action: 'deleteRow', sheet: 'Transakce', txId: '123' }).success, true);
   assert.equal(sheets.Transakce.length, 1);
+});
+
+// ── Ověření volajícího ──
+const tok = 'h.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url') + '.s';
+const docs = () => ({ Dokumenty: [['id', 'nazev', 'slozka', 'viditelnost'], ['d1', 'A', '', 'Oba'], ['d2', 'B', '', 'Martin'], ['d3', 'C', '', 'Šárka']],
+  Mzdy: [['id'], ['2026-09']], Transakce: [['h']] });
+
+test('auth: bez AUTH_ENFORCE projde i požadavek bez tokenu (přechodné období)', () => {
+  const { ctx } = makeGas(docs());
+  const r = post(ctx, { action: 'read', sheets: ['Mzdy'] });
+  assert.ok(r.sheets.Mzdy.values);
+});
+
+test('auth: s AUTH_ENFORCE bez platného tokenu nic, GET zakázán', () => {
+  const { ctx } = makeGas(docs(), { props: { AUTH_ENFORCE: '1' } });
+  assert.match(post(ctx, { action: 'read', sheets: ['Transakce'] }).error, /Nepřihlášený/);
+  assert.match(post(ctx, { action: 'read', sheets: ['Transakce'], idToken: tok }).error, /Nepřihlášený/); // lookup selže
+  assert.match(ctx.doGet({ parameter: { sheet: 'Transakce' } }).error, /POST/);
+});
+
+test('auth: Šárka nedostane mzdu ani cizí soukromý dokument; Martin vše své', () => {
+  const s1 = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'besarka@gmail.com' });
+  const r = post(s1.ctx, { action: 'read', sheets: ['Mzdy', 'Dokumenty'], idToken: tok });
+  assert.match(r.sheets.Mzdy.error, /oprávnění/);
+  assert.deepEqual(r.sheets.Dokumenty.values.map(x => x[0]), ['id', 'd1', 'd3']);
+  assert.match(post(s1.ctx, { sheet: 'Mzdy', values: [['x']], idToken: tok }).error, /oprávnění/);
+  const s2 = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'martinkafka9@gmail.com' });
+  const r2 = post(s2.ctx, { action: 'read', sheets: ['Mzdy', 'Dokumenty'], idToken: tok });
+  assert.ok(r2.sheets.Mzdy.values);
+  assert.deepEqual(r2.sheets.Dokumenty.values.map(x => x[0]), ['id', 'd1', 'd2']);
+});
+
+test('auth: cizí Google účet (není na whitelistu) neprojde', () => {
+  const { ctx } = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'cizi@example.com' });
+  assert.match(post(ctx, { action: 'read', sheets: ['Transakce'], idToken: tok }).error, /Nepřihlášený/);
 });
