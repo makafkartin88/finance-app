@@ -1,6 +1,7 @@
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
-import { parseRow, fetchSheet } from './utils.js';
+import { parseRow, fetchSheet, postJson } from './utils.js';
+import { newId } from './tx-core.js';
 import { toast, boot } from './app.js';
 
 // Heslo k PDF výpisu — jen localStorage, nikdy v kódu (repo je veřejné)
@@ -400,7 +401,7 @@ export async function confirmMbankImport() {
     const sheetDate = `${parseInt(mp)}/${parseInt(dp)}/${yp}`;
     const mesic     = `${mn[parseInt(mp)]} ${yp}`;
     const sign      = typ === 'Příjem' ? castka : -castka;
-    const id        = `${yp}${mp}${dp}-mb${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
+    const id        = newId(yp, mp, dp, 'mb');
 
     // Pořadí musí odpovídat mapě C v config.js — poslední sloupec (index 19)
     // je `bilance`; dřív se neposílal vůbec, takže se převody mezi Martinem
@@ -411,13 +412,13 @@ export async function confirmMbankImport() {
     allRows.push(row);
   }
 
-  // Add to local state immediately
-  allRows.forEach(row => state.txs.push(parseRow(row)));
-
-  // Send all rows in a single batch POST to Transakce sheet
+  // Zápis MUSÍ projít dřív, než se výpis odbaví — dřív se chyba spolkla,
+  // appka hlásila „importováno" a výpis zmizel z fronty i bez transakcí.
   if (allRows.length) {
-    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: allRows }) }); } catch(e) {}
+    try { await postJson({ sheet: 'Transakce', values: allRows }); }
+    catch (e) { toast('Import se nepodařilo uložit: ' + e.message + ' — zkus to znovu', 'err'); return; }
   }
+  allRows.forEach(row => state.txs.push(parseRow(row)));
 
   document.getElementById('mbankResults').style.display = 'none';
   state._mbankRows = null;
@@ -427,7 +428,7 @@ export async function confirmMbankImport() {
   // Mark notification as imported
   const fname = state._mbankImportFile;
   if (fname) {
-    try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markMbankImported', filename: fname }) }); } catch(e) {}
+    try { await postJson({ action: 'markMbankImported', filename: fname }); } catch(e) {}
     state._mbankImportFile = null;
     // Znovu načíst frontu — když čeká další měsíc, banner rovnou nabídne jeho.
     await loadMbankNotification();

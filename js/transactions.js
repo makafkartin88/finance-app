@@ -1,6 +1,6 @@
-import { GAS_URL } from './config.js';
 import { state } from './state.js';
-import { fmtD, czk, parseRow, base } from './utils.js';
+import { fmtD, czk, parseRow, base, postJson } from './utils.js';
+import { newId } from './tx-core.js';
 import { toast, boot } from './app.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
 
@@ -168,11 +168,12 @@ export async function deleteTx(idx) {
   const t = state.txs[idx];
   if (!t) return;
   if (!confirm(`Opravdu chceš smazat transakci "${t.popis}" (${t.castka} Kč)?`)) return;
-  state.txs.splice(idx, 1);
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Transakce', txId: t.id }) });
+    await postJson({ action: 'deleteRow', sheet: 'Transakce', txId: t.id });
+    const i = state.txs.indexOf(t);
+    if (i >= 0) state.txs.splice(i, 1);
     toast('Transakce smazána', 'ok');
-  } catch(e) { toast('Lokálně smazáno, chyba sync: ' + e.message, 'err'); }
+  } catch(e) { toast('Smazání se nepodařilo: ' + e.message, 'err'); }
   boot();
 }
 export function closeTx() { document.getElementById('txModal').style.display = 'none'; }
@@ -205,25 +206,22 @@ export async function saveTx() {
   const old = isEdit ? state.txs[state.editIdx] : null;
   // Úprava si ponechá PŮVODNÍ id (ne nové) — jinak by se rozbily budoucí
   // odkazy na tuhle transakci podle id (např. odebrání účtenky).
-  const txId = isEdit ? old.id : `${y}${m}${d}-${String(state.txs.length+1).padStart(3,'0')}`;
+  const txId = isEdit ? old.id : newId(y, m, d);
   const uctenka = isEdit ? (old.uctenka || '') : '';
   const bilance = bilanceOn ? 'TRUE' : 'FALSE';
   const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,txId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
   const tx = parseRow(row);
+  // Úprava se zapíše NA MÍSTĚ (updateRow) — dřív smazání + nový zápis,
+  // a když druhý krok selhal, transakce zmizela. Při chybě zůstane formulář
+  // otevřený s vyplněnými údaji a nic se netváří jako uložené.
   try {
-    if (isEdit) {
-      // GAS neumí update na místě → smaž starý řádek (dle id) a přidej
-      // nový (stejný vzor jako u opakovaných plateb v recurring.js).
-      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Transakce', txId: old.id }) });
-    }
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: [row] }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    if (isEdit) state.txs[state.editIdx] = tx; else state.txs.push(tx);
+    if (isEdit) await postJson({ action: 'updateRow', sheet: 'Transakce', id: old.id, values: row });
+    else await postJson({ sheet: 'Transakce', values: [row] });
   } catch(e) {
-    toast('Chyba zápisu: '+e.message,'err');
-    if (isEdit) state.txs[state.editIdx] = tx; else state.txs.push(tx); // aspoň lokálně, ať uživatel nepřijde o zadaná data
+    toast('Neuloženo: ' + e.message, 'err');
+    return;
   }
+  if (isEdit) state.txs[state.editIdx] = tx; else state.txs.push(tx);
   closeTx(); boot(); toast(isEdit ? 'Transakce upravena' : 'Uloženo do Sheets','ok'); state.editIdx = null;
 
   // Upload receipt if file was selected in modal
@@ -231,12 +229,7 @@ export async function saveTx() {
     toast('Nahrávám účtenku...');
     try {
       const base64 = await fileToBase64(_modalReceiptFile);
-      const rr = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'uploadReceipt', txId, fileName: _modalReceiptFile.name, mimeType: _modalReceiptFile.type, data: base64 })
-      });
-      const rd = await rr.json();
-      if (rd.error) throw new Error(rd.error);
+      const rd = await postJson({ action: 'uploadReceipt', txId, fileName: _modalReceiptFile.name, mimeType: _modalReceiptFile.type, data: base64 });
       const t = state.txs.find(t => t.id === txId);
       if (t) t.uctenka = rd.url || '';
       boot();
@@ -251,12 +244,12 @@ export async function removeReceipt() {
   if (!confirm('Opravdu chceš odebrat účtenku?')) return;
   const t = state.txs[state.editIdx];
   if (!t) return;
-  t.uctenka = '';
-  document.getElementById('fReceiptInfo').innerHTML = '';
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'removeReceipt', txId: t.id }) });
+    await postJson({ action: 'removeReceipt', txId: t.id });
+    t.uctenka = '';
+    document.getElementById('fReceiptInfo').innerHTML = '';
     toast('Účtenka odebrána', 'ok');
-  } catch(e) { toast('Chyba: ' + e.message, 'err'); }
+  } catch(e) { toast('Odebrání se nepodařilo: ' + e.message, 'err'); }
   boot();
 }
 
@@ -285,18 +278,7 @@ export async function onReceiptFile(e) {
 
   try {
     const base64 = await fileToBase64(file);
-    const r = await fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'uploadReceipt',
-        txId: tx.id,
-        fileName: file.name,
-        mimeType: file.type,
-        data: base64
-      })
-    });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'uploadReceipt', txId: tx.id, fileName: file.name, mimeType: file.type, data: base64 });
     tx.uctenka = d.url || '';
     renderTx();
     toast('Účtenka nahrána','ok');

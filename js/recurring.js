@@ -1,6 +1,7 @@
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
-import { czk, parseRow } from './utils.js';
+import { czk, parseRow, postJson } from './utils.js';
+import { newId, recRow, normMonth } from './tx-core.js';
 import { toast, boot } from './app.js';
 
 /* ── LOAD RECURRING TEMPLATES ── */
@@ -31,7 +32,7 @@ function parseRecRow(r) {
     frekvence: r[9] || 'monthly',
     den: parseInt(r[10])||1,
     aktivni: r[11] !== 'FALSE' && r[11] !== false,
-    posledniGen: r[12] || '',
+    posledniGen: normMonth(r[12]),
     bilance: r[13] === true || (r[13]||'').toString().toUpperCase() === 'TRUE'
   };
 }
@@ -143,19 +144,16 @@ export async function saveRecTemplate() {
   const editIdx = state._recEditIdx;
   const isEdit = editIdx !== null && editIdx !== undefined;
   const old = isEdit ? state.recurring[editIdx] : null;
-  const id = isEdit ? old.id : 'REC-' + String(state.recurring.length+1).padStart(3,'0');
+  const id = isEdit ? old.id : 'REC-' + newId('', '', '').slice(1);
   const aktivni = isEdit ? (old.aktivni ? 'TRUE' : 'FALSE') : 'TRUE';
   const posledniGen = isEdit ? (old.posledniGen || '') : '';
 
   const row = [id, popis, castka, typ, kat, osoba, ucet, metoda, proti, 'monthly', den, aktivni, posledniGen, bilance];
 
   try {
-    if (isEdit) {
-      // Delete old row then append updated row
-      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Recurring', txId: old.id }) });
-    }
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Recurring', values: [row] }) });
-  } catch(e) { toast('Chyba zápisu: '+e.message,'err'); }
+    if (isEdit) await postJson({ action: 'updateRow', sheet: 'Recurring', id: old.id, values: row });
+    else await postJson({ sheet: 'Recurring', values: [row] });
+  } catch(e) { toast('Neuloženo: ' + e.message, 'err'); return; }
 
   if (isEdit) {
     state.recurring[editIdx] = parseRecRow(row);
@@ -172,7 +170,11 @@ export async function saveRecTemplate() {
 export async function toggleRec(i) {
   const rec = state.recurring[i];
   if (!rec) return;
-  rec.aktivni = !rec.aktivni;
+  // Dřív jen v paměti — po obnovení stránky se vypnutá šablona vrátila a dál generovala.
+  const next = { ...rec, aktivni: !rec.aktivni };
+  try { await postJson({ action: 'updateRow', sheet: 'Recurring', id: rec.id, values: recRow(next) }); }
+  catch (e) { toast('Nepodařilo se uložit: ' + e.message, 'err'); return; }
+  rec.aktivni = next.aktivni;
   renderRecList();
   toast(rec.aktivni ? 'Šablona aktivována' : 'Šablona deaktivována', 'ok');
 }
@@ -181,13 +183,13 @@ export async function deleteRec(i) {
   const rec = state.recurring[i];
   if (!rec) return;
   if (!confirm(`Smazat šablonu „${rec.popis}"?`)) return;
-  state.recurring.splice(i, 1);
-  renderRecList();
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteRow', sheet: 'Recurring', txId: rec.id }) });
+    await postJson({ action: 'deleteRow', sheet: 'Recurring', txId: rec.id });
+    state.recurring.splice(state.recurring.indexOf(rec), 1);
+    renderRecList();
     toast('Šablona smazána', 'ok');
   } catch(e) {
-    toast('Lokálně smazáno, chyba sync se Sheets', 'err');
+    toast('Smazání se nepodařilo: ' + e.message, 'err');
   }
 }
 
@@ -215,35 +217,34 @@ export async function autoGenerateRecurring() {
     r.aktivni && r.posledniGen !== curMonth && !alreadyGeneratedThisMonth(r, curMonthStr)
   );
   if (!active.length) return;
-  await _doGenerate(active, now, curMonth);
+  try { await _doGenerate(active, now, curMonth); } catch (e) { return; } // tichý běh — zkusí se při dalším otevření
   boot();
 }
 
-/* ── GENERATE TRANSACTIONS FOR CURRENT MONTH ── */
+/* ── GENERATE TRANSACTIONS FOR CURRENT MONTH ──
+   Zápis a značku „vygenerováno tento měsíc" (posledniGen) dělá server pod
+   zámkem (GAS appendRecurring) — dvě zařízení otevřená naráz ani úprava
+   vygenerované platby tak nic nevytvoří dvakrát. Lokálně se přidá jen to,
+   co server opravdu zapsal. */
 async function _doGenerate(active, now, curMonth) {
   const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const y = String(now.getFullYear());
   const m = String(now.getMonth()+1).padStart(2,'0');
-  const allRows = [];
-
-  for (const rec of active) {
+  const items = active.map(rec => {
     const d = String(Math.min(rec.den, 28)).padStart(2,'0');
     const datum = `${parseInt(m)}/${parseInt(d)}/${y}`;
     const mesic = `${mn[parseInt(m)]} ${y}`;
     const sign = rec.typ === 'Příjem' ? rec.castka : -rec.castka;
-    const newId = `${y}${m}${d}-R${String(state.txs.length + allRows.length + 1).padStart(3,'0')}`;
-    allRows.push([datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie,
-                  rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId,
-                  rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '',
-                  rec.bilance ? 'TRUE' : 'FALSE']);
-  }
-
-  allRows.forEach(row => { try { state.txs.push(parseRow(row)); } catch(e) {} });
-  try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Transakce', values: allRows }) });
-  } catch(e) {}
-  active.forEach(rec => { rec.posledniGen = curMonth; });
-  return allRows.length;
+    return { recId: rec.id, row: [datum, rec.popis, rec.castka, 'CZK', rec.ucet, rec.typ, rec.kategorie,
+      rec.osoba, rec.metoda, rec.protistrana, 'Opakující se', sign, mesic, y, newId(y, m, d, 'R'),
+      rec.typ === 'Výdaj' ? rec.castka : 0, rec.typ === 'Příjem' ? rec.castka : 0, sign, '',
+      rec.bilance ? 'TRUE' : 'FALSE'] };
+  });
+  const d = await postJson({ action: 'appendRecurring', month: curMonth, items });
+  const added = new Set(d.added || []);
+  items.filter(it => added.has(it.recId)).forEach(it => { try { state.txs.push(parseRow(it.row)); } catch(e) {} });
+  active.forEach(rec => { rec.posledniGen = curMonth; }); // i přeskočené: server je už má za tento měsíc
+  return added.size;
 }
 
 export async function generateRecurring() {
@@ -259,7 +260,9 @@ export async function generateRecurring() {
     return;
   }
 
-  const count = await _doGenerate(active, now, curMonth);
+  let count;
+  try { count = await _doGenerate(active, now, curMonth); }
+  catch (e) { toast('Generování selhalo: ' + e.message, 'err'); return; }
   boot();
   toast(`Vygenerováno ${count} opakujících se transakcí`, 'ok');
 }
