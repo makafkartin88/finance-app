@@ -1,12 +1,16 @@
 import { C, GAS_URL } from './config.js';
 import { state } from './state.js';
 
-/* Fetch listu z GAS s opakováním. Apps Script občas místo JSON vrátí HTML
-   chybovou stránku (redirect na script.googleusercontent.com skončí 404),
-   typicky když je skript vytížený. Jeden takový zásah dřív shodil celý load
-   do DEMO dat — proto se to párkrát zkusí znovu s prodlevou. Vrací
-   naparsovaný JSON, nebo hodí chybu po vyčerpání pokusů. */
-export async function fetchSheet(url, tries = 3) {
+// Firebase ID token přihlášeného posílá appka v každém požadavku, server
+// podle něj ověří, kdo volá (gas-update.js verifyCaller). Poskytovatele
+// nastaví auth.js — utils.js ho nesmí importovat přímo (auth sahá na DOM).
+let _tokenProvider = async () => '';
+export function setTokenProvider(fn) { _tokenProvider = fn; }
+
+/* GET s opakováním — jen jako záloha pro starší nasazení GAS bez akce
+   `read`. Apps Script občas místo JSON vrátí HTML chybovou stránku, typicky
+   když je vytížený, proto se to párkrát zkusí znovu. */
+async function getJson(url, tries = 3) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
@@ -22,18 +26,20 @@ export async function fetchSheet(url, tries = 3) {
   throw lastErr;
 }
 
-/* POST akce na GAS. Stejný problém jako u čtení: Apps Script občas vrátí
-   HTML chybovou stránku místo JSON — dřív to shodilo „Aktualizovat kurzy"
-   hláškou „Unexpected token '<'". `tries` > 1 jen pro akce, které jde
-   bezpečně zopakovat (aktualizace kurzů); nahrání souboru opakovat nesmí,
-   to by mohlo vytvořit duplikát. Chyba vrácená skriptem ({error}) se
-   neopakuje — je to odpověď, ne výpadek. */
+/* POST akce na GAS (všechna komunikace se serverem jde tudy). Apps Script
+   občas vrátí HTML chybovou stránku místo JSON — `tries` > 1 jen pro akce,
+   které jde bezpečně zopakovat (čtení, aktualizace kurzů); nahrání souboru
+   opakovat nesmí, mohlo by vzniknout dvakrát. Chyba vrácená skriptem
+   ({error}) se neopakuje — je to odpověď, ne výpadek. */
 export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
+  let token = '';
+  try { token = (await _tokenProvider()) || ''; } catch (e) { /* nepřihlášen */ }
+  const body = JSON.stringify(token ? { ...payload, idToken: token } : payload);
   let lastErr;
   for (let i = 0; i < tries; i++) {
     let d;
     try {
-      const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
+      const r = await fetch(GAS_URL, { method: 'POST', body });
       const t = await r.text();
       if (t.trim().startsWith('<')) throw new Error(`Apps Script vrátil HTML (HTTP ${r.status}) místo dat — zkus to za chvíli`);
       d = JSON.parse(t);
@@ -48,13 +54,30 @@ export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
   throw lastErr;
 }
 
-/* Načte VÍC listů jedním požadavkem (?sheets=A,B,C). Apps Script se
-   u každého požadavku rozjíždí několik sekund, takže devět samostatných
-   fetchů byl hlavní důvod pomalého startu. Vrací { NazevListu: {values|error} }.
-   Když GAS ještě neumí `sheets` (starší nasazení), spadne to zpátky na
-   postupné načítání po jednom — appka funguje i před redeployem. */
+/* Čtení listů přes POST — token je v těle požadavku, ne v URL.
+   null = starší nasazení GAS, které akci `read` nezná. */
+export async function readSheets(names, tries = 3) {
+  const d = await postJson({ action: 'read', sheets: names }, { tries });
+  return d && d.sheets ? d.sheets : null;
+}
+
+// Jeden list; `url` ve tvaru GAS_URL + '?sheet=Nazev' (kvůli stávajícím voláním).
+export async function fetchSheet(url, tries = 3) {
+  const m = String(url).match(/[?&]sheet=([^&]+)/);
+  if (m) {
+    const name = decodeURIComponent(m[1]);
+    const s = await readSheets([name], tries);
+    if (s) return s[name] || { error: 1 };
+  }
+  return getJson(url, tries);
+}
+
+/* Načte VÍC listů jedním požadavkem. Apps Script se u každého požadavku
+   rozjíždí několik sekund, takže devět samostatných fetchů byl hlavní důvod
+   pomalého startu. Vrací { NazevListu: {values|error} }. */
 const BATCH_CAP_KEY = 'gasBatchUnsupported';
 export async function fetchSheets(names) {
+  try { const viaPost = await readSheets(names); if (viaPost) return viaPost; } catch (e) { /* zkusit GET níže */ }
   // Starší nasazení parametr `sheets` ignoruje a vrátí { values } prvního
   // listu. Takový pokus stojí stejně dlouho jako běžný požadavek (~15 s),
   // takže se výsledek zapamatuje — jinak by se ta daň platila při každém
@@ -64,13 +87,13 @@ export async function fetchSheets(names) {
   try {
     capKey = BATCH_CAP_KEY + ':' + GAS_URL.slice(-24);
     if (localStorage.getItem(capKey) !== '1') {
-      const d = await fetchSheet(GAS_URL + '?sheets=' + encodeURIComponent(names.join(',')));
+      const d = await getJson(GAS_URL + '?sheets=' + encodeURIComponent(names.join(',')));
       if (d && d.sheets) return d.sheets;
       localStorage.setItem(capKey, '1'); // umí jen po jednom
     }
   } catch (e) { /* výpadek → zkusit po jednom níže */ }
   const out = {};
-  for (const n of names) out[n] = await fetchSheet(GAS_URL + '?sheet=' + n).catch(() => ({ error: 1 }));
+  for (const n of names) out[n] = await getJson(GAS_URL + '?sheet=' + n).catch(() => ({ error: 1 }));
   return out;
 }
 

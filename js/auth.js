@@ -1,5 +1,6 @@
 import { AUTH_USERS, sha256Hex } from './config.js';
 import { state } from './state.js';
+import { setTokenProvider } from './utils.js';
 
 let firebaseApp = null;
 let firebaseAuth = null;
@@ -131,6 +132,8 @@ export function isInvestmentsAllowed() {
 export function isSalaryAllowed() {
   return !!_allowed?.canSeeSalary;
 }
+
+setTokenProvider(getIdToken);
 
 // Expose login to window for onclick handler
 window._firebaseLogin = loginWithGoogle;

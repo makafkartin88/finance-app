@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { GAS_URL } from './config.js';
+import { postJson } from './utils.js';
 import { getCurrentPerson } from './auth.js';
 import { toast } from './app.js';
 import { parseDocRow, visibleDocs, filterDocs, folderCounts, folderSuggestions, docsFromSheet,
@@ -148,9 +148,7 @@ function readBase64(file) {
 }
 
 async function postGas(payload) {
-  const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
-  const d = await r.json();
-  if (d.error) throw new Error(d.error);
+  const d = await postJson(payload);
   return d;
 }
 

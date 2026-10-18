@@ -152,15 +152,13 @@ export async function confirmInvImport() {
   });
 
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'upsertFund', values: rows }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'upsertFund', values: rows });
     toast(`Uloženo ${rows.length} fondů`, 'ok');
     document.getElementById('invImpResults').style.display = 'none';
     closeInvImport();
     // Import z banneru → označit výpis za vyřízený, ať se nenabízí donekonečna
     if (state._ucpImportFileId) {
-      try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markUcpImported', fileId: state._ucpImportFileId }) }); } catch (e2) {}
+      try { await postJson({ action: 'markUcpImported', fileId: state._ucpImportFileId }); } catch (e2) {}
       state._ucpImportFileId = null;
       await loadUcpNotification({ auto: false });
     }

@@ -520,7 +520,7 @@ function showMbankBanner(idx) {
 // stejný měsíc připomíná po každém načtení appky).
 export async function mbankMarkDone(filename) {
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markMbankImported', filename }) });
+    await postJson({ action: 'markMbankImported', filename });
   } catch(e) {}
   await loadMbankNotification();
 }
@@ -529,9 +529,7 @@ export async function mbankMarkDone(filename) {
 export async function mbankCheckMail() {
   toast('Kontroluji poštu…');
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'checkMbankEmail' }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'checkMbankEmail' });
     await loadMbankNotification();
     const n = (state._mbankPending || []).length;
     toast(d.added ? `Nalezeno ${d.added} nových výpisů · čeká ${n}` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové výpisy'), 'ok');
@@ -547,9 +545,7 @@ export async function importMbankFromDrive(fileId, filename) {
   status.style.display = 'block';
   status.innerHTML = `<div class="card" style="text-align:center;padding:20px;color:var(--text2)">Stahuji výpis z Disku…</div>`;
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'getDriveFile', fileId }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'getDriveFile', fileId });
     const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
     state._mbankImportFile = filename;
     await procMbankFile(bin.buffer, d.name || filename);

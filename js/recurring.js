@@ -1,7 +1,7 @@
 import { escHtml, jsArg, safeUrl } from './html.js';
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
-import { czk, parseRow, postJson } from './utils.js';
+import { czk, parseRow, postJson, fetchSheet } from './utils.js';
 import { newId, recRow, normMonth } from './tx-core.js';
 import { toast, boot } from './app.js';
 
@@ -10,7 +10,7 @@ import { toast, boot } from './app.js';
 // bez ni si loader nacte list sam (rucni volani, reload).
 export async function loadRecurring(pre) {
   try {
-    const d = pre || await (await fetch(GAS_URL + '?sheet=Recurring')).json();
+    const d = pre || await fetchSheet(GAS_URL + '?sheet=Recurring');
     if (d.error) throw new Error(d.error);
     const rows = (d.values || []).slice(1);
     state.recurring = rows.filter(r => r.length > 2 && r[0]).map(parseRecRow);

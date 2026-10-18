@@ -1,20 +1,19 @@
 import { state } from './state.js';
-import { GAS_URL } from './config.js';
+import { postJson } from './utils.js';
 import { toast } from './app.js';
 
 // Bilance a čísla účtů (uctyMartin/uctySarka/bilanceUcet/bilanceOffset) jsou
 // sdílené mezi zařízeními — zapisují se do listu Nastaveni přes GAS.
 export async function persistCfg() {
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+    await postJson({
       action: 'saveSettings',
       bilanceOffset: state.cfg.bilanceOffset,
       bilanceUcet: state.cfg.bilanceUcet,
       uctyMartin: state.cfg.uctyMartin,
       uctySarka: state.cfg.uctySarka
-    }) });
-    const d = await r.json();
-    return !d.error;
+    });
+    return true;
   } catch (e) { return false; }
 }
 

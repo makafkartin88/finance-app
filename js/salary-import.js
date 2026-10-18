@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { toast } from './app.js';
 import { renderSalary, MONTH_NAMES } from './salary.js';
 import { isSalaryAllowed } from './auth.js';
-import { fetchSheet } from './utils.js';
+import { fetchSheet, postJson } from './utils.js';
 
 /* ── HESLO K PDF (fixní, uložené lokálně — nikdy do repa) ── */
 function getSalaryPwd() { return localStorage.getItem('salaryPdfPwd') || ''; }
@@ -216,9 +216,7 @@ export async function confirmSalaryImport() {
   row[MZ.multisport] = p.multisport; row[MZ.soubor] = p.soubor || '';
 
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ sheet: 'Mzdy', values: [row] }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ sheet: 'Mzdy', values: [row] });
     state.salary.push(parseSalaryRow(row));
     state.salary.sort((a, b) => a.id.localeCompare(b.id));
     toast(`Páska ${id} uložena`, 'ok');
@@ -226,7 +224,7 @@ export async function confirmSalaryImport() {
     // jméno souboru je u Harnolu vždy stejné, takže by matchování podle
     // jména omylem označilo všechny pásky s tím názvem najednou)
     if (state._salaryImportFileId) {
-      try { await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markPayslipImported', fileId: state._salaryImportFileId }) }); } catch(e) {}
+      try { await postJson({ action: 'markPayslipImported', fileId: state._salaryImportFileId }); } catch(e) {}
       state._salaryImportFile = null;
       state._salaryImportFileId = null;
       await loadPayslipNotification(); // další čekající páska (pokud je) se rovnou nabídne
@@ -269,7 +267,7 @@ export function parseSalaryRow(r) {
 export async function loadSalaryData(pre, preImport) {
   if (!isSalaryAllowed()) return;
   try {
-    const d = pre || await (await fetch(GAS_URL + '?sheet=Mzdy')).json();
+    const d = pre || await fetchSheet(GAS_URL + '?sheet=Mzdy');
     if (d.error) { state.salary = []; state._salaryLoaded = true; renderSalary(); return; } // list ještě neexistuje
     // GAS list auto-vytváří bez hlavičky — filtrovat dle tvaru id, ne slice(1)
     state.salary = (d.values || []).map(parseSalaryRow).filter(s => s.id);
@@ -342,7 +340,7 @@ export function hideSalaryBanner() {
 // Označí pásku za vyřízenou v sheetu → z nabídky zmizí natrvalo.
 export async function salaryMarkDone(fileId) {
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'markPayslipImported', fileId }) });
+    await postJson({ action: 'markPayslipImported', fileId });
   } catch(e) {}
   await loadPayslipNotification();
 }
@@ -351,9 +349,7 @@ export async function salaryMarkDone(fileId) {
 export async function salaryCheckMail() {
   toast('Kontroluji poštu…');
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'checkPayslipEmail' }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'checkPayslipEmail' });
     await loadPayslipNotification();
     const n = (state._salaryPending || []).length;
     toast(d.added ? `Nalezeno ${d.added} nových pásek · čeká ${n}` : (n ? `Nic nového · čeká ${n}` : 'Žádné nové pásky'), 'ok');
@@ -367,9 +363,7 @@ export async function importPayslipFromDrive(fileId, filename) {
   status.style.display = 'block';
   status.innerHTML = `<div class="card" style="text-align:center;padding:20px;color:var(--text2)">Stahuji pásku z Disku…</div>`;
   try {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'getDriveFile', fileId }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
+    const d = await postJson({ action: 'getDriveFile', fileId });
     const bin = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
     state._salaryImportFile = filename;
     state._salaryImportFileId = fileId;
