@@ -72,6 +72,16 @@ function doPost(e) {
       return handleDeleteRow(body);
     }
 
+    // ── UPDATE ROW (úprava transakce / šablony na místě, pod zámkem) ──
+    if (body.action === 'updateRow') {
+      return handleUpdateRow(body);
+    }
+
+    // ── OPAKOVANÉ PLATBY: vygenerovat měsíc pod zámkem + zapsat posledniGen ──
+    if (body.action === 'appendRecurring') {
+      return handleAppendRecurring(body);
+    }
+
     // ── REMOVE RECEIPT ──
     if (body.action === 'removeReceipt') {
       return handleRemoveReceipt(body);
@@ -139,29 +149,14 @@ function doPost(e) {
     if (body.action === 'deleteDocument') return handleDeleteDocument(body);
 
     var sheetName = body.sheet || null;
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet;
-
-    if (sheetName) {
-      sheet = ss.getSheetByName(sheetName);
-      if (!sheet) {
-        // Automaticky vytvoří list pokud neexistuje
-        sheet = ss.insertSheet(sheetName);
-      }
-    } else {
-      // Výchozí — první list (transakce)
-      sheet = ss.getSheets()[0];
-    }
-
-    var values = body.values;
-    if (values && values.length > 0) {
-      for (var i = 0; i < values.length; i++) {
-        sheet.appendRow(values[i]);
-      }
-    }
-
-    return ContentService.createTextOutput(JSON.stringify({ success: true }))
-      .setMimeType(ContentService.MimeType.JSON);
+    // Pod zámkem (souběžné zápisy z více zařízení) a jedním setValues.
+    return withLock(function () {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = sheetName ? (ss.getSheetByName(sheetName) || ss.insertSheet(sheetName)) : ss.getSheets()[0];
+      var rows = padRows(body.values || []);
+      if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      return jsonOut({ success: true, added: rows.length });
+    });
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -192,27 +187,93 @@ function handleRemoveReceipt(body) {
 
 // ── DELETE ROW BY TX ID ──
 function handleDeleteRow(body) {
-  try {
+  return withLock(function () {
     var sheetName = body.sheet || 'Transakce';
-    var txId = body.txId;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(sheetName) || ss.getSheets()[0];
-    var data = sheet.getDataRange().getValues();
-    // Transakce: ID at column O (index 14); Recurring: ID at column A (index 0)
-    var idCol = (sheetName === 'Recurring') ? 0 : 14;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][idCol] === txId) {
-        sheet.deleteRow(i + 1);
-        return ContentService.createTextOutput(JSON.stringify({ success: true }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ error: 'Řádek nenalezen' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+    var i = findRowById(sheet, idColFor(sheetName), body.txId);
+    if (i < 0) return jsonOut({ error: 'Řádek nenalezen' });
+    sheet.deleteRow(i + 1);
+    return jsonOut({ success: true });
+  });
+}
+
+// ── ZÁPIS: společné pomocníky ──
+var ID_COL = { Transakce: 14, Recurring: 0 };
+function idColFor(sheetName) { return ID_COL.hasOwnProperty(sheetName) ? ID_COL[sheetName] : 14; }
+
+function findRowById(sheet, idCol, id) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) if (String(data[i][idCol]) === String(id)) return i;
+  return -1;
+}
+
+// Text začínající "=", "+" nebo "@" by Sheets uložil jako vzorec — data z PDF
+// a e-mailů nejsou důvěryhodná, apostrof je vynutí jako obyčejný text.
+function safeCell(v) { return (typeof v === 'string' && /^[=+@]/.test(v)) ? "'" + v : v; }
+
+// Řádky různé délky → obdélník pro setValues.
+function padRows(values) {
+  var w = 0;
+  values.forEach(function (r) { w = Math.max(w, r.length); });
+  return values.map(function (r) { var o = r.map(safeCell); while (o.length < w) o.push(''); return o; });
+}
+
+function withLock(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return jsonOut({ error: 'Tabulka se právě upravuje jinde, zkus to za chvíli.' });
+  try { return fn(); }
+  catch (err) { return jsonOut({ error: err.message }); }
+  finally { lock.releaseLock(); }
+}
+
+// Úprava řádku NA MÍSTĚ. Dřív se dělalo smazání + nový zápis dvěma požadavky
+// — když druhý selhal, transakce zmizela.
+function handleUpdateRow(body) {
+  return withLock(function () {
+    var sheetName = body.sheet || 'Transakce';
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    if (!sheet) return jsonOut({ error: 'List ' + sheetName + ' neexistuje' });
+    var i = findRowById(sheet, idColFor(sheetName), body.id);
+    if (i < 0) return jsonOut({ error: 'Řádek nenalezen (možná ho mezitím někdo smazal).' });
+    var row = (body.values || []).map(safeCell);
+    sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
+    return jsonOut({ success: true });
+  });
+}
+
+function normMonthGas(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Europe/Prague', 'yyyy-MM');
+  return String(v || '').slice(0, 7);
+}
+
+// Opakované platby: transakce za měsíc se zapíšou NA SERVERU pod zámkem a
+// u šablony se rovnou poznamená posledniGen. Dřív si to appka pamatovala jen
+// v paměti — po úpravě vygenerované platby nebo na druhém zařízení se
+// generovala znovu.
+function handleAppendRecurring(body) {
+  return withLock(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var rec = ss.getSheetByName('Recurring');
+    var tx = ss.getSheetByName('Transakce') || ss.getSheets()[0];
+    if (!rec) return jsonOut({ error: 'List Recurring neexistuje' });
+    var month = String(body.month || '');
+    var data = rec.getDataRange().getValues();
+    var byId = {};
+    for (var i = 1; i < data.length; i++) byId[String(data[i][0])] = i;
+    var rows = [], added = [];
+    (body.items || []).forEach(function (it) {
+      var k = byId[String(it.recId)];
+      if (k === undefined || normMonthGas(data[k][12]) === month) return;
+      rows.push(it.row);
+      added.push(String(it.recId));
+      rec.getRange(k + 1, 13).setNumberFormat('@').setValue(month);
+      data[k][12] = month;
+    });
+    var padded = padRows(rows);
+    if (padded.length) tx.getRange(tx.getLastRow() + 1, 1, padded.length, padded[0].length).setValues(padded);
+    return jsonOut({ success: true, added: added });
+  });
 }
 
 // ── RECEIPT UPLOAD TO GOOGLE DRIVE ──
@@ -280,9 +341,23 @@ function handleMarkMbankImported(body) {
 }
 
 // ── GET DRIVE FILE AS BASE64 (pro import výplatní pásky bez CORS) ──
+// Soubor smí být jen ze složek appky (Finance-*, i podsložky dokumentů) —
+// jinak by endpoint vydal cokoli z celého Disku, stačí znát ID.
+function isAppFile(file) {
+  var queue = [], it = file.getParents();
+  while (it.hasNext()) queue.push({ f: it.next(), d: 0 });
+  while (queue.length) {
+    var x = queue.shift();
+    if (/^Finance-/.test(x.f.getName())) return true;
+    if (x.d < 2) { var up = x.f.getParents(); while (up.hasNext()) queue.push({ f: up.next(), d: x.d + 1 }); }
+  }
+  return false;
+}
+
 function handleGetDriveFile(body) {
   try {
     var file = DriveApp.getFileById(body.fileId);
+    if (!isAppFile(file)) return jsonOut({ error: 'Soubor není ze složek aplikace.' });
     var blob = file.getBlob();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -782,6 +857,10 @@ function refreshNav(e) {
     // CODYA a CONSEQ → fronta, kterou appka při otevření sama naimportuje.
     // Z tlačítka v appce se nevolá — zdržovalo by to aktualizaci kurzů.
     if (e && e.triggerUid) {
+      try { log.push('Záloha: ' + weeklyBackup()); }
+      catch (eb) { failed.push('ZÁLOHA'); log.push('Záloha selhala: ' + eb.message); }
+      try { healthCheck().forEach(function (w) { failed.push('KONTROLA'); log.push(w); }); }
+      catch (eh) { log.push('Kontrola zdrojů selhala: ' + eh.message); }
       try {
         var mail = checkInvestEmail();
         log.push('Pošta: ' + (mail.added || 0) + ' nových výpisů' + (mail.fixed ? ', ' + mail.fixed + ' rozbaleno dodatečně' : ''));
@@ -931,12 +1010,51 @@ function histIso(v) {
   return s;
 }
 
+// ── TÝDENNÍ ZÁLOHA TABULKY ── kopie do Finance-Backup, drží se 12 posledních.
+function weeklyBackup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var it = DriveApp.getFoldersByName('Finance-Backup');
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder('Finance-Backup');
+  var name = 'Finance zaloha ' + Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd');
+  DriveApp.getFileById(ss.getId()).makeCopy(name, folder);
+  var files = [], f = folder.getFiles();
+  while (f.hasNext()) files.push(f.next());
+  files.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
+  files.slice(12).forEach(function (x) { x.setTrashed(true); });
+  return name;
+}
+
+// ── KONTROLA ZDROJŮ ── pásky a výpisy chodí měsíčně, kurzy fondů s ~1–3 měs.
+// zpožděním. Když je nejnovější záznam starší než limit, nejspíš se něco
+// rozbilo (jiný odesílatel, změněný web) — ať se to nepozná až po půl roce.
+function healthCheck() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), warn = [], now = new Date();
+  var days = function (d) { return Math.floor((now - d) / 864e5); };
+  [['MzdyImport', 40, 'výplatní páska'], ['MbankImport', 40, 'výpis mBank']].forEach(function (c) {
+    var sh = ss.getSheetByName(c[0]);
+    if (!sh) return;
+    var v = sh.getDataRange().getValues(), last = null;
+    for (var i = 1; i < v.length; i++) { var d = v[i][3] instanceof Date ? v[i][3] : null; if (d && (!last || d > last)) last = d; }
+    if (last && days(last) > c[1]) warn.push('Poslední ' + c[2] + ' přišla před ' + days(last) + ' dny (' + Utilities.formatDate(last, 'Europe/Prague', 'd.M.yyyy') + ').');
+  });
+  var fondy = ss.getSheetByName('Fondy');
+  if (fondy) {
+    var fv = fondy.getDataRange().getValues();
+    for (var j = 1; j < fv.length; j++) {
+      if (fv[j][0] !== 'CODYA' && fv[j][0] !== 'CONSEQ') continue;
+      var nd = fv[j][9] instanceof Date ? fv[j][9] : parseCzDate(fv[j][9]);
+      if (nd && days(nd) > 120) warn.push('Kurz ' + fv[j][1] + ' je starý ' + days(nd) + ' dní.');
+    }
+  }
+  return warn;
+}
+
 // Upozornění na selhání scrapu (jen když umíme zjistit adresu — bez PII v repu)
 function sendNavAlert(failed, log) {
   try {
     var to = Session.getEffectiveUser().getEmail();
     if (!to) return; // ruční volání z web appky nemá uživatele → přeskočit (stav je v JSON)
-    MailApp.sendEmail(to, 'Finance App: aktualizace kurzů selhala',
+    MailApp.sendEmail(to, 'Finance App: týdenní kontrola našla problém',
       'Nepodařilo se načíst: ' + failed.join(', ') + '\n\nLog:\n' + log.join('\n') +
       '\n\nZkontroluj, jestli nezměnily web CODYA/CONSEQ (parser v NAV_SOURCES).');
   } catch (e) {}
