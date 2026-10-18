@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { CATEGORY_COLORS } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, getMonths, base } from './utils.js';
@@ -24,8 +25,8 @@ export function renderMetricRows(id, rows, empty = 'Žádná data') {
 export function renderInsightRows(id, rows, empty = 'Žádná data') {
   const el = document.getElementById(id); if (!el) return;
   el.innerHTML = rows.map(r => r.badge
-    ? `<div class="insight insight-badged"><div><strong>${r.title}</strong><span>${r.body}</span></div><strong class="insight-badge" style="color:${r.badge.color}">${r.badge.text}</strong></div>`
-    : `<div class="insight"><strong>${r.title}</strong><span>${r.body}</span></div>`
+    ? `<div class="insight insight-badged"><div><strong>${escHtml(r.title)}</strong><span>${escHtml(r.body)}</span></div><strong class="insight-badge" style="color:${r.badge.color}">${escHtml(r.badge.text)}</strong></div>`
+    : `<div class="insight"><strong>${escHtml(r.title)}</strong><span>${escHtml(r.body)}</span></div>`
   ).join('') || `<div class="empty">${empty}</div>`;
 }
 
@@ -54,7 +55,7 @@ function renderCatBars(cat) {
     const name = cpDisplay[norm] || norm;
     const pct = Math.round((val/maxV)*100);
     return `<div class="hbar-row">
-      <div class="hbar-name" title="${name}">${name}</div>
+      <div class="hbar-name" title="${escHtml(name)}">${escHtml(name)}</div>
       <div class="hbar-track"><div class="hbar-fill" style="width:${pct}%;background:${color}"></div></div>
       <div class="hbar-val">${czk(val)}</div>
     </div>`;
@@ -261,15 +262,14 @@ export function renderCharts() {
   const avgEl = document.getElementById('avgCats');
   avgEl.innerHTML = catsSorted.slice(0,6).map(([cat,val]) => {
     const color = CATEGORY_COLORS[cat] || 'var(--text3)';
-    const esc = cat.replace(/'/g, "\\'");
-    return `<div class="avg-cat-row${cat === _catFilter ? ' sel' : ''}" data-cat="${cat}" onclick="selectCatFilter('${esc}')" title="Zobrazit protistrany: ${cat}"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${cat}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
+    return `<div class="avg-cat-row${cat === _catFilter ? ' sel' : ''}" data-cat="${escHtml(cat)}" onclick="selectCatFilter(${jsArg(cat)})" title="Zobrazit protistrany: ${escHtml(cat)}"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${escHtml(cat)}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
   }).join('') || '<div class="empty">Žádné kategorie</div>';
 
   // Protistrany dle kategorie — interaktivní kombinovaná karta
   const chipsEl = document.getElementById('catChips');
   if (chipsEl) {
     chipsEl.innerHTML = catsSorted.map(([cat]) =>
-      `<button class="cat-chip${cat === _catFilter ? ' active' : ''}" onclick="selectCatFilter('${cat.replace(/'/g,'\\\'')}')">${cat}</button>`
+      `<button class="cat-chip${cat === _catFilter ? ' active' : ''}" onclick="selectCatFilter(${jsArg(cat)})">${escHtml(cat)}</button>`
     ).join('');
   }
   renderCatBars(_catFilter);

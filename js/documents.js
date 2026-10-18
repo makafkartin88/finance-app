@@ -2,8 +2,9 @@ import { state } from './state.js';
 import { GAS_URL } from './config.js';
 import { getCurrentPerson } from './auth.js';
 import { toast } from './app.js';
-import { parseDocRow, visibleDocs, filterDocs, folderCounts, escHtml, jsArg, folderSuggestions, docsFromSheet,
+import { parseDocRow, visibleDocs, filterDocs, folderCounts, folderSuggestions, docsFromSheet,
          validateUpload, canonicalFolder, stripExt, VISIBILITY, DOK } from './documents-core.js';
+import { escHtml, jsArg } from './html.js';
 
 let _query = '';
 let _folder = null; // null = všechny složky, '' = bez složky

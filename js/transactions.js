@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
 import { fmtD, czk, parseRow, base, postJson } from './utils.js';
 import { newId } from './tx-core.js';
@@ -51,9 +52,9 @@ export function renderTx() {
     const bilMark = (t.bilance && t.typ !== 'Vyrovnání') ? ' <span class="av" title="Počítá se do bilance Martin ↔ Šárka">⇄</span>' : '';
     const amtTxt = (t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`) + bilMark;
     const txIdx = state.txs.indexOf(t);
-    const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
-    const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td><span class="badge b-${t.typ}">${t.typ}</span></td><td style="color:var(--text2)">${t.ucet}</td><td style="color:var(--text2)">${t.metoda}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${esc(t.protistrana)}">${t.protistrana}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
+    const rcpt = safeUrl(t.uctenka) ? `<a href="${safeUrl(t.uctenka)}" target="_blank" rel="noopener noreferrer" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
+    const e = escHtml;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${e(t.popis)}">${e(t.popis)}</td><td><span class="badge b-${e(t.kategorie)}">${e(t.kategorie)}</span></td><td><span class="badge b-${e(t.typ)}">${e(t.typ)}</span></td><td style="color:var(--text2)">${e(t.ucet)}</td><td style="color:var(--text2)">${e(t.metoda)}</td><td class="td-trunc" style="color:var(--text2);max-width:120px" title="${e(t.protistrana)}">${e(t.protistrana)}</td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td><td style="text-align:center"><button class="btn btnsm del-btn" onclick="deleteTx(${txIdx})" title="Smazat transakci">➖</button></td></tr>`;
   }).join('');
   document.getElementById('txEmpty').style.display = list.length ? 'none' : 'block';
   attachRowInteractions(document.getElementById('txBody'));
@@ -120,7 +121,7 @@ export function openTx(idx) {
     document.getElementById('fBilance').checked = !!t.bilance;
     syncOsobaRow();
     if (t.uctenka) {
-      document.getElementById('fReceiptInfo').innerHTML = `<a href="${t.uctenka}" target="_blank" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
+      document.getElementById('fReceiptInfo').innerHTML = `<a href="${safeUrl(t.uctenka)}" target="_blank" rel="noopener noreferrer" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
     } else {
       document.getElementById('fReceiptInfo').innerHTML = '';
     }

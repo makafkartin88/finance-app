@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
 import { czk } from './utils.js';
 import { openTx } from './transactions.js';
@@ -133,8 +134,8 @@ function renderMultiSelectPopover(tableKey, col) {
   const selected = f[col];
   const items = values.map(v => `
     <label class="cp-row">
-      <input type="checkbox" data-value="${v.replace(/"/g,'&quot;')}" ${(selected.size === 0 || selected.has(v)) ? 'checked' : ''}/>
-      <span>${v}</span>
+      <input type="checkbox" data-value="${escHtml(v)}" ${(selected.size === 0 || selected.has(v)) ? 'checked' : ''}/>
+      <span>${escHtml(v)}</span>
     </label>`).join('');
   popoverEl.innerHTML = `
     <div class="cp-title">${col === 'kategorie' ? 'Kategorie' : 'Osoba'}</div>

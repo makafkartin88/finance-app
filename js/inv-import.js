@@ -4,7 +4,7 @@ import { toast } from './app.js';
 import { loadInvestmentData } from './investments.js';
 import { fetchSheet, postJson } from './utils.js';
 import { DEFAULT_EUR, detectStatement, planAutoImport, buildFundRow } from './inv-parse.js';
-import { escHtml, jsArg } from './documents-core.js';
+import { escHtml, jsArg } from './html.js';
 
 // Heslo k zaheslovaným výpisům (UniCredit) — jen localStorage, nikdy v kódu
 const INV_PWD_KEY = 'invPdfPwd';
@@ -114,7 +114,7 @@ function showInvPreview(funds, provider, docType, fname) {
   const rows = funds.map((f, i) => {
     const focus = FUND_FOCUS[f.isin] || '';
     return `<tr>
-      <td style="min-width:150px"><input id="if-nazev-${i}" type="text" value="${(f.nazev || '').replace(/"/g, '&quot;')}"/><div style="font-size:10px;color:var(--text3);margin-top:2px">${f.isin} · ${focus}</div></td>
+      <td style="min-width:150px"><input id="if-nazev-${i}" type="text" value="${escHtml(f.nazev || '')}"/><div style="font-size:10px;color:var(--text3);margin-top:2px">${escHtml(f.isin)} · ${escHtml(focus)}</div></td>
       <td><select id="if-mena-${i}" class="sel" style="font-size:11px;padding:3px 6px"><option ${f.mena === 'CZK' ? 'selected' : ''}>CZK</option><option ${f.mena === 'EUR' ? 'selected' : ''}>EUR</option></select></td>
       <td><input id="if-pocet-${i}" type="number" value="${f.pocetCP || ''}" style="width:90px"/></td>
       <td><input id="if-nakup-${i}" type="number" step="0.0001" value="${f.nakupNAV || ''}" style="width:80px" placeholder="—"/></td>
@@ -125,7 +125,7 @@ function showInvPreview(funds, provider, docType, fname) {
   }).join('');
   rs.innerHTML = `<div class="card" style="padding:0;margin-top:14px">
     <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <div style="font-size:13px"><strong>${provider}</strong> · ${docType}<div style="font-size:11px;color:var(--text3)">${fname} — ${funds.length} fondů · zkontroluj a uprav hodnoty</div></div>
+      <div style="font-size:13px"><strong>${escHtml(provider)}</strong> · ${escHtml(docType)}<div style="font-size:11px;color:var(--text3)">${escHtml(fname)} — ${funds.length} fondů · zkontroluj a uprav hodnoty</div></div>
       <div style="display:flex;gap:8px"><button class="btnp" onclick="confirmInvImport()">💾 Uložit do portfolia</button><button class="btn" onclick="document.getElementById('invImpResults').style.display='none'">Zrušit</button></div>
     </div>
     <div class="tw"><table><thead><tr><th>Fond</th><th>Měna</th><th>Počet CP</th><th>Nákup NAV</th><th>Aktuál NAV</th><th>Kurz EUR</th><th>Hotovost CZK</th></tr></thead><tbody>${rows}</tbody></table></div>

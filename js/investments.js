@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { FOND, FUND_FOCUS, INV_PROVIDERS } from './config.js';
 import { state } from './state.js';
 import { czk, fetchSheet, fetchSheets, postJson } from './utils.js';
@@ -281,7 +282,7 @@ function renderOverview() {
     <div class="donut-wrap">${donutSVG(segs, totAlloc, _allocSel)}
       <div class="donut-legend">${segs.map(s => {
         const sel = _allocSel === s.key;
-        return `<div class="portfolio-row alloc-row${sel ? ' sel' : ''}" onclick="invAllocPick('${s.key}')" style="cursor:pointer${sel ? `;border-left:3px solid ${s.color};padding-left:8px;background:var(--surface2)` : ''}"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`;
+        return `<div class="portfolio-row alloc-row${sel ? ' sel' : ''}" onclick="invAllocPick(${jsArg(s.key)})" style="cursor:pointer${sel ? `;border-left:3px solid ${s.color};padding-left:8px;background:var(--surface2)` : ''}"><div><div class="portfolio-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${escHtml(s.label)}</div></div><div class="portfolio-val">${czk(s.val)}</div><div class="portfolio-pct">${Math.round(s.val / totAlloc * 100)} %</div></div>`;
       }).join('')}</div>
     </div>
   </div>`;
@@ -308,7 +309,7 @@ function donutSVG(segs, total, selKey) {
     const isSel = selKey === s.key;
     const dim = selKey && !isSel;
     const sw = isSel ? 25 : 20;
-    const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${dash}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 70 70)" onclick="invAllocPick('${s.key}')" style="cursor:pointer"${dim ? ' opacity="0.3"' : ''}><title>${s.label}: ${czk(s.val)} · ${Math.round(frac * 100)} %${selKey ? ' — klik zruší filtr' : ' — klik = filtr grafu'}</title></circle>`;
+    const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${dash}" stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 70 70)" onclick="invAllocPick(${jsArg(s.key)})" style="cursor:pointer"${dim ? ' opacity="0.3"' : ''}><title>${s.label}: ${czk(s.val)} · ${Math.round(frac * 100)} %${selKey ? ' — klik zruší filtr' : ' — klik = filtr grafu'}</title></circle>`;
     off -= len;
     return arc;
   }).join('');
@@ -463,7 +464,7 @@ function comparisonCard() {
 
   const body = rows.sort((x, y) => y.ret - x.ret).map(r => `
     <div class="metric-row">
-      <div><strong><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.color};margin-right:6px"></span>${r.label}</strong>
+      <div><strong><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.color};margin-right:6px"></span>${escHtml(r.label)}</strong>
       <span>${r.skew ? `⚠️ poslední ocenění ${czFromIso(r.from)}` : czFromIso(r.from)} → ${czFromIso(r.to)}${r.bench ? '' : ` · ${czk(r.valFrom)} → ${czk(r.valTo)}`}</span></div>
       <strong class="${r.ret >= 0 ? 'ap' : 'an'}">${pctTxt(r.ret * 100)}${r.ret === best && rows.length > 1 ? ' 🏆' : ''}</strong>
     </div>`).join('');
@@ -559,7 +560,7 @@ function lineChartSVG(series) {
     return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}
       <text x="${(x(t2i[last.t]) - 2).toFixed(1)}" y="${(y(last.v) - 5).toFixed(1)}" text-anchor="end" font-size="9" font-weight="700" fill="${s.color}">${last.v.toFixed(0)}</text>`;
   }).join('');
-  const legend = `<div class="legend" style="margin-top:8px">${withPts.map(s => `<div class="li"><div class="ld" style="background:${s.color};border-radius:3px"></div>${s.label}${s.pts.length === 1 ? ' (1 bod)' : ''}</div>`).join('')}</div>`;
+  const legend = `<div class="legend" style="margin-top:8px">${withPts.map(s => `<div class="li"><div class="ld" style="background:${s.color};border-radius:3px"></div>${escHtml(s.label)}${s.pts.length === 1 ? ' (1 bod)' : ''}</div>`).join('')}</div>`;
 
   // kontext pro hover
   _lineCtx = { series: withPts, allDates, t2i, W, H, padL, padR, padT, padB, lo, hi, xN };
@@ -610,7 +611,7 @@ function attachChartHover() {
       if (!val) return;
       dots += `<circle cx="${cx.toFixed(1)}" cy="${yPix(val.v).toFixed(1)}" r="3.5" fill="${s.color}" stroke="var(--surface)" stroke-width="1.5"/>`;
       const dpct = val.v - 100;
-      rows += `<div style="display:flex;gap:8px;justify-content:space-between"><span style="color:${s.color};font-weight:600">${s.label}</span><span>${dpct >= 0 ? '+' : ''}${dpct.toFixed(1).replace('.', ',')} %${s.money ? ' · ' + czk(Math.round(val.raw)) : ''}</span></div>`;
+      rows += `<div style="display:flex;gap:8px;justify-content:space-between"><span style="color:${s.color};font-weight:600">${escHtml(s.label)}</span><span>${dpct >= 0 ? '+' : ''}${dpct.toFixed(1).replace('.', ',')} %${s.money ? ' · ' + czk(Math.round(val.raw)) : ''}</span></div>`;
     });
     dotsG.innerHTML = dots;
     tip.innerHTML = `<div style="font-weight:700;margin-bottom:3px">${czFromIso(date)}</div>${rows}`;
@@ -666,7 +667,7 @@ function renderProviderView(tabId, provider) {
     const navCol = p >= 0 ? 'ap' : 'an';       // NAV % — barva dle vlastního znaménka
     const czkCol = dCZK >= 0 ? 'ap' : 'an';    // Δ CZK (po kurzu) — může mít jiné znaménko než NAV %
     return `<tr>
-      <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${focus}${f.mena === 'EUR' ? ' · EUR' : ''}</div></td>
+      <td><div style="font-weight:600">${escHtml(f.nazev || f.isin)}</div><div style="font-size:11px;color:var(--text3)">${escHtml(focus)}${f.mena === 'EUR' ? ' · EUR' : ''}</div></td>
       <td style="color:var(--text2);white-space:nowrap">${f.nakupDatum || '—'}</td>
       <td style="color:var(--text2);white-space:nowrap">${f.pocetCP.toLocaleString('cs-CZ')}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { minimumFractionDigits: 4 }) : '—'}</td>
@@ -800,7 +801,7 @@ function renderT212View() {
     const pplCol = pplCzk >= 0 ? 'ap' : 'an';
     const fxCol = fxCzk >= 0 ? 'ap' : 'an';
     return `<tr>
-      <td><div style="font-weight:600">${f.nazev || f.isin}</div><div style="font-size:11px;color:var(--text3)">${f.isin} · ${f.mena || mena}</div></td>
+      <td><div style="font-weight:600">${escHtml(f.nazev || f.isin)}</div><div style="font-size:11px;color:var(--text3)">${escHtml(f.isin)} · ${escHtml(f.mena || mena)}</div></td>
       <td style="color:var(--text2);white-space:nowrap">${(f.pocetCP || 0).toLocaleString('cs-CZ', { maximumFractionDigits: 4 })}</td>
       <td style="white-space:nowrap">${f.nakupNAV ? f.nakupNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>
       <td style="white-space:nowrap">${f.aktualNAV ? f.aktualNAV.toLocaleString('cs-CZ', { maximumFractionDigits: 2 }) : '—'}</td>

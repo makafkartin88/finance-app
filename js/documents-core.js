@@ -10,17 +10,9 @@ export function normText(s) {
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-export function escHtml(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// Hodnota jako argument inline handleru: onclick="fn(${jsArg(x)})".
-// Samotné escHtml nestačí — prohlížeč entity v atributu dekóduje dřív, než
-// JS běží, takže '&#39;' by z řetězce zase vyskočilo.
-export function jsArg(s) {
-  return escHtml(JSON.stringify(String(s ?? '')));
-}
+// Escapování je sdílené s celou appkou — viz html.js.
+export { escHtml, jsArg } from './html.js';
+import { escHtml } from './html.js';
 
 export function stripExt(name) {
   const i = name.lastIndexOf('.');

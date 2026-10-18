@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
@@ -68,7 +69,7 @@ export function renderDash() {
   const maxC = sorted[0]?.[1] || 1;
   const colors = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Doprava:'var(--blue)',Zábava:'var(--purple)',Zdraví:'var(--red)',Investice:'#378ADD',Ostatní:'var(--text3)'};
   document.getElementById('catBars').innerHTML = sorted.map(([c,v]) =>
-    `<div class="crow${state.drill.cat === c ? ' sel' : ''}" onclick="drillC('${c}')" title="Filtrovat: ${c}"><div class="cname">${c}</div><div class="ctrack"><div class="cfill" style="width:${Math.round((v/maxC)*100)}%;background:${colors[c]||'var(--text3)'}"></div></div><div class="cval">${czk(v)}</div></div>`
+    `<div class="crow${state.drill.cat === c ? ' sel' : ''}" onclick="drillC(${jsArg(c)})" title="Filtrovat: ${escHtml(c)}"><div class="cname">${escHtml(c)}</div><div class="ctrack"><div class="cfill" style="width:${Math.round((v/maxC)*100)}%;background:${colors[c]||'var(--text3)'}"></div></div><div class="cval">${czk(v)}</div></div>`
   ).join('') || '<div class="empty">Žádné výdaje</div>';
 
   // Table
@@ -97,9 +98,9 @@ export function renderDash() {
     const bilMark = (t.bilance && t.typ !== 'Vyrovnání') ? ' <span class="av" title="Počítá se do bilance Martin ↔ Šárka">⇄</span>' : '';
     const amtTxt = (t.typ === 'Vyrovnání' ? `⇄ ${czk(t.castka)}` : `${t.typ === 'Příjem' ? '+' : '-'}${czk(t.castka)}`) + bilMark;
     const txIdx = state.txs.indexOf(t);
-    const rcpt = t.uctenka ? `<a href="${t.uctenka}" target="_blank" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
-    const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${esc(t.popis)}${t.protistrana ? ' · '+t.protistrana : ''}">${t.popis}</td><td><span class="badge b-${t.kategorie}">${t.kategorie}</span></td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td></tr>`;
+    const rcpt = safeUrl(t.uctenka) ? `<a href="${safeUrl(t.uctenka)}" target="_blank" rel="noopener noreferrer" class="rcpt-link" title="Zobrazit účtenku">📎</a>` : `<button class="btn btnsm rcpt-add" onclick="triggerReceiptUpload(${txIdx})" title="Nahrát účtenku">+</button>`;
+    const e = escHtml;
+    return `<tr data-idx="${txIdx}"><td style="color:var(--text2);white-space:nowrap">${fmtD(t.datum)}</td><td class="td-trunc" title="${e(t.popis)}${t.protistrana ? ' · ' + e(t.protistrana) : ''}">${e(t.popis)}</td><td><span class="badge b-${e(t.kategorie)}">${e(t.kategorie)}</span></td><td style="text-align:center">${rcpt}</td><td class="${cls}" style="white-space:nowrap">${amtTxt}</td></tr>`;
   }).join('');
   document.getElementById('recentEmpty').style.display = list.length ? 'none' : 'block';
   attachRowInteractions(document.getElementById('recentBody'));

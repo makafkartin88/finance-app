@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
 import { parseRow, fetchSheet, postJson } from './utils.js';
@@ -315,9 +316,10 @@ function showMbankPreview(rows, fname) {
       const dispDate = p.length === 3
         ? `${p[2]}-${String(p[0]).padStart(2,'0')}-${String(p[1]).padStart(2,'0')}`
         : dup.datum;
-      const info = [dispDate, dup.popis, dup.protistrana, `${dup.castka} Kč`, dup.ucet, dup.kategorie].filter(Boolean).join(' · ');
-      const openBtn = dup.id
-        ? `<button onclick="openEdit('${dup.id}')" style="margin-left:10px;font-size:11px;padding:2px 8px;cursor:pointer;background:var(--amber-text);color:#fff;border:none;border-radius:4px;white-space:nowrap">Otevřít →</button>`
+      const info = escHtml([dispDate, dup.popis, dup.protistrana, `${dup.castka} Kč`, dup.ucet, dup.kategorie].filter(Boolean).join(' · '));
+      // openEdit bere INDEX transakce (dřív se sem posílalo id → TypeError).
+      const openBtn = state.txs.indexOf(dup) >= 0
+        ? `<button onclick="openEdit(${state.txs.indexOf(dup)})" style="margin-left:10px;font-size:11px;padding:2px 8px;cursor:pointer;background:var(--amber-text);color:#fff;border:none;border-radius:4px;white-space:nowrap">Otevřít →</button>`
         : '';
       dupDetailRow = `<tr id="mbdup-${i}" style="display:none"><td></td><td colspan="5" style="background:var(--amber-bg);padding:6px 12px;font-size:12px;color:var(--text1);border-bottom:1px solid var(--border)"><span style="color:var(--amber-text);font-weight:600">Existující:</span> ${info}${openBtn}</td></tr>`;
     }
@@ -329,8 +331,8 @@ function showMbankPreview(rows, fname) {
     </td>
     <td><input id="mbd-${i}" type="date" value="${r.datum}" style="min-width:130px"/></td>
     <td>
-      <input id="mbs-${i}" type="text" value="${r.popis}" style="min-width:150px;margin-bottom:4px"/>
-      <input id="mbi-${i}" type="text" value="${r.protistrana}" placeholder="Protistrana" style="min-width:150px"/>
+      <input id="mbs-${i}" type="text" value="${escHtml(r.popis)}" style="min-width:150px;margin-bottom:4px"/>
+      <input id="mbi-${i}" type="text" value="${escHtml(r.protistrana)}" placeholder="Protistrana" style="min-width:150px"/>
     </td>
     <td>
       <select id="mbt-${i}" class="sel" style="font-size:11px;padding:3px 6px;margin-bottom:4px">
@@ -338,12 +340,12 @@ function showMbankPreview(rows, fname) {
         <option ${r.typ==='Příjem'?'selected':''}>Příjem</option>
       </select>
       <select id="mbk-${i}" class="sel" style="font-size:11px;padding:3px 6px">
-        ${cats.map(c => `<option ${c===r.kategorie?'selected':''}>${c}</option>`).join('')}
+        ${cats.map(c => `<option ${c===r.kategorie?'selected':''}>${escHtml(c)}</option>`).join('')}
       </select>
     </td>
     <td style="text-align:center">
       <input type="checkbox" id="mbb-${i}" ${r.bilance ? 'checked' : ''} title="Počítat do bilance Martin ↔ Šárka"/>
-      ${r._cpAcc ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">${r._cpAcc}</div>` : ''}
+      ${r._cpAcc ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">${escHtml(r._cpAcc)}</div>` : ''}
     </td>
     <td><input id="mbm-${i}" type="number" min="0" step="0.01" value="${r.castka}" style="min-width:90px"/></td>
   </tr>${dupDetailRow}`;
@@ -351,7 +353,7 @@ function showMbankPreview(rows, fname) {
 
   results.innerHTML = `<div class="card" style="padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
-      <div style="font-size:14px;font-weight:700;margin-bottom:6px">Nalezeno ${rows.length} transakcí — ${fname}</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:6px">Nalezeno ${rows.length} transakcí — ${escHtml(fname)}</div>
       ${dupNote}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btnp" onclick="confirmMbankImport()">Uložit zaškrtnuté</button>
@@ -488,12 +490,11 @@ function showMbankBanner(idx) {
   if (!banner || !cur) return;
   state._mbankImportFile = cur.filename;
   state._mbankPendingIdx = idx;
-  const esc = s => String(s).replace(/'/g, "\\'");
   // Rozbalovátko jen když je co vybírat; omezené na 12 nejnovějších, aby se
   // z něj ani po letech nestal nekonečný seznam.
   const picker = list.length > 1
     ? `<select class="sel" style="font-size:11px;padding:3px 6px" onchange="mbankPickPending(this.value)">
-        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${[p.label, p.acct].filter(Boolean).join(' · ') || p.filename}</option>`).join('')}
+        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escHtml([p.label, p.acct].filter(Boolean).join(' · ') || p.filename)}</option>`).join('')}
        </select>` : '';
 
   banner.style.display = 'flex';
@@ -501,16 +502,16 @@ function showMbankBanner(idx) {
     <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
       <span style="font-size:20px">📄</span>
       <div>
-        <div style="font-size:13px;font-weight:600">Výpis z mBank k importu${cur.label ? ' — ' + cur.label : ''}${cur.acct ? ` (${cur.acct})` : ''}</div>
-        <div style="font-size:11px;color:var(--text2)">${cur.filename}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
+        <div style="font-size:13px;font-weight:600">Výpis z mBank k importu${cur.label ? ' — ' + escHtml(cur.label) : ''}${cur.acct ? ` (${escHtml(cur.acct)})` : ''}</div>
+        <div style="font-size:11px;color:var(--text2)">${escHtml(cur.filename)}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap">
       ${picker}
       ${cur.fileId
-        ? `<button class="btnp btnsm" onclick="importMbankFromDrive('${esc(cur.fileId)}','${esc(cur.filename)}')">Načíst a zobrazit návrh →</button>`
+        ? `<button class="btnp btnsm" onclick="importMbankFromDrive(${jsArg(cur.fileId)},${jsArg(cur.filename)})">Načíst a zobrazit návrh →</button>`
         : `<button class="btnp btnsm" onclick="openMbankImport()">Importovat →</button>`}
-      <button class="btn btnsm" onclick="mbankMarkDone('${esc(cur.filename)}')" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
+      <button class="btn btnsm" onclick="mbankMarkDone(${jsArg(cur.filename)})" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
       <button class="btn btnsm" onclick="hideMbankBanner()" title="Skrýt jen teď">✕</button>
     </div>`;
 }

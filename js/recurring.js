@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { GAS_URL } from './config.js';
 import { state } from './state.js';
 import { czk, parseRow, postJson } from './utils.js';
@@ -57,8 +58,8 @@ function renderRecList() {
   el.innerHTML = list.map((r, i) => `
     <div class="rec-row">
       <div class="rec-info">
-        <div class="rec-name">${r.popis} <span class="badge b-${r.kategorie}">${r.kategorie}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${r.typ}</span>${r.bilance ? ' <span style="font-size:11px;color:var(--purple)" title="Počítá se do bilance Martin ↔ Šárka">⇄ bilance</span>' : ''}</div>
-        <div class="rec-detail">${czk(r.castka)} · ${r.ucet} · den ${r.den}</div>
+        <div class="rec-name">${escHtml(r.popis)} <span class="badge b-${escHtml(r.kategorie)}">${escHtml(r.kategorie)}</span> <span style="font-size:11px;color:${r.typ==='Příjem'?'var(--green)':r.typ==='Vyrovnání'?'var(--purple)':'var(--red)'}">${escHtml(r.typ)}</span>${r.bilance ? ' <span style="font-size:11px;color:var(--purple)" title="Počítá se do bilance Martin ↔ Šárka">⇄ bilance</span>' : ''}</div>
+        <div class="rec-detail">${czk(r.castka)} · ${escHtml(r.ucet)} · den ${escHtml(r.den)}</div>
       </div>
       <div class="rec-actions">
         <span class="rec-status ${r.aktivni ? 'rec-on' : 'rec-off'}">${r.aktivni ? 'Aktivní' : 'Neaktivní'}</span>

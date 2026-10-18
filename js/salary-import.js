@@ -1,3 +1,4 @@
+import { escHtml, jsArg, safeUrl } from './html.js';
 import { GAS_URL, MZ } from './config.js';
 import { state } from './state.js';
 import { toast } from './app.js';
@@ -314,11 +315,10 @@ function showSalaryBanner(idx) {
   const list = state._salaryPending || [];
   const cur = list[idx];
   if (!banner || !cur) return;
-  const esc = s => String(s).replace(/'/g, "\\'");
   // Rozbalovátko jen když je co vybírat; omezené na 12 nejnovějších.
   const picker = list.length > 1
     ? `<select class="sel" style="font-size:11px;padding:3px 6px" onchange="salaryPickPending(this.value)">
-        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${periodLabel(p.period) || p.filename}</option>`).join('')}
+        ${list.slice(0, 12).map((p, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${escHtml(periodLabel(p.period) || p.filename)}</option>`).join('')}
        </select>` : '';
 
   banner.style.display = 'flex';
@@ -326,11 +326,11 @@ function showSalaryBanner(idx) {
     <span style="font-size:18px">💵</span>
     <div style="flex:1;min-width:180px">
       <div style="font-weight:600;font-size:13px">Výplatní páska k importu${cur.period ? ' — ' + periodLabel(cur.period) : ''}</div>
-      <div style="font-size:12px;color:var(--text2)">${cur.filename}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
+      <div style="font-size:12px;color:var(--text2)">${escHtml(cur.filename)}${list.length > 1 ? ` · čeká ${list.length}` : ''}</div>
     </div>
     ${picker}
-    <button class="btnp btnsm" onclick="importPayslipFromDrive('${esc(cur.fileId)}','${esc(cur.filename)}')">Importovat</button>
-    <button class="btn btnsm" onclick="salaryMarkDone('${esc(cur.fileId)}')" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
+    <button class="btnp btnsm" onclick="importPayslipFromDrive(${jsArg(cur.fileId)},${jsArg(cur.filename)})">Importovat</button>
+    <button class="btn btnsm" onclick="salaryMarkDone(${jsArg(cur.fileId)})" title="Skrýt natrvalo — už nebude nabízeno">✓ Už mám</button>
     <button class="btn btnsm" onclick="hideSalaryBanner()" title="Skrýt jen teď">✕</button>`;
 }
 
