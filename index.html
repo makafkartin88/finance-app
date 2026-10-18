@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Odkud smí stránka načítat skripty a kam smí posílat data. I kdyby se do
+     appky dostal cizí kód, data (hesla k PDF, transakce) neodešle jinam než
+     na Google (GAS, Firebase). Nový externí zdroj → přidat sem. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.googleapis.com https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>Finance — Martin & Šárka</title>
 <link rel="stylesheet" href="css/styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -332,7 +336,7 @@
             <span class="plink-mono">CY</span>
             <span class="plink-body"><span class="plink-name">CODYA</span><span class="plink-cta">Otevřít portfolio <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 7.5 7.5 2.5M3.5 2.5h4v4"/></svg></span></span>
           </a>
-          <a class="plink" style="--pl-c:var(--green)" href="https://www.conseq.cz/muj-conseq/detail-smlouvy/4171136435/tab1" target="_blank" rel="noopener noreferrer">
+          <a class="plink" style="--pl-c:var(--green)" href="https://www.conseq.cz/muj-conseq/" target="_blank" rel="noopener noreferrer">
             <span class="plink-mono">CQ</span>
             <span class="plink-body"><span class="plink-name">CONSEQ</span><span class="plink-cta">Otevřít portfolio <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 7.5 7.5 2.5M3.5 2.5h4v4"/></svg></span></span>
           </a>
@@ -449,17 +453,17 @@
           </div>
           <div class="fg" style="margin-top:12px">
             <label>Spořicí účet mBank (vyloučit z importu)</label>
-            <input type="text" id="sBilanceUcet" placeholder="670100-2230152615/6210"/>
+            <input type="text" id="sBilanceUcet" placeholder="670100-1234567890/6210"/>
             <div class="fhint">Převody na/z tohoto účtu se přeskočí při importu PDF výpisů z mBank.</div>
           </div>
           <div class="fg" style="margin-top:12px">
             <label>Účty Martina</label>
-            <textarea id="sUctyMartin" rows="3" placeholder="123456-1234567890/0800&#10;2379078011/3030"></textarea>
+            <textarea id="sUctyMartin" rows="3" placeholder="123456-1234567890/0800&#10;1111111111/3030"></textarea>
             <div class="fhint">Jedno číslo účtu na řádek (klidně víc variant).</div>
           </div>
           <div class="fg" style="margin-top:12px">
             <label>Účty Šárky</label>
-            <textarea id="sUctySarka" rows="3" placeholder="000000-2379078011/3030"></textarea>
+            <textarea id="sUctySarka" rows="3" placeholder="000000-2222222222/3030"></textarea>
             <div class="fhint">Při importu z mBank se převod na/z těchto účtů automaticky označí „do bilance" a přiřadí se odesílateli. Předvyplnění jde v náhledu přepnout.</div>
           </div>
           <button class="btnp" style="margin-top:14px" onclick="saveSettings()">Uložit nastavení</button>

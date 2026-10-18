@@ -45,7 +45,7 @@ async function readPdf(arrayBuffer, interactive) {
   // UniCredit PDF bývá zaheslované — heslo se zeptá jednou a uloží se do
   // localStorage (repo je veřejné, takže nikdy do kódu).
   const savedPwd = localStorage.getItem(INV_PWD_KEY) || '';
-  const task = pdfjsLib.getDocument({ data: arrayBuffer, password: savedPwd || undefined });
+  const task = pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false, password: savedPwd || undefined });
   let usedPwd = savedPwd;
   const pwdFail = new Promise((_, reject) => {
     task.onPassword = (updateCallback, reason) => {

@@ -52,7 +52,7 @@ async function procMbankFile(src, srcName) {
       || localStorage.getItem(MBANK_PWD_KEY) || '';
 
     const arrayBuffer = src instanceof ArrayBuffer ? src : await src.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password: password || undefined });
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false, password: password || undefined });
 
     let usedPwd = password;
     loadingTask.onPassword = (updateCallback, reason) => {
@@ -91,8 +91,8 @@ async function procMbankFile(src, srcName) {
 }
 
 /* ── ČÍSLA ÚČTŮ (rozpoznání převodů Martin ↔ Šárka) ──
-   Výpis uvádí protistranu ve tvaru "000000-2379078011/3030", uživatel si
-   ale v nastavení může zapsat "2379078011/3030" — normalizace obojí srovná
+   Výpis uvádí protistranu ve tvaru "000000-1111111111/3030", uživatel si
+   ale v nastavení může zapsat "1111111111/3030" — normalizace obojí srovná
    (zahodí mezery a vedoucí nuly v předčíslí i čísle). */
 const ACCT_RE = /(?:(\d{1,6})-)?(\d{2,10})\/(\d{4})/;
 function normAccount(s) {
@@ -177,7 +177,7 @@ export function parseMbankItems(items) {
       // 2) Any incoming transfer where counterparty account is own mBank account (670100-xxxxxxxx/6210)
       const mainUp = mainDesc.toUpperCase();
       const contAccount = cont[1] || '';
-      const bilUcet = (state.cfg.bilanceUcet || '670100-2230152615/6210').trim();
+      const bilUcet = (state.cfg.bilanceUcet || '').trim();
       const isOwnAccount = bilUcet ? contAccount.startsWith(bilUcet) : /^670100-\d+\/6210/.test(contAccount);
       if (mainUp.startsWith('VLASTNÍ PŘEVOD')) { i = j; continue; }
       if (isOwnAccount && (

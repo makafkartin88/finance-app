@@ -102,7 +102,7 @@ export async function loadSheets() {
    místo aby se tiše vynulovaly. */
 function applyNastaveni(nR) {
   const row = (nR && nR.values && nR.values[1]) || null;
-  const hasServerAccounts = row && (row[1] || row[2] || row[3]);
+  const hasServerAccounts = row && row.some(v => v !== '' && v != null);
   if (hasServerAccounts) {
     if (row[0] !== '' && row[0] != null) state.cfg.bilanceOffset = Number(row[0]) || 0;
     state.cfg.bilanceUcet = row[1] || state.cfg.bilanceUcet;

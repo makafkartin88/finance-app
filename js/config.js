@@ -57,9 +57,16 @@ export const DEFAULT_LIMITS = {Bydlení:20000,Jídlo:15000,Doprava:5000,Zábava:
 export const CATEGORIES = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní'];
 export const CATEGORY_COLORS = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Doprava:'var(--blue)',Zábava:'var(--purple)',Zdraví:'var(--red)',Investice:'#378ADD',Ostatní:'var(--text3)',Příjem:'var(--green)'};
 
-// Firebase Auth whitelist — doplnit skutečné emaily
+// Firebase Auth whitelist. Klíč = SHA-256 e-mailu (malými písmeny) — repo je
+// veřejné, ať v něm adresy nejsou v čitelné podobě. Nový uživatel:
+//   node -e "console.log(require('crypto').createHash('sha256').update('x@y.cz').digest('hex'))"
 export const AUTH_USERS = {
-  'martinkafka9@gmail.com': { person: 'Martin', canSeeInvestments: true,  canSeeSalary: true },
-  'kafka@logio.cz':         { person: 'Martin', canSeeInvestments: true,  canSeeSalary: true },
-  'besarka@gmail.com':      { person: 'Šárka',  canSeeInvestments: false, canSeeSalary: false }
+  'd14e742dcc719565cd7a4766e3964f9680d3d8361a458f1f28a5f935afc1d1e6': { person: 'Martin', canSeeInvestments: true,  canSeeSalary: true },
+  'e77847f6d15bf76210fce7d8783776a4af7573c1837ae13765e1bf19a264a3f7': { person: 'Martin', canSeeInvestments: true,  canSeeSalary: true },
+  '1a3717be8c1b580778fbb4e309cbe70e3bcf6ca274f17e009673d96daf04b638': { person: 'Šárka',  canSeeInvestments: false, canSeeSalary: false }
 };
+
+export async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}

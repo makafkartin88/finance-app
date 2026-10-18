@@ -1,8 +1,9 @@
-import { AUTH_USERS } from './config.js';
+import { AUTH_USERS, sha256Hex } from './config.js';
 import { state } from './state.js';
 
 let firebaseApp = null;
 let firebaseAuth = null;
+let _allowed = null; // záznam z AUTH_USERS pro přihlášeného (dohledá se jednou při přihlášení)
 
 export function initAuth(onReady) {
   // Dynamicky načteme Firebase SDK
@@ -17,26 +18,20 @@ appId: "1:17807106462:web:6c41de1a0a2ab14207368f",
 measurementId: "G-BD3K8RTMZB"
 };
 
-    if (!firebaseConfig.apiKey) {
-      // Firebase ještě není nakonfigurovaný — spustíme appku bez auth
-      console.warn('Firebase Auth není nakonfigurovaný. Spouštím bez přihlášení.');
-      document.getElementById('authScreen').style.display = 'none';
-      onReady();
-      return;
-    }
-
     firebaseApp = firebase.initializeApp(firebaseConfig);
     firebaseAuth = firebase.auth();
 
-    firebaseAuth.onAuthStateChanged(user => {
+    firebaseAuth.onAuthStateChanged(async user => {
       if (user) {
         const email = user.email.toLowerCase();
-        const allowed = AUTH_USERS[email];
+        const allowed = AUTH_USERS[await sha256Hex(email)];
         if (!allowed) {
+          _allowed = null;
           firebaseAuth.signOut();
-          showAuthError('Přístup odmítnut. Tato aplikace je pouze pro Martin & Šárka.');
+          showAuthError('Přístup odmítnut. Tahle aplikace je jen pro Martina a Šárku.');
           return;
         }
+        _allowed = allowed;
         // Přihlášení úspěšné — výchozí pohled je vždy "Oba" (uživatel může přepnout)
         state.person = 'Oba';
         document.getElementById('authScreen').style.display = 'none';
@@ -60,9 +55,10 @@ measurementId: "G-BD3K8RTMZB"
       }
     });
   }).catch(err => {
+    // Bez přihlášení se appka NEspustí (dřív se při výpadku Firebase otevřela
+    // se vším viditelným).
     console.error('Chyba načítání Firebase:', err);
-    document.getElementById('authScreen').style.display = 'none';
-    onReady();
+    showAuthError('Nepodařilo se načíst přihlašování (Firebase). Zkontroluj připojení a obnov stránku.');
   });
 }
 
@@ -73,7 +69,7 @@ function showLoginScreen() {
   screen.querySelector('.authcard').innerHTML = `
     <div style="font-size:40px;margin-bottom:14px">&#128176;</div>
     <h2>Finance App</h2>
-    <p>Přihlášení pouze pro Martin & Šárka</p>
+    <p>Přihlášení jen pro Martina a Šárku</p>
     <button class="btnp" style="width:100%;padding:12px;font-size:14px;display:flex;align-items:center;justify-content:center;gap:10px" onclick="window._firebaseLogin()">
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
       Přihlásit se přes Google
@@ -105,9 +101,18 @@ async function loginWithGoogle() {
 }
 
 export function logout() {
-  if (firebaseAuth) {
-    firebaseAuth.signOut();
-  }
+  // Smazat z prohlížeče hesla k PDF, cache transakcí/investic i nastavení —
+  // po odhlášení na cizím/sdíleném zařízení nesmí nic zůstat.
+  try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+  _allowed = null;
+  if (firebaseAuth) firebaseAuth.signOut();
+}
+
+// Firebase ID token přihlášeného — posílá se na server (GAS), který podle něj
+// ověří, kdo volá (viz gas-update.js verifyCaller).
+export async function getIdToken() {
+  const u = getCurrentUser();
+  return u ? u.getIdToken() : '';
 }
 
 export function getCurrentUser() {
@@ -116,23 +121,15 @@ export function getCurrentUser() {
 
 // Jméno přihlášeného ('Martin'/'Šárka'); null = appka bez přihlášení (lokální vývoj).
 export function getCurrentPerson() {
-  const user = getCurrentUser();
-  if (!user) return null;
-  return AUTH_USERS[user.email.toLowerCase()]?.person || null;
+  return _allowed?.person || null;
 }
 
 export function isInvestmentsAllowed() {
-  const user = getCurrentUser();
-  if (!user) return true; // Pokud není auth, zobrazit vše
-  const allowed = AUTH_USERS[user.email.toLowerCase()];
-  return allowed?.canSeeInvestments ?? false;
+  return !!_allowed?.canSeeInvestments;
 }
 
 export function isSalaryAllowed() {
-  const user = getCurrentUser();
-  if (!user) return true; // Pokud není auth (lokální vývoj), zobrazit vše
-  const allowed = AUTH_USERS[user.email.toLowerCase()];
-  return allowed?.canSeeSalary ?? false;
+  return !!_allowed?.canSeeSalary;
 }
 
 // Expose login to window for onclick handler

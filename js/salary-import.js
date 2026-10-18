@@ -50,7 +50,7 @@ async function procSalaryFile(file, presetName) {
 
     const arrayBuffer = file instanceof ArrayBuffer ? file : await file.arrayBuffer();
     const fname = presetName || file.name || 'paska.pdf';
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, password: getSalaryPwd() || undefined });
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false, password: getSalaryPwd() || undefined });
 
     loadingTask.onPassword = (updateCallback, reason) => {
       const msg = reason === 2 ? 'Nesprávné heslo k pásce, zadej znovu:' : 'Zadej heslo k PDF výplatní pásky (zapamatuje se):';
