@@ -50,3 +50,22 @@ test('fetchSheet: čte přes POST read; starý GAS bez read → GET', async () =
   assert.deepEqual(await fetchSheet('x?sheet=Mzdy'), { values: [['g']] });
   assert.deepEqual(calls, ['POST', 'GET']);
 });
+
+test('fetchSheets: server odmítl přihlášení → žádný GET, chyba u každého listu', async () => {
+  const { fetchSheets } = await import('../js/utils.js');
+  const calls = [];
+  globalThis.fetch = async (u, o) => { calls.push(o ? 'POST' : 'GET');
+    return { status: 200, text: async () => '{"error":"Nepřihlášený požadavek","auth":true}' }; };
+  const r = await fetchSheets(['Transakce', 'Nastaveni']);
+  assert.deepEqual(calls, ['POST']);
+  assert.match(r.Nastaveni.error, /Nepřihlášený/);
+  assert.equal(Array.isArray(r.Nastaveni.values), false);
+});
+
+test('readSheets: zapamatuje, komu server ověřil přihlášení', async () => {
+  const { readSheets, serverAuth } = await import('../js/utils.js');
+  fakeFetch('{"sheets":{},"who":"Martin","enforced":false}');
+  await readSheets(['X']);
+  assert.equal(serverAuth.who, 'Martin');
+  assert.equal(serverAuth.enforced, false);
+});

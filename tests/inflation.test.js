@@ -34,3 +34,9 @@ test('CPI_CZ: souvislá řada od 2015-01', () => {
   assert.equal(CPI_CZ['2015-01'], 64.2);
   assert.equal(Object.keys(CPI_CZ).length >= 141, true);
 });
+
+test('cpiWith: měsíc z listu jako datum (ISO v UTC) se neposune', async () => {
+  const { cpiWith } = await import('../js/inflation-data.js');
+  const cpi = cpiWith([['mesic', 'index'], ['2026-09-30T22:00:00.000Z', 123.4]]);
+  assert.equal(cpi['2026-10'], 123.4);
+});

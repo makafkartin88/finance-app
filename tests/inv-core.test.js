@@ -51,7 +51,7 @@ test('fxOf: USD fond používá svůj kurz, ne 1 (dřív USD = CZK)', () => {
 
 test('mergeTopUp: dokoupení se přičte, nákupní cena vážená', () => {
   const ex = { investovanoCZK: 500000, nakupNAV: 1.0, nakupDatum: '15.4.2026' };
-  const m = mergeTopUp(ex, { castka: 210000, nakupNAV: 1.05, nakupDatum: '20.9.2026', pocetCP: 700000 });
+  const m = mergeTopUp(ex, { castka: 210000, nakupNAV: 1.05, nakupDatum: '20.9.2026', pocetCP: 700000, _statementDate: '30.9.2026' });
   assert.equal(m.castka, 710000);
   near(m.nakupNAV, 710000 / 700000);
   assert.equal(m.nakupDatum, '15.4.2026');
@@ -69,4 +69,13 @@ test('providerFlows: nákup každého fondu k jeho datu + hodnota k poslednímu 
   assert.equal(fl.length, 3);
   assert.equal(fl[2].amount, 2.1e6);
   near(xirr(fl), 0.10, 2e-3);
+});
+
+test('mergeTopUp: stejný (nebo starší) výpis podruhé → nepřičítat znovu', () => {
+  const ex = { investovanoCZK: 710000, nakupNAV: 1.0, nakupDatum: '15.4.2026', vypisDatum: '2026-09-30' };
+  const f = { castka: 210000, nakupNAV: 1.05, nakupDatum: '20.9.2026', pocetCP: 700000, _statementDate: '2026-09-30' };
+  assert.equal(mergeTopUp(ex, f), null);
+  assert.ok(mergeTopUp(ex, { ...f, _statementDate: '2026-12-31' }));
+  // bez data výpisu nelze poznat opakování → raději nic nepřičíst
+  assert.equal(mergeTopUp({ ...ex }, { ...f, _statementDate: '' }), null);
 });

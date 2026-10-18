@@ -66,13 +66,15 @@ function doPost(e) {
     // ── KDO VOLÁ (Firebase ID token) + oprávnění ──
     var who = verifyCaller(body.idToken);
     delete body.idToken;
-    if (authEnforced() && !who) return jsonOut({ error: 'Nepřihlášený požadavek — přihlas se v appce znovu.' });
+    if (authEnforced() && !who) return jsonOut({ error: 'Nepřihlášený požadavek — přihlas se v appce znovu.', auth: true });
     var denied = authorize(who, body);
     if (denied) return jsonOut({ error: denied });
 
     // ── ČTENÍ LISTŮ (POST, aby token nebyl v URL) ──
     if (body.action === 'read') {
-      return jsonOut({ sheets: readSheetsFor(who, body.sheets || []) });
+      // `who` = komu server přihlášení ověřil (null = neověřil). Appka to
+      // ukáže v Nastavení — podle toho se pozná, že jde zapnout AUTH_ENFORCE.
+      return jsonOut({ sheets: readSheetsFor(who, body.sheets || []), who: who ? who.person : null, enforced: authEnforced() });
     }
 
     // ── RECEIPT UPLOAD ──
@@ -158,8 +160,8 @@ function doPost(e) {
 
     // ── DOKUMENTY (Drive + list Dokumenty) ──
     if (body.action === 'uploadDocument') return handleUploadDocument(body);
-    if (body.action === 'updateDocument') return handleUpdateDocument(body);
-    if (body.action === 'deleteDocument') return handleDeleteDocument(body);
+    if (body.action === 'updateDocument') return handleUpdateDocument(body, who);
+    if (body.action === 'deleteDocument') return handleDeleteDocument(body, who);
 
     var sheetName = body.sheet || null;
     // Pod zámkem (souběžné zápisy z více zařízení) a jedním setValues.
@@ -205,7 +207,7 @@ function handleDeleteRow(body) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(sheetName) || ss.getSheets()[0];
     var i = findRowById(sheet, idColFor(sheetName), body.txId);
-    if (i < 0) return jsonOut({ error: 'Řádek nenalezen' });
+    if (i < 0) return rowNotFound(i);
     sheet.deleteRow(i + 1);
     return jsonOut({ success: true });
   });
@@ -276,8 +278,9 @@ var INVEST_ACTIONS = { upsertFund: 1, refreshNav: 1, refreshT212: 1, checkInvest
 function authorize(who, body) {
   if (!who) return '';
   var a = body.action, sh = body.sheet;
-  if ((SALARY_ACTIONS[a] || (!a && SALARY_SHEETS[sh])) && !who.salary) return 'Bez oprávnění (mzda).';
-  if ((INVEST_ACTIONS[a] || (!a && INVEST_SHEETS[sh])) && !who.investments) return 'Bez oprávnění (investice).';
+  // Jakákoli akce nad listem mzdy/investic (i updateRow/deleteRow), ne jen append.
+  if ((SALARY_ACTIONS[a] || (sh && SALARY_SHEETS[sh])) && !who.salary) return 'Bez oprávnění (mzda).';
+  if ((INVEST_ACTIONS[a] || (sh && INVEST_SHEETS[sh])) && !who.investments) return 'Bez oprávnění (investice).';
   return '';
 }
 
@@ -310,15 +313,55 @@ function readSheetsFor(who, names) {
 var ID_COL = { Transakce: 14, Recurring: 0, Mzdy: 0 };
 function idColFor(sheetName) { return ID_COL.hasOwnProperty(sheetName) ? ID_COL[sheetName] : 14; }
 
+// Index řádku s daným id; -1 = nenalezeno, -2 = víc řádků se stejným id
+// (staré id `length + 1` se po smazání opakovala) → raději odmítnout, než
+// přepsat nebo smazat jiný řádek. Od 0: list Mzdy může být bez hlavičky
+// (id hlavičky se s žádným skutečným id neshoduje).
 function findRowById(sheet, idCol, id) {
   var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
+  var found = -1;
+  for (var i = 0; i < data.length; i++) {
     var v = data[i][idCol];
     // Id měsíce 'YYYY-MM' (list Mzdy) si Sheets převede na datum.
     var key = v instanceof Date ? Utilities.formatDate(v, 'Europe/Prague', 'yyyy-MM') : String(v);
-    if (key === String(id)) return i;
+    if (key === String(id)) {
+      if (found >= 0) return -2;
+      found = i;
+    }
   }
-  return -1;
+  return found;
+}
+
+function rowNotFound(i) {
+  return jsonOut({ error: i === -2
+    ? 'V tabulce je víc řádků se stejným id — nic jsem neměnil. Týdenní údržba duplicity přečísluje (nebo spusť dedupeIds ručně).'
+    : 'Řádek nenalezen (možná ho mezitím někdo smazal).' });
+}
+
+// Přečísluje druhý a další výskyt stejného id v Transakce a Recurring
+// (pozůstatek starého `length + 1`). Idempotentní; běží v týdenním časovači.
+function dedupeIds() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var fixed = 0;
+  ['Transakce', 'Recurring'].forEach(function (name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    var col = idColFor(name);
+    var data = sheet.getDataRange().getValues();
+    var seen = {};
+    for (var i = 1; i < data.length; i++) {
+      var id = String(data[i][col] || '');
+      if (!id) continue;
+      if (seen[id]) {
+        var nid;
+        do { nid = id + '-d' + Math.floor(Math.random() * 0xffffff).toString(16); } while (seen[nid]);
+        sheet.getRange(i + 1, col + 1).setValue(nid);
+        seen[nid] = true;
+        fixed++;
+      } else seen[id] = true;
+    }
+  });
+  return fixed;
 }
 
 // Text začínající "=", "+" nebo "@" by Sheets uložil jako vzorec — data z PDF
@@ -348,7 +391,7 @@ function handleUpdateRow(body) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) return jsonOut({ error: 'List ' + sheetName + ' neexistuje' });
     var i = findRowById(sheet, idColFor(sheetName), body.id);
-    if (i < 0) return jsonOut({ error: 'Řádek nenalezen (možná ho mezitím někdo smazal).' });
+    if (i < 0) return rowNotFound(i);
     var row = (body.values || []).map(safeCell);
     sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
     return jsonOut({ success: true });
@@ -372,12 +415,18 @@ function handleAppendRecurring(body) {
     if (!rec) return jsonOut({ error: 'List Recurring neexistuje' });
     var month = String(body.month || '');
     var data = rec.getDataRange().getValues();
-    var byId = {};
-    for (var i = 1; i < data.length; i++) byId[String(data[i][0])] = i;
+    var byId = {}, dup = {};
+    for (var i = 1; i < data.length; i++) {
+      var rid = String(data[i][0]);
+      if (byId[rid] !== undefined) dup[rid] = true;
+      byId[rid] = i;
+    }
     var rows = [], added = [];
     (body.items || []).forEach(function (it) {
       var k = byId[String(it.recId)];
-      if (k === undefined || normMonthGas(data[k][12]) === month) return;
+      // Duplicitní id šablony → nevíme, ke které platba patří; přeskočit
+      // (týdenní dedupeIds je přečísluje a příště se vygenerují).
+      if (k === undefined || dup[String(it.recId)] || normMonthGas(data[k][12]) === month) return;
       rows.push(it.row);
       added.push(String(it.recId));
       rec.getRange(k + 1, 13).setNumberFormat('@').setValue(month);
@@ -474,6 +523,15 @@ function handleGetDriveFile(body, who) {
     if (!area) return jsonOut({ error: 'Soubor není ze složek aplikace.' });
     if (who && area === 'Finance-Vyplaty' && !who.salary) return jsonOut({ error: 'Bez oprávnění (mzda).' });
     if (who && /^Finance-Vypisy-(CP|Fondy)$/.test(area) && !who.investments) return jsonOut({ error: 'Bez oprávnění (investice).' });
+    // Zálohy = kopie celé tabulky (vč. mezd a investic); appka je nikdy nestahuje.
+    if (area === 'Finance-Backup') return jsonOut({ error: 'Zálohy se přes appku nestahují.' });
+    if (area === 'Finance-Dokumenty' && who) {
+      var drows = dokSheet().getDataRange().getValues();
+      for (var di = 1; di < drows.length; di++) {
+        if (String(drows[di][5]) === String(body.fileId) && !dokVisibleTo(drows[di], who))
+          return jsonOut({ error: 'Bez oprávnění (soukromý dokument).' });
+      }
+    }
     var blob = file.getBlob();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -635,6 +693,11 @@ function dokRowToObj(r) {
   return o;
 }
 
+// Soukromý dokument (viditelnost = jméno) smí vidět a měnit jen jeho majitel.
+function dokVisibleTo(row, who) {
+  return !who || !row[3] || row[3] === 'Oba' || row[3] === who.person;
+}
+
 function dokFindRow(sheet, id) {
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) if (String(data[i][0]) === String(id)) return { idx: i + 1, row: data[i] };
@@ -662,13 +725,14 @@ function handleUploadDocument(body) {
   }
 }
 
-function handleUpdateDocument(body) {
+function handleUpdateDocument(body, who) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return jsonOut({ error: 'Dokumenty se právě upravují jinde, zkus to za chvíli.' });
   try {
     var sheet = dokSheet();
     var hit = dokFindRow(sheet, body.id);
     if (!hit) return jsonOut({ error: 'Dokument nenalezen (možná už byl smazán).' });
+    if (!dokVisibleTo(hit.row, who)) return jsonOut({ error: 'Bez oprávnění (soukromý dokument).' });
     var row = hit.row;
     if (body.nazev != null && String(body.nazev).trim()) row[1] = String(body.nazev).trim();
     if (body.viditelnost != null && DOK_VIS.indexOf(body.viditelnost) >= 0) row[3] = body.viditelnost;
@@ -688,13 +752,14 @@ function handleUpdateDocument(body) {
   }
 }
 
-function handleDeleteDocument(body) {
+function handleDeleteDocument(body, who) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return jsonOut({ error: 'Dokumenty se právě upravují jinde, zkus to za chvíli.' });
   try {
     var sheet = dokSheet();
     var hit = dokFindRow(sheet, body.id);
     if (!hit) return jsonOut({ error: 'Dokument nenalezen (možná už byl smazán).' });
+    if (!dokVisibleTo(hit.row, who)) return jsonOut({ error: 'Bez oprávnění (soukromý dokument).' });
     // Koš, ne trvalé smazání — 30 dní jde obnovit přímo na Drive.
     try { DriveApp.getFileById(hit.row[5]).setTrashed(true); } catch (e) { /* soubor už neexistuje */ }
     sheet.deleteRow(hit.idx);
@@ -1016,6 +1081,8 @@ function refreshNav(e) {
     if (e && e.triggerUid) {
       try { log.push(syncInflation()); }
       catch (ei) { failed.push('INFLACE'); log.push('Inflace z ČSÚ: ' + ei.message); }
+      try { var dd = dedupeIds(); if (dd) log.push('Přečíslováno duplicitních id: ' + dd); }
+      catch (ed) { log.push('Kontrola id selhala: ' + ed.message); }
       try { log.push('Záloha: ' + weeklyBackup()); }
       catch (eb) { failed.push('ZÁLOHA'); log.push('Záloha selhala: ' + eb.message); }
       try { healthCheck().forEach(function (w) { failed.push('KONTROLA'); log.push(w); }); }

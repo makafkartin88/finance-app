@@ -1,3 +1,4 @@
+import { normMonth } from './tx-core.js';
 // ============================================================
 // Index spotřebitelských cen ČR — bazický index (průměr 2025 = 100), úhrn,
 // domácnosti celkem. Zdroj: ČSÚ, datová sada CEN0101E (open data).
@@ -26,7 +27,7 @@ export const CPI_CZ = {
 export function cpiWith(sheetValues) {
   const out = { ...CPI_CZ };
   for (const r of sheetValues || []) {
-    const ym = String(r[0] || '').slice(0, 7);
+    const ym = normMonth(r[0]); // Sheets může měsíc převést na datum (UTC → o den dřív)
     const v = parseFloat(String(r[1]).replace(',', '.'));
     if (/^\d{4}-\d{2}$/.test(ym) && v > 0) out[ym] = v;
   }

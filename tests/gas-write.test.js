@@ -184,3 +184,51 @@ test('removeSoldT212: prodaná pozice zmizí, souhrn a ostatní fondy zůstanou'
   assert.equal(n, 1);
   assert.deepEqual(sheets.Fondy.map(r => r[1]), ['isin', 'CZ0008042892', 'MSFT_US_EQ', 'T212_CASH']);
 });
+
+test('updateRow/deleteRow: duplicitní id → chyba, nic se nepřepíše ani nesmaže', () => {
+  const sheets = { Recurring: [['id'], ['REC-3', 'Nájem'], ['REC-3', 'Netflix']] };
+  const { ctx } = makeGas(sheets);
+  const r = post(ctx, { action: 'updateRow', sheet: 'Recurring', id: 'REC-3', values: ['REC-3', 'X'] });
+  assert.ok(r.error);
+  assert.deepEqual(sheets.Recurring.map(x => x[1]), [undefined, 'Nájem', 'Netflix']);
+  assert.ok(post(ctx, { action: 'deleteRow', sheet: 'Recurring', txId: 'REC-3' }).error);
+  assert.equal(sheets.Recurring.length, 3);
+});
+
+test('dedupeIds: druhý a další výskyt id dostane nové unikátní id', () => {
+  const tx = (id, p) => { const r = Array(15).fill(''); r[0] = p; r[14] = id; return r; };
+  const sheets = { Transakce: [Array(15).fill('h'), tx('20260101-5', 'a'), tx('20260101-5', 'b'), tx('X', 'c')], Recurring: [['id'], ['REC-2', 'n'], ['REC-2', 'm']] };
+  const { ctx } = makeGas(sheets);
+  const n = vm.runInContext('dedupeIds()', ctx);
+  assert.equal(n, 2);
+  const ids = sheets.Transakce.slice(1).map(r => r[14]);
+  assert.equal(ids[0], '20260101-5');
+  assert.notEqual(ids[1], '20260101-5');
+  assert.match(ids[1], /^20260101-5-d[0-9a-f]+$/);
+  assert.equal(new Set(sheets.Recurring.slice(1).map(r => r[0])).size, 2);
+  assert.equal(vm.runInContext('dedupeIds()', ctx), 0);
+});
+
+test('updateRow Mzdy: první řádek bez hlavičky jde taky aktualizovat', () => {
+  const sheets = { Mzdy: [['2026-01', 100], ['2026-02', 200]] };
+  const { ctx } = makeGas(sheets);
+  assert.equal(post(ctx, { action: 'updateRow', sheet: 'Mzdy', id: '2026-01', values: ['2026-01', 111] }).success, true);
+  assert.equal(sheets.Mzdy[0][1], 111);
+});
+
+test('read: odpověď říká, komu server přihlášení ověřil', () => {
+  const { ctx } = makeGas({ Transakce: [['h']] });
+  const r = post(ctx, { action: 'read', sheets: ['Transakce'] });
+  assert.equal(r.who, null);
+  assert.equal(r.enforced, false);
+});
+
+test('auth: Šárka nezmění mzdu přes updateRow/deleteRow ani cizí soukromý dokument', () => {
+  const s1 = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'besarka@gmail.com' });
+  assert.match(post(s1.ctx, { action: 'updateRow', sheet: 'Mzdy', id: 'x', values: [['x']], idToken: tok }).error, /oprávnění/);
+  assert.match(post(s1.ctx, { action: 'deleteRow', sheet: 'Fondy', txId: 'x', idToken: tok }).error, /oprávnění/);
+  assert.match(post(s1.ctx, { action: 'deleteDocument', id: 'd2', idToken: tok }).error, /oprávnění/);
+  assert.match(post(s1.ctx, { action: 'updateDocument', id: 'd2', nazev: 'y', idToken: tok }).error, /oprávnění/);
+  const s2 = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'martinkafka9@gmail.com' });
+  assert.equal(post(s2.ctx, { action: 'deleteDocument', id: 'd2', idToken: tok }).success, true);
+});

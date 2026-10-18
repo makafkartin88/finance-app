@@ -48,7 +48,7 @@ export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
       if (i < tries - 1) await new Promise(res => setTimeout(res, delayMs * (i + 1)));
       continue;
     }
-    if (d && d.error) throw new Error(d.error);
+    if (d && d.error) { const err = new Error(d.error); err.server = true; err.auth = !!d.auth; throw err; }
     return d;
   }
   throw lastErr;
@@ -56,8 +56,12 @@ export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
 
 /* Čtení listů přes POST — token je v těle požadavku, ne v URL.
    null = starší nasazení GAS, které akci `read` nezná. */
+// Komu server naposledy ověřil přihlášení: undefined = zatím nevíme / starý
+// GAS, null = token neověřil, jinak jméno.
+export const serverAuth = { who: undefined, enforced: false };
 export async function readSheets(names, tries = 3) {
   const d = await postJson({ action: 'read', sheets: names }, { tries });
+  if (d && 'who' in d) { serverAuth.who = d.who; serverAuth.enforced = !!d.enforced; }
   return d && d.sheets ? d.sheets : null;
 }
 
@@ -66,7 +70,9 @@ export async function fetchSheet(url, tries = 3) {
   const m = String(url).match(/[?&]sheet=([^&]+)/);
   if (m) {
     const name = decodeURIComponent(m[1]);
-    const s = await readSheets([name], tries);
+    let s;
+    // Server požadavek odmítl (např. přihlášení) → GET by odmítl taky.
+    try { s = await readSheets([name], tries); } catch (e) { if (e.auth) return { error: e.message }; }
     if (s) return s[name] || { error: 1 };
   }
   return getJson(url, tries);
@@ -77,7 +83,11 @@ export async function fetchSheet(url, tries = 3) {
    pomalého startu. Vrací { NazevListu: {values|error} }. */
 const BATCH_CAP_KEY = 'gasBatchUnsupported';
 export async function fetchSheets(names) {
-  try { const viaPost = await readSheets(names); if (viaPost) return viaPost; } catch (e) { /* zkusit GET níže */ }
+  try { const viaPost = await readSheets(names); if (viaPost) return viaPost; } catch (e) {
+    // Server odmítl přihlášení → GET by odmítl taky (a zbytečně by se
+    // zapamatovalo, že dávkové čtení nejde). Jinak zkusit GET níže.
+    if (e.auth) return Object.fromEntries(names.map(n => [n, { error: e.message }]));
+  }
   // Starší nasazení parametr `sheets` ignoruje a vrátí { values } prvního
   // listu. Takový pokus stojí stejně dlouho jako běžný požadavek (~15 s),
   // takže se výsledek zapamatuje — jinak by se ta daň platila při každém

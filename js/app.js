@@ -101,7 +101,11 @@ export async function loadSheets() {
    v tom případě se lokální hodnoty jednorázově nahrají nahoru (migrace),
    místo aby se tiše vynulovaly. */
 function applyNastaveni(nR) {
-  const row = (nR && nR.values && nR.values[1]) || null;
+  // Chyba čtení ≠ prázdný list: bez skutečné odpovědi nic nemigrovat ani
+  // neukládat (persistCfg čeká na _cfgLoaded).
+  if (!nR || !Array.isArray(nR.values)) return;
+  state._cfgLoaded = true;
+  const row = nR.values[1] || null;
   const hasServerAccounts = row && row.some(v => v !== '' && v != null);
   if (hasServerAccounts) {
     if (row[0] !== '' && row[0] != null) state.cfg.bilanceOffset = Number(row[0]) || 0;
@@ -112,7 +116,8 @@ function applyNastaveni(nR) {
     try {
       const lim = row[4] ? JSON.parse(row[4]) : null;
       if (lim && typeof lim === 'object') {
-        Object.assign(state.limits, lim);
+        // jen číselné limity — data ze sdíleného listu nejsou důvěryhodná
+        for (const [k, v] of Object.entries(lim)) if (Number.isFinite(Number(v))) state.limits[k] = Number(v);
         localStorage.setItem('finlim', JSON.stringify(state.limits));
         renderBudgets(); renderBudLimForm();
       }

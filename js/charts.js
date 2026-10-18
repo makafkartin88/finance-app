@@ -354,6 +354,6 @@ window.saveBilance = async function() {
   renderCharts();
   // Zápis na server na pozadí (UI se překreslí hned) — ať je stejná bilance
   // vidět i na jiném zařízení, ne jen tady v prohlížeči.
-  const ok = await persistCfg();
+  const ok = await persistCfg(['bilanceOffset']);
   if (!ok) toast('Bilance uložena lokálně, ale zápis na server selhal', 'err');
 };

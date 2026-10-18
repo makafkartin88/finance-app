@@ -121,11 +121,15 @@ export function navAge(f, today = new Date()) {
 /* Dokoupení z výpisu CONSEQ: výpis za období uvádí jen nákupy v tom období,
    takže přepsat jimi „investováno" by smazalo všechny dřívější vklady.
    Pokud výpis začíná nákupem POZDĚJI, než je uložený první nákup, jde o nové
-   peníze → přičíst a nákupní cenu zprůměrovat. Stejný/starší → null (nic). */
+   peníze → přičíst a nákupní cenu zprůměrovat. Stejný/starší → null (nic).
+   Výpis nesmí být starší ani stejný jako ten, ze kterého je uložený stav —
+   jinak by opakovaný import téhož výpisu přičetl dokoupení podruhé. */
 export function mergeTopUp(existing, f, fx = 1) {
   if (!existing || !(f.castka > 0)) return null;
   const a = toDate(existing.nakupDatum), b = toDate(f.nakupDatum);
   if (!a || !b || b <= a || !(existing.investovanoCZK > 0)) return null;
+  const sd = toDate(f._statementDate), last = toDate(existing.vypisDatum);
+  if (!sd || (last && sd <= last)) return null;
   const castka = Math.round((existing.investovanoCZK / (fx || 1) + f.castka) * 100) / 100;
   return {
     castka,
