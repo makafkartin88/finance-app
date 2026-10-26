@@ -69,3 +69,24 @@ test('readSheets: zapamatuje, komu server ověřil přihlášení', async () => 
   assert.equal(serverAuth.who, 'Martin');
   assert.equal(serverAuth.enforced, false);
 });
+
+test('postJson: hlásí začátek a konec zápisu (i při chybě), čtení nehlásí', async () => {
+  const { onActivity } = await import('../js/utils.js');
+  const ev = [];
+  const off = onActivity(e => ev.push(e.type + ':' + e.kind + ':' + e.pending));
+  fakeFetch('{"success":true}');
+  const p = postJson({ sheet: 'Transakce', values: [[1]] });
+  assert.deepEqual(ev, ['start:save:1']); // hned, ještě před odpovědí serveru
+  await p;
+  assert.deepEqual(ev, ['start:save:1', 'end:save:0']);
+  ev.length = 0;
+  fakeFetch('{"error":"x"}');
+  await assert.rejects(postJson({ action: 'deleteRow', txId: 'a' }));
+  assert.deepEqual(ev, ['start:delete:1', 'end:delete:0']);
+  ev.length = 0;
+  fakeFetch('{"sheets":{}}');
+  await postJson({ action: 'read', sheets: [] });
+  await postJson({ action: 'refreshNav' });
+  assert.deepEqual(ev, ['start:work:1', 'end:work:0']);
+  off();
+});

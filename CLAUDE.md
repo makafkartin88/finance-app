@@ -61,6 +61,7 @@ Column indices for `Transakce` rows are defined in `config.js` as `C` — always
 | `inv-import.js` | Import investičních výpisů: ruční (náhled) i automatický z fronty `UcpImport` při otevření appky |
 | `inv-parse.js` | Čisté parsery výpisů CODYA/CONSEQ/UniCredit, `detectStatement`, pojistky `planAutoImport`, `buildFundRow` (pokryto `npm test`) |
 | `settings.js` | Settings page |
+| `busy.js` | Odezva na zápis: proužek + „Ukládám…“, zablokuje kliknuté tlačítko a zašedí formulář, varování při zavření stránky. Navázané na `onActivity` z `postJson` — nové zápisy to mají automaticky |
 | `table-filters.js` | Column filter popovers and amount sorting shared between dashboard and transactions |
 | `utils.js` | `parseRow`, date helpers (`fmtD`, `isoDate`, `parseTxDate`), `czk`, `scopedTxs`, `base`, `getBounds` |
 

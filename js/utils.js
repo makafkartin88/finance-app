@@ -31,7 +31,33 @@ async function getJson(url, tries = 3) {
    které jde bezpečně zopakovat (čtení, aktualizace kurzů); nahrání souboru
    opakovat nesmí, mohlo by vzniknout dvakrát. Chyba vrácená skriptem
    ({error}) se neopakuje — je to odpověď, ne výpadek. */
-export async function postJson(payload, { tries = 1, delayMs = 800 } = {}) {
+/* Probíhající požadavky na server — busy.js podle toho ukazuje „Ukládám…"
+   a zablokuje kliknuté tlačítko. Hlásí se HNED při volání (před čekáním na
+   token a server), aby odezva na kliknutí byla okamžitá. Čtení se nehlásí,
+   to má vlastní načítací stav. */
+const _listeners = new Set();
+let _pending = 0, _seq = 0;
+export function onActivity(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
+const _emit = e => _listeners.forEach(fn => { try { fn(e); } catch (err) { /* UI nesmí shodit zápis */ } });
+const WORK_ACTIONS = { refreshNav: 1, refreshT212: 1, checkInvestEmail: 1, checkMbankEmail: 1, checkPayslipEmail: 1, getDriveFile: 1 };
+export function activityKind(action) {
+  if (action === 'read') return null;
+  if (WORK_ACTIONS[action]) return 'work';
+  if (/^delete|^remove/.test(action || '')) return 'delete';
+  return 'save';
+}
+
+export async function postJson(payload, opts = {}) {
+  const kind = activityKind(payload && payload.action);
+  if (!kind) return _postJson(payload, opts);
+  const id = ++_seq;
+  _pending++;
+  _emit({ type: 'start', kind, pending: _pending, id });
+  try { return await _postJson(payload, opts); }
+  finally { _pending--; _emit({ type: 'end', kind, pending: _pending, id }); }
+}
+
+async function _postJson(payload, { tries = 1, delayMs = 800 } = {}) {
   let token = '';
   try { token = (await _tokenProvider()) || ''; } catch (e) { /* nepřihlášen */ }
   const body = JSON.stringify(token ? { ...payload, idToken: token } : payload);

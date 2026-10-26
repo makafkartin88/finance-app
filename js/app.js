@@ -1,6 +1,7 @@
 import { GAS_URL, DEMO, VERSION } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet, fetchSheets } from './utils.js';
+import './busy.js'; // odezva na zápis (proužek, zablokované tlačítko)
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
 import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt, syncOsobaRow } from './transactions.js';
 import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
