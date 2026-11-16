@@ -52,3 +52,52 @@ test('yearSummaries: součty za rok, efektivní sazba odvodů a daně, náklad z
   assert.ok(Math.abs(y.sazba - 0.22) < 1e-9);
   assert.equal(y.nakladZam, Math.round(120000 * 1.338));
 });
+
+// Vymyšlená čísla (repo je veřejné): maximální prémie 4 000, pak 8 000.
+const pr = (id, premie, odpracHod, neodpracHod = 0, extra = {}) =>
+  ({ id, rok: +id.slice(0, 4), mesic: +id.slice(5), premie, odpracHod, neodpracHod, dovolenaNarok: 100, dovolenaZustatek: 80, ...extra });
+
+test('bonusSeries: maximum se pozná i z kráceného měsíce, procento z maxima', async () => {
+  const { bonusSeries } = await import('../js/salary-core.js');
+  const s = bonusSeries([
+    pr('2025-01', 4000, 160),
+    pr('2025-02', 8000, 168),            // nová maximální prémie
+    pr('2025-03', 6545, 144, 32),         // kráceno: 8000 × 144/176
+    pr('2025-04', 8000, 176),
+  ]);
+  assert.deepEqual(s.map(x => x.max), [4000, 8000, 8000, 8000]);
+  assert.deepEqual(s.map(x => Math.round(x.pct * 100)), [100, 100, 82, 100]);
+  assert.equal(s[1].maxChanged, true);
+  assert.equal(s[2].maxChanged, false);
+  assert.equal(s[2].krac.neodpracHod, 32);
+  assert.equal(s[2].krac.fond, 176);
+});
+
+test('bonusSeries: důvod krácení „dovolená" jen když to sedí na zůstatek dovolené', async () => {
+  const { bonusSeries } = await import('../js/salary-core.js');
+  const s = bonusSeries([
+    pr('2025-01', 8000, 176, 0, { dovolenaZustatek: 80 }),
+    pr('2025-02', 6545, 144, 32, { dovolenaZustatek: 48 }), // zůstatek −32 h = dovolená
+    pr('2025-03', 6545, 144, 32, { dovolenaZustatek: 48 }), // zůstatek beze změny → důvod neznámý
+  ]);
+  assert.equal(s[1].krac.dovolena, true);
+  assert.equal(s[2].krac.dovolena, false);
+});
+
+test('bonusSeries: nižší maximum až po 3 měsících za sebou (výkyv výkonu není nové maximum)', async () => {
+  const { bonusSeries } = await import('../js/salary-core.js');
+  const s = bonusSeries([pr('2025-01', 8000, 176), pr('2025-02', 6000, 176), pr('2025-03', 8000, 176),
+    pr('2025-04', 4000, 176), pr('2025-05', 4000, 176), pr('2025-06', 4000, 176)]);
+  assert.deepEqual(s.map(x => x.max), [8000, 8000, 8000, 4000, 4000, 4000]);
+  assert.equal(Math.round(s[1].pct * 100), 75);
+});
+
+test('vacationUsed: přelom roku (nový nárok) a změna nároku ve smlouvě', async () => {
+  const { vacationUsed } = await import('../js/salary-core.js');
+  const v = (rok, mesic, narok, zust, extra = {}) => ({ rok, mesic, dovolenaNarok: narok, dovolenaZustatek: zust, ...extra });
+  assert.equal(vacationUsed(v(2025, 5, 100, 80), v(2025, 6, 100, 64)), 16);
+  assert.equal(vacationUsed(v(2025, 7, 100, 30), v(2025, 8, 150, 72)), 8);    // nárok +50, čerpáno 8
+  assert.equal(vacationUsed(v(2025, 12, 150, 0), v(2026, 1, 160, 152)), 8);   // nový rok = nový nárok
+  assert.equal(vacationUsed(null, v(2026, 1, 160, 160, { dovolenaKc: 0 })), 0);
+  assert.equal(vacationUsed(null, v(2026, 1, 160, 160, { dovolenaKc: 1000, prumerHod: 250 })), 4);
+});

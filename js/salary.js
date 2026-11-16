@@ -2,7 +2,7 @@ import { escHtml } from './html.js';
 import { state } from './state.js';
 import { czk } from './utils.js';
 import { cumulativeInflation } from './inflation-data.js';
-import { compOf, detectChanges, levelAt, typicalNet, yearSummaries } from './salary-core.js';
+import { compOf, detectChanges, levelAt, typicalNet, yearSummaries, bonusSeries, vacationUsed } from './salary-core.js';
 import { mountScrollChart, yearAxisMarks } from './charts.js';
 
 export const MONTH_NAMES = ['', 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
@@ -123,13 +123,10 @@ export function renderSalary() {
 
   // Dovolená čerpaná v daném měsíci (pokles zůstatku vůči předchozí pásce,
   // fallback: dovolená v Kč / hodinový průměr)
+  // (počítá i s novým nárokem v lednu a změnou nároku ve smlouvě — salary-core)
   const usageOf = s => {
     const idx = all.indexOf(s);
-    if (idx > 0) {
-      const d = all[idx - 1].dovolenaZustatek - s.dovolenaZustatek;
-      if (d > 0) return d;
-    }
-    return (s.dovolenaKc > 0 && s.prumerHod > 0) ? Math.round(s.dovolenaKc / s.prumerHod) : 0;
+    return vacationUsed(idx > 0 ? all[idx - 1] : null, s);
   };
   const days = h => (h / 8).toLocaleString('cs-CZ', { maximumFractionDigits: 1 });
 
@@ -159,9 +156,24 @@ export function renderSalary() {
   // Dovolená čerpaná — vybraný měsíc, jinak celý rozsah
   const usedH = sel ? usageOf(sel) : data.reduce((sum, s) => sum + usageOf(s), 0);
   document.getElementById('sal4').textContent = `${days(usedH)} dní`;
+  // Dovolená se čerpá v kalendářním roce — zůstatek z poslední pásky je
+  // potřeba vybrat do 31. 12., v lednu naskočí nový nárok.
+  const yearEnd = (() => {
+    const all0 = all[all.length - 1];
+    if (!all0 || sel || !(all0.dovolenaZustatek > 0)) return '';
+    const now = new Date();
+    if (all0.rok !== now.getFullYear()) return '';
+    let wd = 0;
+    for (let d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1); d.getFullYear() === now.getFullYear(); d.setDate(d.getDate() + 1)) {
+      // víkendy a pevné státní svátky (Velikonoce do konce roku nespadají)
+      const md = `${d.getDate()}.${d.getMonth() + 1}`;
+      if (d.getDay() % 6 !== 0 && !['1.1', '1.5', '8.5', '5.7', '6.7', '28.9', '28.10', '17.11', '24.12', '25.12', '26.12'].includes(md)) wd++;
+    }
+    return ` · vyčerpat do 31. 12. (zbývá ${wd} prac. dní)`;
+  })();
   document.getElementById('sal4s').textContent = sel
     ? `${usedH} h v ${sel.mesic}/${sel.rok} · zůstatek ${sel.dovolenaZustatek} h = ${days(sel.dovolenaZustatek)} dní`
-    : `${usedH} h v rozsahu · zůstatek ${last.dovolenaZustatek} h = ${days(last.dovolenaZustatek)} dní`;
+    : `${usedH} h v rozsahu · zůstatek ${last.dovolenaZustatek} h = ${days(last.dovolenaZustatek)} dní${yearEnd}`;
 
   /* ── GRAF ── */
   mountScrollChart('salChart', salChartSVG(data, _salSelected));
@@ -252,13 +264,22 @@ export function renderSalary() {
       <strong>${czk(y.cista)} <span style="font-weight:400;color:var(--text3);font-size:11px">čistá / ${czk(y.hruba)} hrubá</span></strong>
     </div>`).join('');
 
-  /* ── PRÉMIE V ČASE (rozsah, klikací) ── */
-  const maxPrem = Math.max(...data.map(s => s.premie), 1);
+  /* ── PRÉMIE V ČASE: % z maximální možné prémie (rozsah, klikací) ──
+     Maximum se dopočítá z pásek (bonusSeries) — přes celou historii, ať
+     ho zná i první měsíc v rozsahu. */
+  const bonusById = new Map(bonusSeries(all).map(b => [b.id, b]));
   document.getElementById('salPremie').innerHTML = data.map(s => {
-    const pctOfGross = s.hrubaMzda ? (s.premie / s.hrubaMzda) * 100 : 0;
-    return `<div class="crow${s.id === _salSelected ? ' sel' : ''}" onclick="salSelect('${s.id}')"><div class="cname">${ymLabel(s)}</div>
-      <div class="ctrack"><div class="cfill" style="width:${Math.round((s.premie / maxPrem) * 100)}%;background:var(--blue)"></div></div>
-      <div class="cval cval-w">${czk(s.premie)} · ${pctOfGross.toFixed(0)} %</div></div>`;
+    const b = bonusById.get(s.id);
+    if (!b || !b.max) return '';
+    const pct = Math.round(b.pct * 100);
+    const why = !b.krac ? '' : b.krac.dovolena
+      ? `kráceno za dovolenou ${b.krac.neodpracHod} h (odpracováno ${b.krac.fond - b.krac.neodpracHod} z ${b.krac.fond} h)`
+      : `kráceno za ${b.krac.neodpracHod} neodpracovaných h (${b.krac.fond - b.krac.neodpracHod} z ${b.krac.fond} h)`;
+    const note = [b.maxChanged ? `nová maximální prémie ${czk(b.max)}` : '', why].filter(Boolean).join(' · ');
+    return `<div class="crow${s.id === _salSelected ? ' sel' : ''}" onclick="salSelect('${s.id}')" style="flex-wrap:wrap"><div class="cname">${ymLabel(s)}</div>
+      <div class="ctrack"><div class="cfill" style="width:${Math.min(pct, 100)}%;background:${pct >= 100 ? 'var(--green)' : 'var(--blue)'}"></div></div>
+      <div class="cval cval-w" style="width:auto">${czk(b.premie)} · ${pct} % z ${czk(b.max)}</div>
+      ${note ? `<div style="flex-basis:100%;padding-left:100px;font-size:11px;color:var(--text3);margin-top:-6px">${note}</div>` : ''}</div>`;
   }).join('');
 
   /* ── TABULKA (rozsah, klikací) ── */

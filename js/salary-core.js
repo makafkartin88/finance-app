@@ -68,3 +68,51 @@ export function yearSummaries(list) {
     ...y, sazba: y.hruba ? y.odvody / y.hruba : 0, nakladZam: Math.round(y.hruba * 1.338),
   }));
 }
+
+/* Čerpání dovolené v měsíci (h) — z poklesu zůstatku proti předchozí pásce.
+   - nový kalendářní rok: dovolená se čerpá v kalendářním roce, v lednu
+     naskočí nový nárok → čerpáno = nárok − zůstatek,
+   - změna nároku během roku (nová smlouva): zůstatek se posune o rozdíl,
+   - bez předchozí pásky: dovolená v Kč / průměrný hodinový výdělek. */
+export function vacationUsed(prev, s) {
+  if (prev) {
+    let d;
+    if (s.rok !== prev.rok) d = (s.dovolenaNarok || 0) - (s.dovolenaZustatek || 0);
+    else d = (prev.dovolenaZustatek || 0) + ((s.dovolenaNarok || 0) - (prev.dovolenaNarok || 0)) - (s.dovolenaZustatek || 0);
+    if (d > 0) return d;
+    if (d === 0) return 0;
+  }
+  return (s.dovolenaKc > 0 && s.prumerHod > 0) ? Math.round(s.dovolenaKc / s.prumerHod) : 0;
+}
+
+/* Prémie jako % z maximální možné. Prémie se krátí přesně podle odpracovaných
+   hodin (prémie = maximum × odpracováno / fond), takže maximum jde dopočítat
+   i z kráceného měsíce. Vyšší maximum platí hned; nižší až když stejná
+   hodnota vyjde 3 měsíce po sobě (jednorázově nižší prémie není nové maximum).
+   `krac` = proč je měsíc krácený: neodpracované hodiny; `dovolena` jen když
+   pokles zůstatku dovolené přesně odpovídá neodpracovaným hodinám. */
+export function bonusSeries(list) {
+  const out = [];
+  let level = null, run = [];
+  list.forEach((s, i) => {
+    const odprac = s.odpracHod || 0, neodprac = s.neodpracHod || 0, fond = odprac + neodprac;
+    const factor = fond > 0 ? odprac / fond : 1;
+    const full = factor > 0 && s.premie > 0 ? Math.round(s.premie / factor / 100) * 100 : null;
+    let maxChanged = false, confirmed = null;
+    if (full != null) {
+      if (level == null || full > level) { maxChanged = level != null; level = full; run = []; }
+      else if (full < level) {
+        run = run.length && out[run[0]].fullCand === full ? run.concat(i) : [i];
+        if (run.length >= 3) { confirmed = run; level = full; run = []; }
+      } else run = [];
+    }
+    const krac = neodprac > 0 ? {
+      neodpracHod: neodprac, fond,
+      dovolena: vacationUsed(i > 0 ? list[i - 1] : null, s) === neodprac && i > 0,
+    } : null;
+    out.push({ id: s.id, rok: s.rok, mesic: s.mesic, premie: s.premie || 0, max: level || 0, maxChanged, krac, fullCand: full });
+    // potvrzené nižší maximum platí zpětně od prvního z těch měsíců
+    if (confirmed) confirmed.forEach((j, k) => { out[j].max = level; out[j].maxChanged = k === 0; });
+  });
+  return out.map(({ fullCand, ...x }) => ({ ...x, pct: x.max > 0 ? x.premie / x.max : 0 }));
+}
