@@ -232,3 +232,11 @@ test('auth: Šárka nezmění mzdu přes updateRow/deleteRow ani cizí soukromý
   const s2 = makeGas(docs(), { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'martinkafka9@gmail.com' });
   assert.equal(post(s2.ctx, { action: 'deleteDocument', id: 'd2', idToken: tok }).success, true);
 });
+
+test('triggerPlan: noční běh každý den (kurzy + T212), týdenní práce jen v pondělí', () => {
+  const { ctx } = makeGas({});
+  const plan = (e, dow) => JSON.parse(vm.runInContext(`JSON.stringify(triggerPlan(${JSON.stringify(e)}, ${dow}))`, ctx));
+  assert.deepEqual(plan({ triggerUid: 'x' }, 1), { scheduled: true, t212: true, weekly: true, alert: true });
+  assert.deepEqual(plan({ triggerUid: 'x' }, 3), { scheduled: true, t212: true, weekly: false, alert: false });
+  assert.deepEqual(plan(null, 3), { scheduled: false, t212: false, weekly: false, alert: true }); // tlačítko v appce
+});

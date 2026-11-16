@@ -89,8 +89,8 @@ The `checkMbankEmail()` function in GAS scans Gmail for mBank PDF attachments, s
 
 ### Investiční výpisy — automatika
 
-- Týdenní časovač `refreshNav` navíc: `syncInflation` (CPI z DataStatu do listu `Inflace`), `weeklyBackup` (kopie tabulky do `Finance-Backup`, drží 12), `healthCheck` (staré importy/kurzy → e-mail). S&P pro srovnání = `^SP500TR` (s dividendami) od nejstaršího nákupu.
-- Pondělní časovač `refreshNav` (Triggers → time-driven, týdně) stahuje kurzy CODYA/CONSEQ z webů (`NAV_SOURCES`, nový fond CONSEQ se dohledá sám podle ISIN — `navSourceFor`) a navíc projde poštu (`checkInvestEmail` → výpisy UniCredit; u CODYA/CONSEQ se složení nemění, stačí kurzy). Spustí se to jen z časovače (`e.triggerUid`), ne z tlačítka.
+- Časovač `refreshNav` běží **každou noc** (Day timer): kurzy CODYA/CONSEQ, S&P a Trading 212. V pondělí (`triggerPlan`) navíc: `syncInflation` (CPI z DataStatu do listu `Inflace`), `weeklyBackup` (kopie tabulky do `Finance-Backup`, drží 12), `healthCheck` (staré importy/kurzy → e-mail). S&P pro srovnání = `^SP500TR` (s dividendami) od nejstaršího nákupu.
+- `refreshNav` stahuje kurzy CODYA/CONSEQ z webů (`NAV_SOURCES`, nový fond CONSEQ se dohledá sám podle ISIN — `navSourceFor`) a navíc projde poštu (`checkInvestEmail` → výpisy UniCredit; u CODYA/CONSEQ se složení nemění, stačí kurzy). Spustí se to jen z časovače (`e.triggerUid`), ne z tlačítka.
 - ZIP z UniCreditu je šifrovaný ZipCrypto; GAS ho rozšifruje (`zipDecryptToPlain`) heslem ze Script Properties `UCP_ZIP_PASSWORD`. Klíč k T212 je tamtéž (`T212_API_KEY`, `T212_API_SECRET`).
 - Zachycené výpisy čekají v listu `UcpImport` (status `new`). Appka je při otevření sama naimportuje, pokud projdou pojistkami v `planAutoImport`; jinak zůstanou v banneru s důvodem.
 

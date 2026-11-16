@@ -956,8 +956,10 @@ function fondRow(o) {
 }
 
 // ── REFRESH NAV: scrape aktuálních kurzů fondů z webů CODYA/CONSEQ ──
-// Voláno z appky (action:'refreshNav') NEBO jako time-trigger (týdně):
-// Triggers → refreshNav → Time-driven → Week timer → pondělí, 6-7am.
+// Voláno z appky (action:'refreshNav') NEBO jako time-trigger (KAŽDOU NOC):
+// Triggers → refreshNav → Time-driven → Day timer → 2-3am.
+// Noční běh obnoví kurzy fondů, S&P a Trading 212; pondělní navíc poštu,
+// zálohu, inflaci a kontrolu zdrojů (viz triggerPlan).
 // Trigger se zakládá klikacím rozhraním, ne kódem — ScriptApp.newTrigger()
 // by vyžadovalo scope script.scriptapp v manifestu a tím i novou autorizaci
 // celé web appky. Redeploy pro založení triggeru netřeba, běží nad uloženým
@@ -999,7 +1001,16 @@ function navSourceFor(provider, isin) {
   return null;
 }
 
+// Co má daný běh udělat. dow = den v týdnu (1 = pondělí, Europe/Prague).
+// Z tlačítka v appce: jen kurzy (T212 si appka volá zvlášť hned potom).
+// E-mail s chybami jen v pondělí, ať rozbitý web fondu nespamuje každý den.
+function triggerPlan(e, dow) {
+  var scheduled = !!(e && e.triggerUid);
+  return { scheduled: scheduled, t212: scheduled, weekly: scheduled && dow === 1, alert: !scheduled || dow === 1 };
+}
+
 function refreshNav(e) {
+  var plan = triggerPlan(e, Number(Utilities.formatDate(new Date(), 'Europe/Prague', 'u')));
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Fondy');
@@ -1078,7 +1089,17 @@ function refreshNav(e) {
     // Týdenní časovač (e.triggerUid) projde navíc poštu: výpisy UniCredit,
     // CODYA a CONSEQ → fronta, kterou appka při otevření sama naimportuje.
     // Z tlačítka v appce se nevolá — zdržovalo by to aktualizaci kurzů.
-    if (e && e.triggerUid) {
+    // Trading 212 každou noc (ceny se hýbou denně) — po zápisu kurzů,
+    // refreshT212 si bere zámek sám.
+    if (plan.t212) {
+      try {
+        var t = JSON.parse(refreshT212().getContent());
+        log.push(t.error ? 'T212: ' + t.error : 'T212: ' + t.updated + ' řádků');
+        if (t.error) failed.push('T212');
+      } catch (et) { failed.push('T212'); log.push('T212: ' + et.message); }
+    }
+
+    if (plan.weekly) {
       try { log.push(syncInflation()); }
       catch (ei) { failed.push('INFLACE'); log.push('Inflace z ČSÚ: ' + ei.message); }
       try { var dd = dedupeIds(); if (dd) log.push('Přečíslováno duplicitních id: ' + dd); }
@@ -1097,7 +1118,7 @@ function refreshNav(e) {
 
     // Upozornění e-mailem když scrape selže (funguje hlavně pro týdenní trigger;
     // při ručním volání z appky se stav vrací i v JSON logu).
-    if (failed.length) sendNavAlert(failed, log);
+    if (failed.length && plan.alert) sendNavAlert(failed, log);
 
     return jsonOut({ success: true, updated: updated, eur: eur, failed: failed, log: log });
   } catch (err) {
