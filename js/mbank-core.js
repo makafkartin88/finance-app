@@ -24,11 +24,14 @@ export function isSavingsTransfer(cpAccount, savingsAccount) {
 export function guessCategory(popis, protistrana, typ) {
   if (typ === 'Příjem') return 'Příjem';
   const text = (popis + ' ' + protistrana).toLowerCase();
+  // Pes (od 10/2026): zverimexy, veterina, chovatel, krmivo. Jako první —
+  // „granule" nebo „lékárna" pro psa nesmí spadnout do Jídla/Zdraví.
+  if (/zv[eě]rokruh|yogi|super ?zoo|\bzoo\b|pet ?center|\bvet\b|veterin|vetapso|chovatel|woofit|granul|krmiv|pro psa|psí /.test(text)) return 'Pejsek';
   if (/nájem|nájemné|hypotéka|elektřina|plyn|voda|internet|ikea|obi|hornbach|sconto|action b/.test(text)) return 'Bydlení';
   if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny|rossmann/.test(text)) return 'Jídlo';
   if (/shell|benzín|čerpací|parkoviště|parking|dpp|pid|lítačka|vlak|bus/.test(text)) return 'Doprava';
   if (/kino|cinema|spotify|netflix|steam|xbox|restaurace|hospoda|kavárna|pho |sushi|pizz/.test(text)) return 'Zábava';
-  if (/lékárna|doktor|nemocnice|pojišt|zdraví/.test(text)) return 'Zdraví';
+  if (/lékárna|lekarn|doktor|nemocnice|pojišt|zdraví/.test(text)) return 'Zdraví';
   if (/trading 212|degiro|fond|etf|akcie|investic/.test(text)) return 'Investice';
   return 'Ostatní';
 }

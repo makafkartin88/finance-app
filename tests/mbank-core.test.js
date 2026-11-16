@@ -39,3 +39,19 @@ test('matchDuplicates: tolerance ±2 % a ±2 dny, vybere nejbližší shodu', ()
   assert.equal(matchDuplicates([{ datum: '2026-10-09', castka: 1000, typ: 'Výdaj' }], existing)[0], null);
   assert.equal(matchDuplicates([{ datum: '2026-10-01', castka: 1000, typ: 'Příjem' }], existing)[0], null);
 });
+
+test('guessCategory: věci pro psa → Pejsek (ne lékárna/zdraví lidí)', () => {
+  for (const [popis, proti] of [
+    ['ZVEROKRUH KLADNO OC KLADNO', 'ZVEROKRUH KLADNO OC KLADNO'],
+    ['Platba kartou', 'YOGIS SHOP Praha'],
+    ['286 - SUPER ZOO Praha 6', ''],
+    ['PetCenter 515 Praha 6', ''],
+    ['VET KLINIKA CERVENY PRAHA 6', ''],
+    ['VETAPSO SRO HOSTIVICE', ''],
+    ['Vinduska Filip - Chovatel Kladno', ''],
+    ['ODCHOZÍ OKAMŽITÁ PLATBA', 'GOPAY CZECH WOOFIT.CZ'],
+    ['ODCHOZÍ OKAMŽITÁ PLATBA', 'INDY GRANULE A JOGURT'],
+  ]) assert.equal(guessCategory(popis, proti, 'Výdaj'), 'Pejsek', popis + ' ' + proti);
+  assert.equal(guessCategory('BENU LEKARNA 172', '', 'Výdaj'), 'Zdraví');
+  assert.equal(guessCategory('Sladka dilna Petriny', '', 'Výdaj'), 'Ostatní'); // „pet" uvnitř slova
+});

@@ -1,4 +1,4 @@
-import { GAS_URL, DEMO, VERSION } from './config.js';
+import { GAS_URL, DEMO, VERSION, CATEGORIES } from './config.js';
 import { state } from './state.js';
 import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMonths, fetchSheet, fetchSheets } from './utils.js';
 import './busy.js'; // odezva na zápis (proužek, zablokované tlačítko)
@@ -139,8 +139,21 @@ export function boot() {
   populateSels(); renderDash(); renderTx(); renderBudgets(); renderCharts(); renderInv(); renderBudLimForm();
 }
 
+// Výběry kategorií ve formulářích z jednoho seznamu (config.js) — dřív byly
+// natvrdo v index.html na třech místech a nová kategorie se musela psát všude.
+let _catsFilled = false; // jen jednou — překreslení by shodilo výběr v otevřeném formuláři
+function fillCategorySelects() {
+  if (_catsFilled) return;
+  _catsFilled = true;
+  const opts = list => list.map(c => `<option>${c}</option>`).join('');
+  for (const id of ['fKat', 'rfKat']) { const el = document.getElementById(id); if (el) el.innerHTML = opts(CATEGORIES); }
+  const f = document.getElementById('txfCat');
+  if (f) { const cur = f.value; f.innerHTML = '<option value="">Kategorie</option>' + opts([...CATEGORIES, 'Příjem']); f.value = cur; }
+}
+
 function populateSels() {
   ensureRange();
+  fillCategorySelects();
   const scoped = scopedTxs();
   const months = getMonths(scoped);
   const bMonth = document.getElementById('bMonth');

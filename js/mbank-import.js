@@ -1,5 +1,5 @@
 import { escHtml, jsArg, safeUrl } from './html.js';
-import { GAS_URL } from './config.js';
+import { GAS_URL, CATEGORIES } from './config.js';
 import { state } from './state.js';
 import { parseRow, fetchSheet, postJson } from './utils.js';
 import { newId } from './tx-core.js';
@@ -264,7 +264,7 @@ function showMbankPreview(rows, fname) {
   const results = document.getElementById('mbankResults');
   results.style.display = 'block';
 
-  const cats     = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní','Příjem'];
+  const cats     = [...CATEGORIES, 'Příjem'];
   const dupCount = rows.filter(r => r._dupTx).length;
   const dupNote  = dupCount
     ? `<div style="color:var(--amber-text);background:var(--amber-bg);padding:8px 12px;border-radius:var(--rsm);font-size:12px;margin-bottom:10px">⚠ ${dupCount} ${dupCount === 1 ? 'transakce vypadá jako duplicitní' : 'transakcí vypadá jako duplicitních'} — odznačeny. Klikni na <strong>!</strong> pro náhled existující transakce.</div>`

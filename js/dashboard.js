@@ -1,3 +1,4 @@
+import { CATEGORY_COLORS } from './config.js';
 import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
@@ -71,7 +72,7 @@ export function renderDash() {
   b.filter(t => t.typ === 'Výdaj').forEach(t => { cats[t.kategorie] = (cats[t.kategorie]||0)+t.castka; });
   const sorted = Object.entries(cats).sort((a,z) => z[1]-a[1]);
   const maxC = sorted[0]?.[1] || 1;
-  const colors = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Doprava:'var(--blue)',Zábava:'var(--purple)',Zdraví:'var(--red)',Investice:'#378ADD',Ostatní:'var(--text3)'};
+  const colors = CATEGORY_COLORS;
   document.getElementById('catBars').innerHTML = sorted.map(([c,v]) =>
     `<div class="crow${state.drill.cat === c ? ' sel' : ''}" onclick="drillC(${jsArg(c)})" title="Filtrovat: ${escHtml(c)}"><div class="cname">${escHtml(c)}</div><div class="ctrack"><div class="cfill" style="width:${Math.round((v/maxC)*100)}%;background:${colors[c]||'var(--text3)'}"></div></div><div class="cval">${czk(v)}</div></div>`
   ).join('') || '<div class="empty">Žádné výdaje</div>';

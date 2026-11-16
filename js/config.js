@@ -52,10 +52,11 @@ export const DEMO = [
   ['1/16/2026','Televize','27990','CZK','mBank','Výdaj','Bydlení','Martin','Karta','Alza','','(27990)','Jan 2026','2026','20260116-002']
 ];
 
-export const DEFAULT_LIMITS = {Bydlení:20000,Jídlo:15000,Doprava:5000,Zábava:8000,Zdraví:5000,Investice:10000,Ostatní:5000};
+export const DEFAULT_LIMITS = {Bydlení:20000,Jídlo:15000,Doprava:5000,Zábava:8000,Zdraví:5000,Pejsek:3000,Investice:10000,Ostatní:5000};
 
-export const CATEGORIES = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Investice','Ostatní'];
-export const CATEGORY_COLORS = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Doprava:'var(--blue)',Zábava:'var(--purple)',Zdraví:'var(--red)',Investice:'#378ADD',Ostatní:'var(--text3)',Příjem:'var(--green)'};
+// Jediný seznam kategorií — výběry ve formulářích, import i barvy se berou odsud.
+export const CATEGORIES = ['Bydlení','Jídlo','Doprava','Zábava','Zdraví','Pejsek','Investice','Ostatní'];
+export const CATEGORY_COLORS = {Bydlení:'var(--amber)',Jídlo:'var(--green)',Doprava:'var(--blue)',Zábava:'var(--purple)',Zdraví:'var(--red)',Pejsek:'#B9773F',Investice:'#378ADD',Ostatní:'var(--text3)',Příjem:'var(--green)'};
 
 // Firebase Auth whitelist. Klíč = SHA-256 e-mailu (malými písmeny) — repo je
 // veřejné, ať v něm adresy nejsou v čitelné podobě. Nový uživatel:
