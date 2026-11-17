@@ -83,7 +83,7 @@ Column indices for `Transakce` rows are defined in `config.js` as `C` — always
 
 ## Google Apps Script deployment
 
-When `gas-update.js` is changed, the new code must be manually copied into the GAS project at `script.google.com` and redeployed (Manage deployments → edit → New version keeps the same URL; a new deployment needs `GAS_URL` updated). Client changes that depend on new GAS actions stay on a branch until the redeploy is done; GitHub Pages serves `main`.
+After changing `gas-update.js`, deploy it with **`npm run gas:deploy`** (tests → `clasp push` → `clasp deploy -i <live deployment>`): it pushes only `gas-update.js` + `appsscript.json` (see `.claspignore`) and updates the existing deployment, so `GAS_URL` stays the same. Needs `clasp` installed and logged in (`clasp login`) and a local `.clasp.json` with the scriptId (gitignored). Deploy GAS first, then push client changes that depend on it; GitHub Pages serves `main`. Time-driven triggers are configured in the Apps Script UI and reference function names — keep `refreshNav`, `checkPayslipEmail`, `checkMbankEmail` names stable.
 
 The `checkMbankEmail()` function in GAS scans Gmail for mBank PDF attachments, saves them to Google Drive (`Finance-Vypisy` folder), and appends a row with `status='new'` to the `MbankImport` sheet. The app polls this sheet on load to show the import banner.
 

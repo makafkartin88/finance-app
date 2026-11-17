@@ -2,6 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"tests/*.test.js\""
+    "test": "node --test \"tests/*.test.js\"",
+    "gas:deploy": "npm test && clasp push -f && clasp deploy -i AKfycbzKcg3Zr5PUQ5MPvxVavSxr8RtySOJ3rtmHTMQaxv13dwqUaP5BFS2IYZRFF3UsHPPP-Q -d \"z repa\""
   }
 }

@@ -3,3 +3,6 @@ Výplata/
 
 # Lokální investiční výpisy (CODYA/CONSEQ) — osobní data, nikdy necommitovat
 Investice/
+
+# clasp (Apps Script) — lokální vazba na projekt
+.clasp.json
