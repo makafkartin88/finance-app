@@ -27,6 +27,8 @@ export function guessCategory(popis, protistrana, typ) {
   // Pes (od 10/2026): zverimexy, veterina, chovatel, krmivo. Jako první —
   // „granule" nebo „lékárna" pro psa nesmí spadnout do Jídla/Zdraví.
   if (/zv[eě]rokruh|yogi|super ?zoo|\bzoo\b|pet ?center|\bvet\b|veterin|vetapso|chovatel|woofit|granul|krmiv|pro psa|psí /.test(text)) return 'Pejsek';
+  // Benzínky před Jídlem — „Globus čerpací stanice" není nákup jídla.
+  if (/\bmol\b|\bomv\b|orlen|benzina|euro ?oil|tank ?ono|robin ?oil|shell|\bavia\b|čerpací|cerpaci|benzín/.test(text)) return 'Doprava';
   // Zdraví před Bydlením/Zábavou („nemocnice" v názvu restaurace apod. je vzácné).
   if (/lékárna|lekarn|doktor|nemocnice|pojišt|zdraví|ockovaci|očkovací/.test(text)) return 'Zdraví';
   // Bydlení před Jídlem: „tescoma" jinak padala na „tesco".

@@ -70,3 +70,11 @@ test('guessCategory: obchody a služby z reálných výpisů (bez diakritiky, ve
   };
   for (const [text, cat] of Object.entries(cases)) assert.equal(guessCategory(text, text, 'Výdaj'), cat, text);
 });
+
+test('guessCategory: benzínky → Doprava (i Globus čerpací stanice, ne Jídlo)', () => {
+  for (const t of ['MOL 1234 PRAHA 6', 'OMV 2345 KLADNO', 'ORLEN BENZINA 0123', 'EUROOIL PRAHA', 'TANK ONO KLADNO',
+    'Robin Oil Praha', 'SHELL 1234 PRAHA', 'GLOBUS CERPACI STANICE ZLICIN', 'AVIA CS 12 KLADNO'])
+    assert.equal(guessCategory(t, t, 'Výdaj'), 'Doprava', t);
+  assert.equal(guessCategory('GLOBUS ZLICIN', '', 'Výdaj'), 'Jídlo');
+  assert.equal(guessCategory('MOLLY BAR', '', 'Výdaj'), 'Ostatní'); // „mol" jen jako celé slovo
+});
