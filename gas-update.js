@@ -1082,6 +1082,9 @@ function refreshNav(e) {
     var range = yahooRange(earliest, new Date());
     var sp = fetchYahoo('%5ESP500TR', range); // ^SP500TR
     var fx = fetchYahoo('USDCZK%3DX', range); // USDCZK=X
+    // Kurzy EUR a GBP ke koruně — ceny ETF z Tradingu (EUR/GBP) a EUR tříd
+    // fondů se tím převedou na Kč k danému dni (srovnání výkonnosti bez vlivu vkladů).
+    var fxMore = { EUR: fetchYahoo('EURCZK%3DX', range), GBP: fetchYahoo('GBPCZK%3DX', range) };
     // TrhHist nenafukovat roky před prvním nákupem (appka ho čte při každém
     // otevření) — stačí rezerva, aby existoval bod před datem nákupu.
     if (earliest && sp && sp.pairs) {
@@ -1092,7 +1095,7 @@ function refreshNav(e) {
     var market = updateMarket(ss, data, sp, fx);
     if (!market.ok) { failed.push('S&P500'); log.push(market.err || 'S&P: nenačteno'); }
     // Historie → listy TrhHist (denní S&P+FX) a FondyHist (řídké body fondů)
-    var hist = updateHistory(ss, data, sp, fx);
+    var hist = updateHistory(ss, data, sp, fx, fxMore);
     if (!hist.ok) log.push(hist.err || 'historie: nezapsána');
 
     // Týdenní časovač (e.triggerUid) projde navíc poštu: výpisy UniCredit,
@@ -1170,21 +1173,24 @@ function updateMarket(ss, fondyData, sp, fx) {
 
 // Historie: TrhHist (denní S&P+FX, přepisuje se) + FondyHist (řídké body
 // fondů, append+dedup). Umožní graf vývoje rebasovaný na 100 v CZK.
-function updateHistory(ss, fondyData, sp, fx) {
+function updateHistory(ss, fondyData, sp, fx, fxMore) {
   try {
     // --- TrhHist: plná denní řada S&P + USD/CZK + S&P v CZK (přepis) ---
     if (sp && sp.pairs) {
       var th = ss.getSheetByName('TrhHist');
       if (!th) th = ss.insertSheet('TrhHist');
       th.clear();
-      var rows = [['datum', 'spClose', 'usdCzk', 'spCzk']];
+      var rows = [['datum', 'spClose', 'usdCzk', 'spCzk', 'eurCzk', 'gbpCzk']];
+      var more = fxMore || {};
+      var rateOf = function (s, d) { return (s && s.pairs) ? closeOnOrBefore(s, d) : null; };
       for (var i = 0; i < sp.pairs.length; i++) {
         var d = sp.pairs[i].t;
         var iso = Utilities.formatDate(d, 'Europe/Prague', 'yyyy-MM-dd');
-        var usd = (fx && fx.pairs) ? closeOnOrBefore(fx, d) : null;
-        rows.push([iso, sp.pairs[i].c, usd || '', usd ? Math.round(sp.pairs[i].c * usd) : '']);
+        var usd = rateOf(fx, d);
+        rows.push([iso, sp.pairs[i].c, usd || '', usd ? Math.round(sp.pairs[i].c * usd) : '',
+          rateOf(more.EUR, d) || '', rateOf(more.GBP, d) || '']);
       }
-      th.getRange(1, 1, rows.length, 4).setValues(rows);
+      th.getRange(1, 1, rows.length, 6).setValues(rows);
     }
 
     // --- FondyHist: řídké body fondů (nákupní kotva + bod k datu platnosti NAV) ---

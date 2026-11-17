@@ -79,3 +79,44 @@ test('mergeTopUp: stejný (nebo starší) výpis podruhé → nepřičítat znov
   // bez data výpisu nelze poznat opakování → raději nic nepřičíst
   assert.equal(mergeTopUp({ ...ex }, { ...f, _statementDate: '' }), null);
 });
+
+// Vymyšlená data: h(datum, isin, provider, cena podílu, hodnota v Kč)
+const h = (datum, isin, provider, nav, hodnotaCZK) => ({ datum, isin, provider, nav, hodnotaCZK });
+
+test('providerTwr: dokoupení (desetkrát víc peněz) se nepočítá jako výnos', async () => {
+  const { providerTwr } = await import('../js/inv-core.js');
+  const idx = providerTwr([
+    h('2026-01-31', 'A', 'X', 100, 10000),
+    h('2026-02-28', 'A', 'X', 110, 110000),   // cena +10 %, hodnota ×11 kvůli dokupu
+    h('2026-03-31', 'A', 'X', 99, 99000),     // cena −10 %
+  ], { A: { mena: 'CZK' } }, () => 1);
+  assert.deepEqual(idx.map(p => p.t), ['2026-01-31', '2026-02-28', '2026-03-31']);
+  near(idx[1].v, 110);
+  near(idx[2].v, 99);          // 1,1 × 0,9 = 0,99
+  assert.equal(idx[2].raw, 99000);
+});
+
+test('providerTwr: dva fondy váženě podle hodnoty, nový fond vstupuje až od svého prvního bodu', async () => {
+  const { providerTwr } = await import('../js/inv-core.js');
+  const idx = providerTwr([
+    h('2026-01-31', 'A', 'X', 100, 30000), h('2026-01-31', 'B', 'X', 10, 10000),
+    h('2026-02-28', 'A', 'X', 110, 33000), h('2026-02-28', 'B', 'X', 9, 9000),
+    h('2026-02-28', 'C', 'X', 50, 500000),     // nový fond: jen vklad, žádný výnos
+  ], { A: { mena: 'CZK' }, B: { mena: 'CZK' }, C: { mena: 'CZK' } }, () => 1);
+  near(idx[1].v, 100 * (1 + (0.75 * 0.10 + 0.25 * -0.10)));  // +5 %
+});
+
+test('providerTwr: cena v cizí měně se převede historickým kurzem k danému dni', async () => {
+  const { providerTwr } = await import('../js/inv-core.js');
+  const fx = (ccy, iso) => ccy === 'EUR' ? (iso < '2026-02-15' ? 25 : 24) : 1;
+  const idx = providerTwr([h('2026-01-31', 'E', 'X', 100, 2500), h('2026-02-28', 'E', 'X', 100, 2400)],
+    { E: { mena: 'EUR' } }, fx);
+  near(idx[1].v, 96);            // cena v EUR stejná, koruna posílila o 4 %
+});
+
+test('providerTwr: bez kurzu k datu se bod vynechá (žádný tichý kurz 1)', async () => {
+  const { providerTwr } = await import('../js/inv-core.js');
+  const idx = providerTwr([h('2026-01-31', 'G', 'X', 100, 2900), h('2026-02-28', 'G', 'X', 105, 3000)],
+    { G: { mena: 'GBP' } }, () => null);
+  assert.deepEqual(idx, []);
+});

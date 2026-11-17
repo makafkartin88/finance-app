@@ -137,3 +137,45 @@ export function mergeTopUp(existing, f, fx = 1) {
     nakupDatum: existing.nakupDatum
   };
 }
+
+/* Výnos poskytovatele BEZ vlivu vkladů (time-weighted return, TWR).
+   Počítá se z ceny jednoho podílu/akcie (NAV) v Kč, ne z hodnoty portfolia:
+   když pošleš desetkrát víc peněz, cena podílu se nezmění, takže to výnos
+   nezkreslí. Mezi dvěma po sobě jdoucími daty se výnosy fondů zprůměrují
+   váženě podle hodnoty na začátku úseku a úseky se řetězí.
+   - hist: [{datum 'YYYY-MM-DD', isin, nav, hodnotaCZK}] (body s hodnotou 0
+     jsou staré nákupní kotvy T212 = průměrná nákupní cena, ne tržní → pryč),
+   - funds: { isin: { mena } }, fxAt(mena, datum) → kurz ke koruně nebo null
+     (bod bez kurzu se vynechá — žádný tichý kurz 1).
+   Vrací [{ t, v (index, start 100), raw (hodnota v Kč) }]. */
+export function providerTwr(hist, funds, fxAt) {
+  const byIsin = {};
+  for (const x of hist) {
+    if (!(x.nav > 0) || !(x.hodnotaCZK > 0)) continue;
+    const mena = (funds[x.isin] && funds[x.isin].mena) || 'CZK';
+    const fx = mena === 'CZK' ? 1 : fxAt(mena, x.datum);
+    if (!(fx > 0)) continue;
+    (byIsin[x.isin] = byIsin[x.isin] || []).push({ t: x.datum, p: x.nav * fx, v: x.hodnotaCZK });
+  }
+  Object.values(byIsin).forEach(a => a.sort((a1, b1) => a1.t < b1.t ? -1 : a1.t > b1.t ? 1 : 0));
+  const at = (a, d) => { let r = null; for (const x of a) { if (x.t <= d) r = x; else break; } return r; };
+  const dates = [...new Set(Object.values(byIsin).flatMap(a => a.map(x => x.t)))].sort();
+  const raw = d => Object.values(byIsin).reduce((s, a) => s + ((at(a, d) || {}).v || 0), 0);
+  const out = [];
+  let idx = 100;
+  dates.forEach((d1, i) => {
+    if (i > 0) {
+      const d0 = dates[i - 1];
+      let sw = 0, sr = 0;
+      for (const a of Object.values(byIsin)) {
+        const p0 = at(a, d0);
+        if (!p0) continue;                       // fond tehdy ještě nebyl
+        const p1 = at(a, d1);
+        sw += p0.v; sr += p0.v * (p1.p / p0.p - 1);
+      }
+      if (sw > 0) idx *= 1 + sr / sw;
+    }
+    out.push({ t: d1, v: idx, raw: raw(d1) });
+  });
+  return out;
+}
