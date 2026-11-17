@@ -251,10 +251,8 @@ export function renderCharts() {
   const now = new Date();
   const closed = closedMonths(months, all, `${MN[now.getMonth()]} ${now.getFullYear()}`);
   const avgs = _chartMonths.size ? null : categoryAverages(expenses, months, closed);
-  const open = months.filter(m => !closed.includes(m));
   document.getElementById('ca3').textContent = czk(Math.round(avgs ? avgs.overall : totalExpense/activeMonths));
-  document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ')
-    : `Průměr za ${closed.length} ${closed.length === 1 ? 'uzavřený měsíc' : closed.length < 5 ? 'uzavřené měsíce' : 'uzavřených měsíců'}${open.length ? ` (bez ${open.join(', ')} — čeká na výpis)` : ''}`;
+  document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ') : '';
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 

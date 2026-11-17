@@ -436,7 +436,17 @@ function comparisonCard() {
     ${body}
     ${thin.length ? `<div style="font-size:11px;color:var(--text2);background:var(--surface2);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">${thin.join(', ')} — v tomhle období zatím není dost historie na spočítání výnosu (potřeba aspoň dvě ocenění). Historie se sbírá při každé aktualizaci kurzů.</div>` : ''}
     ${skewed ? `<div style="font-size:11px;color:var(--amber-text);background:var(--amber-bg);padding:8px 10px;border-radius:var(--rsm);margin-top:10px">⚠️ Řádky s výstrahou nezačínají přesně ${czFromIso(_cmpFrom)} — fond k tomu dni neměl ocenění, použilo se poslední předchozí (datum je u řádku). Jejich období je tím pádem o něco delší, ber to při srovnání v potaz.</div>` : ''}
-    <div style="font-size:11px;color:var(--text3);margin-top:10px"><strong>Výnos bez vlivu vkladů</strong> (time-weighted, TWR): počítá se z ceny jednoho podílu/akcie v Kč, takže nezáleží na tom, kolik a kdy jsi kam poslal — odpovídá na otázku „kdybych stejné peníze dal ve stejný den sem, nebo tam". „100 000 Kč →" ukazuje, kolik by se z nich za období stalo. Tvůj skutečný výnos včetně načasování vkladů (XIRR) je na kartě poskytovatele. Ceny v cizí měně se převádí kurzem k danému dni, takže výsledek zahrnuje i pohyb koruny. Fondy CODYA/CONSEQ se oceňují měsíčně — kotvou je poslední skutečné ocenění k zvolenému datu, proto se u každého řádku zobrazuje, z jakých dat se počítá. S&P je zarovnané na stejný konec jako fondy.</div>
+    <details class="cmp-help">
+      <summary>Jak tahle čísla číst</summary>
+      <p><strong>Výnos bez vlivu vkladů (TWR)</strong> — procento v řádku. Počítá se z ceny jednoho podílu nebo akcie v korunách, takže nezáleží na tom, kolik peněz jsi kam poslal a kdy. Podle něj se rozhoduj, kam dát další peníze.</p>
+      <p class="cmp-ex">Příklad: v lednu koupíš podíly za 10 000 Kč po 100 Kč. V únoru stojí podíl 110 Kč a ty přidáš 100 000 Kč. V březnu podíl spadne na 99 Kč. Účet ukazuje 99 900 Kč místo 10 000 Kč, fond ale za ty tři měsíce prodělal 1 % (ze 100 Kč na 99 Kč). Srovnání ukáže −1 %.</p>
+      <p><strong>100 000 Kč → …</strong> Kolik by bylo ze 100 000 Kč vložených na začátku období, kdybys nic nepřidal. Je to stejné procento, jen se líp porovnává v korunách.</p>
+      <p><strong>% p.a.</strong> Výnos přepočtený na jeden rok. Ukáže se až u období delšího než rok — 3 % za dva měsíce by po přepočtu dělala 19 % ročně a to by nic neříkalo.</p>
+      <p><strong>Tvůj výnos (XIRR)</strong> je na kartě poskytovatele. Ten naopak počítá s tím, kdy a kolik jsi poslal: když přikoupíš těsně před poklesem, vyjde ti hůř než fondu. Říká, jak se dařilo tobě, ne fondu.</p>
+      <p><strong>Společné období</strong> nastaví všem stejný začátek. Jinak by každý řádek měl jinak dlouhé období a vyhrál by ten, kdo má delší historii. CODYA a CONSEQ se oceňují jednou měsíčně, UniCredit jednou za čtvrt roku, proto začínají posledním oceněním před tím dnem — řádek pak má ⚠ s datem.</p>
+      <p><strong>Kurz koruny</strong> je v číslech započtený. Ceny v EUR, GBP a USD se převádí kurzem k danému dni: když koruna posílí o 4 % a ETF v eurech stojí na místě, uvidíš −4 %, přesně tolik bys v korunách měl.</p>
+      <p><strong>Co v číslech není:</strong> vstupní poplatek (u CODYA a CONSEQ zhruba 1 % z vkladu). Cena podílu ho neobsahuje, najdeš ho v kartě Investováno u poskytovatele.</p>
+    </details>
   </div>`;
 }
 
