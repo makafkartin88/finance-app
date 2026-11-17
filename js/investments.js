@@ -222,6 +222,8 @@ window.invAllocPick = function (key) {
   renderOverview();
 };
 
+// S&P (srovnávací index) neutrální barvou — oranžovou má UniCredit.
+const SP_COLOR = 'var(--text2)';
 const CZK_COLORS = ['var(--blue)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#d76593', '#38bdb8', '#e8833a', 'var(--text3)'];
 
 function renderOverview() {
@@ -439,7 +441,7 @@ function comparisonCard() {
     const endIso = rows.map(r => r.to).sort().pop();
     const a = trhAtDate(anchorIso), b = trhAtDate(endIso);
     if (a && b && a.spCzk > 0 && a.datum !== b.datum) {
-      rows.push({ label: 'S&P 500 s dividendami (v CZK)', color: 'var(--amber)', ret: b.spCzk / a.spCzk - 1,
+      rows.push({ label: 'S&P 500 s dividendami (v CZK)', color: SP_COLOR, ret: b.spCzk / a.spCzk - 1,
         from: a.datum, to: b.datum, bench: true });
     }
   }
@@ -494,15 +496,15 @@ function buildChart() {
   if (_chartSel === 'all') {
     INV_PROVIDERS.forEach(p => { if (byProvider[p.key].length) series.push({ label: p.label, color: p.color, pts: byProvider[p.key], money: true }); });
     const earliest = INV_PROVIDERS.map(p => startOf(byProvider[p.key])).filter(Boolean).sort()[0];
-    if (earliest) series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(earliest) });
+    if (earliest) series.push({ label: 'S&P 500', color: SP_COLOR, pts: spSeries(earliest) });
   } else if (byProvider[_chartSel]) {
     const s = byProvider[_chartSel];
     const meta = INV_PROVIDERS.find(p => p.key === _chartSel);
-    if (s.length) { series.push({ label: meta.label, color: meta.color, pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
+    if (s.length) { series.push({ label: meta.label, color: meta.color, pts: s, money: true }); series.push({ label: 'S&P 500', color: SP_COLOR, pts: spSeries(s[0].t) }); }
   } else if (_chartSel.startsWith('isin:')) {
     const isin = _chartSel.slice(5);
     const s = rebaseFrom(rebase(histSeries(h => h.isin === isin)), _cmpFrom);
-    if (s.length) { series.push({ label: (state.investments.find(f => f.isin === isin) || {}).nazev || isin, color: 'var(--purple)', pts: s, money: true }); series.push({ label: 'S&P 500', color: 'var(--amber)', pts: spSeries(s[0].t) }); }
+    if (s.length) { series.push({ label: (state.investments.find(f => f.isin === isin) || {}).nazev || isin, color: 'var(--purple)', pts: s, money: true }); series.push({ label: 'S&P 500', color: SP_COLOR, pts: spSeries(s[0].t) }); }
   }
   return lineChartSVG(series);
 }

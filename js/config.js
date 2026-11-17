@@ -5,7 +5,7 @@ export const VERSION = '2.1';
 
 export const GAS_URL = 'https://script.google.com/macros/s/AKfycbzKcg3Zr5PUQ5MPvxVavSxr8RtySOJ3rtmHTMQaxv13dwqUaP5BFS2IYZRFF3UsHPPP-Q/exec';
 
-export const C = {datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14,uctenka:18,bilance:19};
+export const C = {datum:0,popis:1,castka:2,mena:3,ucet:4,typ:5,kategorie:6,osoba:7,metoda:8,protistrana:9,poznamka:10,castkaSign:11,mesic:12,rok:13,id:14,uctenka:18,bilance:19,jednorazova:20};
 
 // Sloupce listu "Mzdy" (výplatní pásky)
 export const MZ = {id:0,mesic:1,rok:2,tarif:3,prumerHod:4,zakladniMzda:5,svatek:6,premie:7,dovolenaKc:8,stravenky:9,hrubaMzda:10,hrubyPrijem:11,danPoSleve:12,zpPrac:13,spPrac:14,cistaMzda:15,kVyplate:16,odpracHod:17,neodpracHod:18,dovolenaNarok:19,dovolenaZustatek:20,multisport:21,soubor:22};

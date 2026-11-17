@@ -161,7 +161,9 @@ export function parseRow(r) {
     rok: yStr,
     id: r[C.id]||'',
     uctenka: r[C.uctenka]||'',
-    bilance: r[C.bilance] === true || (r[C.bilance]||'').toString().toUpperCase() === 'TRUE'
+    bilance: r[C.bilance] === true || (r[C.bilance]||'').toString().toUpperCase() === 'TRUE',
+    // jednorázový výdaj (koupě psa…) — počítá se všude, jen ne do průměrů
+    jednorazova: r[C.jednorazova] === true || (r[C.jednorazova]||'').toString().toUpperCase() === 'TRUE'
   };
 }
 

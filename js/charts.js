@@ -2,6 +2,7 @@ import { escHtml, jsArg, safeUrl } from './html.js';
 import { CATEGORY_COLORS } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, getMonths, base } from './utils.js';
+import { closedMonths, categoryAverages } from './tx-core.js';
 import { persistCfg } from './settings.js';
 import { toast } from './app.js';
 
@@ -244,8 +245,16 @@ export function renderCharts() {
   const categoryTotals = {}; expenses.forEach(t => { categoryTotals[t.kategorie] = (categoryTotals[t.kategorie]||0)+t.castka; });
   const topCategory = Object.entries(categoryTotals).sort((a,b) => b[1]-a[1])[0];
   renderBilance();
-  document.getElementById('ca3').textContent = czk(Math.round(totalExpense/activeMonths));
-  document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ') : `Průměr za ${activeMonths} měsíců`;
+  // Bez výběru měsíce: průměry jen z uzavřených měsíců, kategorie od prvního
+  // výskytu a bez jednorázových výdajů (tx-core). S výběrem: prostý součet/počet.
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  const closed = closedMonths(months, all, `${MN[now.getMonth()]} ${now.getFullYear()}`);
+  const avgs = _chartMonths.size ? null : categoryAverages(expenses, months, closed);
+  const open = months.filter(m => !closed.includes(m));
+  document.getElementById('ca3').textContent = czk(Math.round(avgs ? avgs.overall : totalExpense/activeMonths));
+  document.getElementById('ca3s').textContent = _chartMonths.size ? [..._chartMonths].join(', ')
+    : `Průměr za ${closed.length} ${closed.length === 1 ? 'uzavřený měsíc' : closed.length < 5 ? 'uzavřené měsíce' : 'uzavřených měsíců'}${open.length ? ` (bez ${open.join(', ')} — čeká na výpis)` : ''}`;
   document.getElementById('ca4').textContent = topCategory ? topCategory[0] : '—';
   document.getElementById('ca4s').textContent = topCategory ? czk(topCategory[1]) : 'Bez dat';
 
@@ -260,9 +269,11 @@ export function renderCharts() {
 
   // Průměrná měsíční útrata — klik na řádek přefiltruje protistrany vpravo
   const avgEl = document.getElementById('avgCats');
-  avgEl.innerHTML = catsSorted.slice(0,6).map(([cat,val]) => {
+  const avgRows = avgs ? avgs.cats.map(c => [c.cat, c.avg, c.months]) : catsSorted.map(([cat, val]) => [cat, val / activeMonths, activeMonths]);
+  avgEl.innerHTML = avgRows.slice(0,6).map(([cat,val,n]) => {
     const color = CATEGORY_COLORS[cat] || 'var(--text3)';
-    return `<div class="avg-cat-row${cat === _catFilter ? ' sel' : ''}" data-cat="${escHtml(cat)}" onclick="selectCatFilter(${jsArg(cat)})" title="Zobrazit protistrany: ${escHtml(cat)}"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${escHtml(cat)}</span><strong class="avg-cat-val">${czk(Math.round(val/activeMonths))}</strong></div>`;
+    const tip = avgs ? ` · průměr za ${n} ${n === 1 ? 'měsíc' : n < 5 ? 'měsíce' : 'měsíců'} od prvního výskytu, bez jednorázových výdajů` : '';
+    return `<div class="avg-cat-row${cat === _catFilter ? ' sel' : ''}" data-cat="${escHtml(cat)}" onclick="selectCatFilter(${jsArg(cat)})" title="Zobrazit protistrany: ${escHtml(cat)}${tip}"><span class="avg-cat-dot" style="background:${color}"></span><span class="avg-cat-name">${escHtml(cat)}</span><strong class="avg-cat-val">${czk(Math.round(val))}</strong></div>`;
   }).join('') || '<div class="empty">Žádné kategorie</div>';
 
   // Protistrany dle kategorie — interaktivní kombinovaná karta

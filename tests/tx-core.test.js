@@ -45,3 +45,29 @@ test('completedMonths: průměr bez rozběhnutého aktuálního měsíce (když 
   assert.deepEqual(completedMonths(['Sep 2026', 'Oct 2026'], 'Oct 2026'), ['Sep 2026']);
   assert.deepEqual(completedMonths(['Oct 2026'], 'Oct 2026'), ['Oct 2026']);
 });
+
+test('closedMonths: měsíce po posledním importovaném výpisu (a běžící měsíc) se do průměru nepočítají', async () => {
+  const { closedMonths } = await import('../js/tx-core.js');
+  const months = ['Aug 2026', 'Sep 2026', 'Oct 2026', 'Nov 2026'];
+  const txs = [{ mesic: 'Sep 2026', id: '20260915-mbabc' }, { mesic: 'Oct 2026', id: '20261020-x1' }, { mesic: 'Nov 2026', id: '20261101-R1' }];
+  assert.deepEqual(closedMonths(months, txs, 'Nov 2026'), ['Aug 2026', 'Sep 2026']); // říjnový výpis ještě nepřišel
+  assert.deepEqual(closedMonths(months, [{ mesic: 'Oct 2026', id: '20261029-mbx' }], 'Nov 2026'), ['Aug 2026', 'Sep 2026', 'Oct 2026']);
+  assert.deepEqual(closedMonths(months, [], 'Nov 2026'), ['Aug 2026', 'Sep 2026', 'Oct 2026']); // bez výpisů: jen bez běžícího
+  assert.deepEqual(closedMonths(['Nov 2026'], [], 'Nov 2026'), ['Nov 2026']);
+});
+
+test('categoryAverages: od prvního výskytu kategorie, bez jednorázových výdajů', async () => {
+  const { categoryAverages } = await import('../js/tx-core.js');
+  const e = (mesic, kategorie, castka, jednorazova = false) => ({ typ: 'Výdaj', mesic, kategorie, castka, jednorazova });
+  const months = ['Jan', 'Feb', 'Mar', 'Apr'];
+  const r = categoryAverages([
+    e('Jan', 'Jídlo', 100), e('Feb', 'Jídlo', 300), e('Mar', 'Jídlo', 200),
+    e('Mar', 'Pejsek', 35000, true), e('Mar', 'Pejsek', 400), e('Apr', 'Pejsek', 9999),
+  ], months, ['Jan', 'Feb', 'Mar']);
+  const by = Object.fromEntries(r.cats.map(c => [c.cat, c]));
+  assert.equal(by['Jídlo'].avg, 200);          // (100+300+200)/3
+  assert.equal(by['Pejsek'].avg, 400);         // jen březen, bez 35 000 a bez neuzavřeného dubna
+  assert.equal(by['Pejsek'].months, 1);
+  assert.equal(r.cats[0].cat, 'Pejsek');       // seřazeno podle průměru
+  assert.equal(r.overall, (600 + 400) / 3);
+});

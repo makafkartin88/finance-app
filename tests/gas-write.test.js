@@ -13,6 +13,8 @@ function makeGas(sheets, { props = {}, lookupEmail = null } = {}) {
       getName: () => name,
       getDataRange: () => ({ getValues: () => rows.map(r => r.slice()) }),
       getLastRow: () => rows.length,
+      getMaxColumns: () => sheets.__maxCols?.[name] ?? 99,
+      insertColumnsAfter: (_after, n) => { sheets.__maxCols[name] += n; },
       deleteRow: (n) => rows.splice(n - 1, 1),
       getRange: (r, c, nr = 1, nc = 1) => ({
         setValues: (vals) => vals.forEach((v, i) => { rows[r - 1 + i] = rows[r - 1 + i] || []; v.forEach((x, j) => { rows[r - 1 + i][c - 1 + j] = x; }); }),
@@ -239,4 +241,14 @@ test('triggerPlan: noční běh každý den (kurzy + T212), týdenní práce jen
   assert.deepEqual(plan({ triggerUid: 'x' }, 1), { scheduled: true, t212: true, weekly: true, alert: true });
   assert.deepEqual(plan({ triggerUid: 'x' }, 3), { scheduled: true, t212: true, weekly: false, alert: false });
   assert.deepEqual(plan(null, 3), { scheduled: false, t212: false, weekly: false, alert: true }); // tlačítko v appce
+});
+
+test('append/updateRow: delší řádek než list → list si přidá sloupce', () => {
+  const sheets = { Transakce: [['h'], ['a', , , , , , , , , , , , , , 'ID1']], __maxCols: { Transakce: 20 } };
+  const { ctx } = makeGas(sheets);
+  const row = Array(21).fill('x'); row[14] = 'ID1';
+  assert.equal(post(ctx, { action: 'updateRow', sheet: 'Transakce', id: 'ID1', values: row }).success, true);
+  assert.equal(sheets.__maxCols.Transakce, 21);
+  assert.equal(post(ctx, { sheet: 'Transakce', values: [Array(22).fill('y')] }).success, true);
+  assert.equal(sheets.__maxCols.Transakce, 22);
 });

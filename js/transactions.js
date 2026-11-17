@@ -119,6 +119,7 @@ export function openTx(idx) {
     document.getElementById('fProti').value = t.protistrana;
     document.getElementById('fNotes').value = t.poznamka;
     document.getElementById('fBilance').checked = !!t.bilance;
+    document.getElementById('fJednoraz').checked = !!t.jednorazova;
     syncOsobaRow();
     if (t.uctenka) {
       document.getElementById('fReceiptInfo').innerHTML = `<a href="${safeUrl(t.uctenka)}" target="_blank" rel="noopener noreferrer" style="color:var(--blue-text)">📎 Zobrazit nahranou účtenku</a> <button type="button" class="btn btnsm del-btn" onclick="removeReceipt()" title="Odebrat účtenku" style="margin-left:6px">✕ Odebrat</button>`;
@@ -132,6 +133,7 @@ export function openTx(idx) {
     document.getElementById('fOsoba').value = 'Martin'; document.getElementById('fUcet').value = 'mBank';
     document.getElementById('fMetoda').value = 'Karta';
     document.getElementById('fBilance').checked = false;
+    document.getElementById('fJednoraz').checked = false;
     syncOsobaRow();
     document.getElementById('fReceiptInfo').innerHTML = '';
   }
@@ -210,7 +212,8 @@ export async function saveTx() {
   const txId = isEdit ? old.id : newId(y, m, d);
   const uctenka = isEdit ? (old.uctenka || '') : '';
   const bilance = bilanceOn ? 'TRUE' : 'FALSE';
-  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,txId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance];
+  const jednorazova = document.getElementById('fJednoraz').checked ? 'TRUE' : 'FALSE';
+  const row = [datum,popis,castka,'CZK',ucet,typ,kat,osoba,metoda,proti,notes,sign,mesic,y,txId,typ === 'Výdaj' ? castka : 0,typ === 'Příjem' ? castka : 0,sign,uctenka,bilance,jednorazova];
   const tx = parseRow(row);
   // Úprava se zapíše NA MÍSTĚ (updateRow) — dřív smazání + nový zápis,
   // a když druhý krok selhal, transakce zmizela. Při chybě zůstane formulář

@@ -50,3 +50,44 @@ export function completedMonths(months, currentMonth) {
   const done = months.filter(m => m !== currentMonth);
   return done.length ? done : months;
 }
+
+/* Měsíce, které jdou do průměrů. Výpis z banky za měsíc chodí až v dalším
+   měsíci, takže měsíc bez importovaného výpisu je neúplný a průměr by
+   „ponižoval". Uzavřené = do měsíce posledního importu z mBank (id s „-mb"),
+   nikdy ne právě běžící měsíc. Bez importů aspoň bez běžícího měsíce. */
+export function closedMonths(months, txs, currentMonth) {
+  let last = -1;
+  for (const t of txs) {
+    if (!/-mb/.test(String(t.id || ''))) continue;
+    const i = months.indexOf(t.mesic);
+    if (i > last) last = i;
+  }
+  const upto = last >= 0 ? months.slice(0, last + 1) : months;
+  return completedMonths(upto, currentMonth);
+}
+
+/* Průměrná měsíční útrata po kategoriích.
+   - kategorie se průměruje od měsíce, kdy se poprvé objevila (pes koupený
+     v říjnu nemá mít průměr rozředěný měsíci, kdy ještě nebyl),
+   - jen uzavřené měsíce (closedMonths),
+   - bez jednorázových výdajů (`jednorazova`) — ty jsou dál vidět v součtech
+     a filtrech, jen nezkreslují „běžný měsíc". */
+export function categoryAverages(expenses, months, closed) {
+  const closedSet = new Set(closed);
+  const first = {}, sum = {};
+  let overallSum = 0;
+  for (const t of expenses) {
+    const i = months.indexOf(t.mesic);
+    if (i < 0) continue;
+    if (first[t.kategorie] === undefined || i < first[t.kategorie]) first[t.kategorie] = i;
+    if (closedSet.has(t.mesic) && !t.jednorazova) {
+      sum[t.kategorie] = (sum[t.kategorie] || 0) + t.castka;
+      overallSum += t.castka;
+    }
+  }
+  const cats = Object.keys(first).map(cat => {
+    const n = closed.filter(m => months.indexOf(m) >= first[cat]).length;
+    return { cat, avg: n ? (sum[cat] || 0) / n : 0, months: n };
+  }).sort((a, b) => b.avg - a.avg);
+  return { cats, overall: closed.length ? overallSum / closed.length : 0, monthsUsed: closed.length };
+}

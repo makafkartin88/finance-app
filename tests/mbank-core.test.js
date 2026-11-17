@@ -55,3 +55,18 @@ test('guessCategory: věci pro psa → Pejsek (ne lékárna/zdraví lidí)', () 
   assert.equal(guessCategory('BENU LEKARNA 172', '', 'Výdaj'), 'Zdraví');
   assert.equal(guessCategory('Sladka dilna Petriny', '', 'Výdaj'), 'Ostatní'); // „pet" uvnitř slova
 });
+
+test('guessCategory: obchody a služby z reálných výpisů (bez diakritiky, velkými)', () => {
+  const cases = {
+    'KFC EVROPSKA PRAHA 6': 'Zábava', 'ASIA BOX PRAHA 5 - SMI': 'Zábava', 'TASTY DONER KEBAB PRAHA': 'Zábava',
+    'ENTREE RESTAURANT CZK OLOMOUC': 'Zábava', 'BAGETERIE BOULEVARD PLZEN': 'Zábava', 'DELISH BURGER PLZEN': 'Zábava',
+    'One Padel s.r.o. Praha': 'Zábava', 'PALA VIZNER TENNIS PRAHA': 'Zábava', 'CG *ticketportal.cz Praha 1': 'Zábava', 'NFCTRON PRAHA': 'Zábava',
+    'USTAVNI LEKARNA KLADNO': 'Zdraví', 'OCKOVACI CENTRUM Praha 6': 'Zdraví',
+    'JYSK T21 VAM DEKUJE PRAHA': 'Bydlení', 'PEPCO 130087 KLADNO': 'Bydlení', 'TEDI 4512 KLADNO': 'Bydlení',
+    'MOEBELIX CESKO CESTLICE': 'Bydlení', 'XXX LUTZ PR 5 PRAHA': 'Bydlení', 'BONAMI.CZ PRAHA 7': 'Bydlení',
+    'PC TESCOMA PRAHA BOR': 'Bydlení', 'DATART PRAHA 6 RUZYN': 'Bydlení',
+    'parkoviste OC Sestka Praha': 'Doprava', 'AUTOPARK D1 OSTROVACICE': 'Doprava',
+    'DM DROGERIE MARKT 1234 KLADNO': 'Jídlo', 'Tesco Praha Novy Smich': 'Jídlo',
+  };
+  for (const [text, cat] of Object.entries(cases)) assert.equal(guessCategory(text, text, 'Výdaj'), cat, text);
+});

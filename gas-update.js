@@ -169,7 +169,7 @@ function doPost(e) {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var sheet = sheetName ? (ss.getSheetByName(sheetName) || ss.insertSheet(sheetName)) : ss.getSheets()[0];
       var rows = padRows(body.values || []);
-      if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      if (rows.length) { ensureCols(sheet, rows[0].length); sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows); }
       return jsonOut({ success: true, added: rows.length });
     });
   } catch (err) {
@@ -368,6 +368,14 @@ function dedupeIds() {
 // a e-mailů nejsou důvěryhodná, apostrof je vynutí jako obyčejný text.
 function safeCell(v) { return (typeof v === 'string' && /^[=+@]/.test(v)) ? "'" + v : v; }
 
+// Appka občas přidá sloupec (např. „jednorázový výdaj") — zápis za poslední
+// sloupec listu by Apps Script odmítl, proto se list rozšíří sám.
+function ensureCols(sheet, n) {
+  if (!sheet.getMaxColumns) return;
+  var have = sheet.getMaxColumns();
+  if (n > have) sheet.insertColumnsAfter(have, n - have);
+}
+
 // Řádky různé délky → obdélník pro setValues.
 function padRows(values) {
   var w = 0;
@@ -393,6 +401,7 @@ function handleUpdateRow(body) {
     var i = findRowById(sheet, idColFor(sheetName), body.id);
     if (i < 0) return rowNotFound(i);
     var row = (body.values || []).map(safeCell);
+    ensureCols(sheet, row.length);
     sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
     return jsonOut({ success: true });
   });
@@ -433,7 +442,7 @@ function handleAppendRecurring(body) {
       data[k][12] = month;
     });
     var padded = padRows(rows);
-    if (padded.length) tx.getRange(tx.getLastRow() + 1, 1, padded.length, padded[0].length).setValues(padded);
+    if (padded.length) { ensureCols(tx, padded[0].length); tx.getRange(tx.getLastRow() + 1, 1, padded.length, padded[0].length).setValues(padded); }
     return jsonOut({ success: true, added: added });
   });
 }
