@@ -167,7 +167,6 @@ function populateSels() {
   const from = document.getElementById('dFrom'), to = document.getElementById('dTo');
   if (from) from.value = state._range.from;
   if (to) to.value = state._range.to;
-  syncRangeSlider();
   const dTxt = document.getElementById('dRangeTxt'); if (dTxt) dTxt.innerHTML = `<strong>${scoped.length} transakcí</strong>`;
   const cTxt = document.getElementById('chRangeTxt'); if (cTxt) cTxt.innerHTML = `<strong>${rangeLabel(state._range.from, state._range.to)}</strong><span>${scoped.length} transakcí</span>`;
   const scope = document.getElementById('dashScope'); if (scope) scope.textContent = `Rozsah: ${rangeLabel(state._range.from, state._range.to)}`;
@@ -194,40 +193,6 @@ export function nav(id, el) {
 /* Vydaje jsou spolecne — prepinac osoby (Oba/Martin/Sarka) uz v UI neni
    a state.person zustava natrvalo 'Oba'. Pole `osoba` na transakci dal
    existuje, ale slouzi uz jen bilanci prispevku Martin <-> Sarka. */
-
-/* Posuvník období (jako v Power BI): dva úchyty nad osou od první transakce
-   do dneška, krok 1 den. Táhnutí jen přepisuje data v polích Od/Do,
-   přepočet celé appky proběhne až po puštění (onchange). */
-const DAY_MS = 864e5;
-const isoToDay = iso => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DAY_MS);
-const dayToIso = n => new Date(n * DAY_MS).toISOString().slice(0, 10);
-function sliderBounds() {
-  const { min } = getBounds();
-  const lo = isoToDay(isoDate(min));
-  return { lo, hi: Math.max(isoToDay(isoDate(new Date())), lo + 1) };
-}
-function paintSlider(a, b, lo, hi) {
-  const fill = document.getElementById('dSlFill');
-  if (fill) { fill.style.left = ((a - lo) / (hi - lo) * 100) + '%'; fill.style.right = ((hi - b) / (hi - lo) * 100) + '%'; }
-}
-function syncRangeSlider() {
-  const f = document.getElementById('dSlFrom'), t = document.getElementById('dSlTo');
-  if (!f || !t || !state._range?.from) return;
-  const { lo, hi } = sliderBounds();
-  for (const el of [f, t]) { el.min = lo; el.max = hi; }
-  f.value = Math.max(lo, isoToDay(state._range.from));
-  t.value = Math.min(hi, isoToDay(state._range.to));
-  paintSlider(+f.value, +t.value, lo, hi);
-}
-function rangeSlide(which) {
-  const f = document.getElementById('dSlFrom'), t = document.getElementById('dSlTo');
-  let a = +f.value, b = +t.value;
-  if (a > b) { if (which === 'from') { a = b; f.value = a; } else { b = a; t.value = b; } }
-  document.getElementById('dFrom').value = dayToIso(a);
-  document.getElementById('dTo').value = dayToIso(b);
-  const { lo, hi } = sliderBounds();
-  paintSlider(a, b, lo, hi);
-}
 
 function applyRangeFromInputs() {
   const from = document.getElementById('dFrom')?.value;
@@ -270,7 +235,6 @@ window.drillM = drillM;
 window.drillC = drillC;
 window.clearDrill = clearDrill;
 window.applyRangeFromInputs = applyRangeFromInputs;
-window.rangeSlide = rangeSlide;
 window.resetRange = resetRange;
 window.reloadSheets = () => loadSheets();
 window.saveSettings = saveSettings;
