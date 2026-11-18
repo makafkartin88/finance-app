@@ -3,17 +3,19 @@ import { postJson } from './utils.js';
 import { getCurrentPerson } from './auth.js';
 import { toast } from './app.js';
 import { parseDocRow, visibleDocs, filterDocs, folderCounts, folderSuggestions, docsFromSheet,
-         validateUpload, canonicalFolder, stripExt, VISIBILITY, DOK } from './documents-core.js';
+         validateUpload, canonicalFolder, stripExt, VISIBILITY, DOK, personalRows } from './documents-core.js';
 import { escHtml, jsArg } from './html.js';
 
 let _query = '';
 let _folder = null; // null = všechny složky, '' = bez složky
 let _loadError = false;
 
-// `pre` = odpověď listu Dokumenty z dávkového fetchSheets v app.js.
-export function loadDocuments(pre) {
+// `pre` = odpověď listu Dokumenty z dávkového fetchSheets v app.js,
+// `udaje` = list Udaje (osobní údaje přihlášeného, server posílá jen jeho).
+export function loadDocuments(pre, udaje) {
   const { docs, error } = docsFromSheet(pre);
   state.docs = docs;
+  state.udaje = personalRows(udaje, getCurrentPerson());
   _loadError = error;
   state._docsLoaded = true;
   renderDocs();
@@ -52,17 +54,20 @@ export function renderDocs() {
     list.innerHTML = '<div class="empty">Zatím žádné dokumenty. Nahraj první přes „+ Nahrát".</div>';
     return;
   }
+  // Složka se jménem přihlášeného (např. „Martin") ukáže nahoře jeho
+  // základní údaje ke zkopírování — číslo OP, rodné číslo, pojišťovna…
+  const card = (_folder && _folder === getCurrentPerson() && (state.udaje || []).length) ? udajeCard() : '';
   const shown = filterDocs(mine, _query, _folder)
     .sort((a, b) => b.datum.localeCompare(a.datum) || a.nazev.localeCompare(b.nazev, 'cs'));
   if (!shown.length) {
-    list.innerHTML = '<div class="empty">Nic nenalezeno.</div>';
+    list.innerHTML = card + '<div class="empty">Nic nenalezeno.</div>';
     return;
   }
-  list.innerHTML = shown.map(d => {
+  list.innerHTML = card + shown.map(d => {
     const vis = d.viditelnost === 'Oba' ? '<span class="doc-vis">Oba</span>' : `<span class="doc-vis priv">jen ${escHtml(d.viditelnost)}</span>`;
     return `<div class="doc-row">
       <div class="doc-ico ${d.typ === 'pdf' ? 'pdf' : 'image'}">${d.typ === 'pdf' ? 'PDF' : 'IMG'}</div>
-      <a class="doc-main" href="${escHtml(d.url)}" target="_blank" rel="noopener noreferrer">
+      <a class="doc-main" ${d.viditelnost === 'Oba' ? `href="${escHtml(d.url)}" target="_blank" rel="noopener noreferrer"` : `href="#" onclick="docOpen(${jsArg(d.id)});return false"`}>
         <div class="doc-name">${escHtml(d.nazev)}</div>
         <div class="doc-meta">${escHtml(folderLabel(d.slozka))} · ${fmtDate(d.datum)} · ${fmtSize(d.velikost)}${d.nahral ? ' · ' + escHtml(d.nahral) : ''}</div>
       </a>
@@ -73,6 +78,59 @@ export function renderDocs() {
       </div>
     </div>`;
   }).join('');
+}
+
+function udajeCard() {
+  const rows = state.udaje.map(u => `<div class="udaj-row">
+      <div class="udaj-label">${escHtml(u.polozka)}${u.poznamka ? `<span>${escHtml(u.poznamka)}</span>` : ''}</div>
+      <div class="udaj-val${u.hodnota ? '' : ' empty'}">${u.hodnota ? escHtml(u.hodnota) : 'doplň'}</div>
+      <div class="udaj-actions">
+        ${u.hodnota ? `<button class="btn btnsm" onclick="udajCopy(${jsArg(u.id)})" title="Zkopírovat">Kopírovat</button>` : ''}
+        <button class="btn btnsm" onclick="udajEdit(${jsArg(u.id)})" title="Upravit">✎</button>
+      </div>
+    </div>`).join('');
+  return `<div class="udaje-card"><div class="udaje-hdr">Moje údaje <span>vidíš je jen ty</span></div>${rows}</div>`;
+}
+
+export async function udajCopy(id) {
+  const u = (state.udaje || []).find(x => x.id === id);
+  if (!u) return;
+  try { await navigator.clipboard.writeText(u.hodnota); toast(`${u.polozka} zkopírováno`, 'ok'); }
+  catch (e) { toast('Kopírování se nepovedlo — označ hodnotu ručně', 'err'); }
+}
+
+export async function udajEdit(id) {
+  const u = (state.udaje || []).find(x => x.id === id);
+  if (!u) return;
+  const v = prompt(u.polozka, u.hodnota);
+  if (v === null || v.trim() === u.hodnota) return;
+  try {
+    await postJson({ action: 'updateRow', sheet: 'Udaje', id: u.id, values: [u.id, u.osoba, u.polozka, v.trim(), u.poznamka] });
+    u.hodnota = v.trim();
+    renderDocs();
+    toast('Uloženo', 'ok');
+  } catch (e) { toast('Neuloženo: ' + e.message, 'err'); }
+}
+
+// Soukromé dokumenty nejsou sdílené odkazem — stáhnou se přes server
+// (ověří přihlášení) a otevřou se z paměti prohlížeče. Okno se otvírá hned
+// při kliknutí, jinak by ho prohlížeč po čekání na server zablokoval.
+export async function docOpen(id) {
+  const d = state.docs.find(x => x.id === id);
+  if (!d) return;
+  const w = window.open('', '_blank');
+  if (w) w.document.title = d.nazev;
+  try {
+    const r = await postJson({ action: 'getDriveFile', fileId: d.fileId }, { tries: 2 });
+    const bytes = Uint8Array.from(atob(r.data), c => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: d.typ === 'pdf' ? 'application/pdf' : 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    if (w) w.location.href = url; else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    if (w) w.close();
+    toast('Dokument se nepodařilo otevřít: ' + e.message, 'err');
+  }
 }
 
 /* ── MODAL: nahrání i úprava ── */

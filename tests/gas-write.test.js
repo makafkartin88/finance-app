@@ -252,3 +252,27 @@ test('append/updateRow: delší řádek než list → list si přidá sloupce', 
   assert.equal(post(ctx, { sheet: 'Transakce', values: [Array(22).fill('y')] }).success, true);
   assert.equal(sheets.__maxCols.Transakce, 22);
 });
+
+// Osobní údaje: vymyšlené hodnoty
+const udaje = () => [['id', 'osoba', 'polozka', 'hodnota', 'poznamka'],
+  ['u1', 'Martin', 'Číslo OP', '111', ''], ['u2', 'Šárka', 'Číslo OP', '222', ''], ['u3', 'Martin', 'Číslo pasu', '', '']];
+
+test('Udaje: každý dostane jen své řádky, bez ověření nikdo nic', () => {
+  const s1 = makeGas({ Udaje: udaje() }, { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'besarka@gmail.com' });
+  assert.deepEqual(post(s1.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u2']);
+  const s2 = makeGas({ Udaje: udaje() }, { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'martinkafka9@gmail.com' });
+  assert.deepEqual(post(s2.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u1', 'u3']);
+  const s3 = makeGas({ Udaje: udaje() });
+  assert.deepEqual(post(s3.ctx, { action: 'read', sheets: ['Udaje'] }).sheets.Udaje.values.map(r => r[0]), ['id']);
+});
+
+test('Udaje: upravit jde jen vlastní řádek, přidat ani smazat nic', () => {
+  const sheets = { Udaje: udaje() };
+  const { ctx } = makeGas(sheets, { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'besarka@gmail.com' });
+  assert.match(post(ctx, { action: 'updateRow', sheet: 'Udaje', id: 'u1', values: ['u1', 'Martin', 'Číslo OP', 'X', ''], idToken: tok }).error, /oprávnění/);
+  assert.match(post(ctx, { action: 'updateRow', sheet: 'Udaje', id: 'u2', values: ['u2', 'Martin', 'Číslo OP', 'X', ''], idToken: tok }).error, /oprávnění/);
+  assert.equal(post(ctx, { action: 'updateRow', sheet: 'Udaje', id: 'u2', values: ['u2', 'Šárka', 'Číslo OP', '333', ''], idToken: tok }).success, true);
+  assert.equal(sheets.Udaje[2][3], '333');
+  assert.match(post(ctx, { sheet: 'Udaje', values: [['u9', 'Šárka', 'x', 'y', '']], idToken: tok }).error, /oprávnění/);
+  assert.match(post(ctx, { action: 'deleteRow', sheet: 'Udaje', txId: 'u2', idToken: tok }).error, /oprávnění/);
+});

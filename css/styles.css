@@ -472,3 +472,16 @@ button.is-busy{cursor:progress;opacity:.75}
 .cmp-help[open] summary::before{content:'▾ '}
 .cmp-help p{margin:8px 0 0}
 .cmp-help .cmp-ex{background:var(--surface2);border-radius:var(--rsm);padding:8px 10px}
+
+/* ── Osobní údaje ve složce osoby (Dokumenty) ── */
+.udaje-card{border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;background:var(--surface2)}
+.udaje-hdr{font-weight:700;font-size:13px;margin-bottom:6px}
+.udaje-hdr span{font-weight:400;font-size:11px;color:var(--text3);margin-left:6px}
+.udaj-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)}
+.udaj-row:first-of-type{border-top:none}
+.udaj-label{width:200px;flex-shrink:0;font-size:12px;color:var(--text2)}
+.udaj-label span{display:block;font-size:10px;color:var(--text3)}
+.udaj-val{flex:1;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;word-break:break-all;user-select:all}
+.udaj-val.empty{color:var(--text3);font-weight:400;font-style:italic;user-select:none}
+.udaj-actions{display:flex;gap:6px;flex-shrink:0}
+@media (max-width:600px){.udaj-row{flex-wrap:wrap}.udaj-label{width:100%}}

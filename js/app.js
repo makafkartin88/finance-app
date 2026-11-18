@@ -15,7 +15,7 @@ import { loadRecurring, autoGenerateRecurring, openRecurring, closeRecurring, op
 import { openMbankImport, closeMbankImport, mbankDov, mbankDol, mbankDod, onMbankFile, confirmMbankImport, loadMbankNotification, hideMbankBanner, toggleMbankDupDetail, importMbankFromDrive, mbankPickPending, mbankMarkDone, mbankCheckMail } from './mbank-import.js';
 import { openColPopover, closePopover, toggleSort, cpSelectAll, cpClearFilter, cpApplyMulti, cpApplyRange } from './table-filters.js';
 import { renderSalary, salApplyRange, salResetRange, salSelect } from './salary.js';
-import { loadDocuments, renderDocs, docSearch, docPickFolder, openDocUpload, openDocEdit, closeDocModal,
+import { loadDocuments, renderDocs, udajCopy, udajEdit, docOpen, docSearch, docPickFolder, openDocUpload, openDocEdit, closeDocModal,
          docDov, docDol, docDod, onDocFile, saveDoc, deleteDoc, docSetVis } from './documents.js';
 import { openSalaryImport, closeSalaryImport, salaryDov, salaryDol, salaryDod, onSalaryFile, confirmSalaryImport, loadSalaryData, hideSalaryBanner, importPayslipFromDrive, salaryPickPending, salaryMarkDone, salaryCheckMail } from './salary-import.js';
 
@@ -70,7 +70,7 @@ export async function loadSheets() {
 
     // 3) Zbytek na pozadí, jedním požadavkem. Listy pro skryté sekce se
     //    ani nestahují (gating stejný jako v samotných loaderech).
-    const names = ['Recurring', 'MbankImport', 'Nastaveni', 'Dokumenty'];
+    const names = ['Recurring', 'MbankImport', 'Nastaveni', 'Dokumenty', 'Udaje'];
     if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist');
     if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport', 'Inflace');
     fetchSheets(names).then(s => {
@@ -80,7 +80,7 @@ export async function loadSheets() {
       loadMbankNotification(s.MbankImport);
       loadSalaryData(s.Mzdy, s.MzdyImport, s.Inflace);
       applyNastaveni(s.Nastaveni);
-      loadDocuments(s.Dokumenty);
+      loadDocuments(s.Dokumenty, s.Udaje);
     }).catch(() => {
       /* doplňková data — výpadek nesmí shodit appku; jen ukončit spinner Dokumentů */
       loadDocuments();
@@ -235,6 +235,9 @@ window.drillM = drillM;
 window.drillC = drillC;
 window.clearDrill = clearDrill;
 window.applyRangeFromInputs = applyRangeFromInputs;
+window.udajCopy = udajCopy;
+window.udajEdit = udajEdit;
+window.docOpen = docOpen;
 window.resetRange = resetRange;
 window.reloadSheets = () => loadSheets();
 window.saveSettings = saveSettings;

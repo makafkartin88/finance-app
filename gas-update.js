@@ -89,7 +89,7 @@ function doPost(e) {
 
     // ── UPDATE ROW (úprava transakce / šablony na místě, pod zámkem) ──
     if (body.action === 'updateRow') {
-      return handleUpdateRow(body);
+      return handleUpdateRow(body, who);
     }
 
     // ── OPAKOVANÉ PLATBY: vygenerovat měsíc pod zámkem + zapsat posledniGen ──
@@ -281,6 +281,8 @@ function authorize(who, body) {
   // Jakákoli akce nad listem mzdy/investic (i updateRow/deleteRow), ne jen append.
   if ((SALARY_ACTIONS[a] || (sh && SALARY_SHEETS[sh])) && !who.salary) return 'Bez oprávnění (mzda).';
   if ((INVEST_ACTIONS[a] || (sh && INVEST_SHEETS[sh])) && !who.investments) return 'Bez oprávnění (investice).';
+  // Osobní údaje (list Udaje) jen upravovat — vlastnictví řádku hlídá handleUpdateRow.
+  if (sh === 'Udaje' && a !== 'updateRow') return 'Bez oprávnění (osobní údaje).';
   return '';
 }
 
@@ -304,13 +306,18 @@ function readSheetsFor(who, names) {
     if (nm === 'Dokumenty' && who) values = values.filter(function (r, i) {
       return i === 0 || !r[3] || r[3] === 'Oba' || r[3] === who.person;
     });
+    // Osobní údaje (číslo OP, rodné číslo…): každý jen své řádky; bez
+    // ověřeného přihlášení nic, ani když vynucení není zapnuté.
+    if (nm === 'Udaje') values = values.filter(function (r, i) {
+      return i === 0 || (who && r[1] === who.person);
+    });
     out[nm] = { values: values };
   });
   return out;
 }
 
 // ── ZÁPIS: společné pomocníky ──
-var ID_COL = { Transakce: 14, Recurring: 0, Mzdy: 0 };
+var ID_COL = { Transakce: 14, Recurring: 0, Mzdy: 0, Udaje: 0 };
 function idColFor(sheetName) { return ID_COL.hasOwnProperty(sheetName) ? ID_COL[sheetName] : 14; }
 
 // Index řádku s daným id; -1 = nenalezeno, -2 = víc řádků se stejným id
@@ -393,13 +400,18 @@ function withLock(fn) {
 
 // Úprava řádku NA MÍSTĚ. Dřív se dělalo smazání + nový zápis dvěma požadavky
 // — když druhý selhal, transakce zmizela.
-function handleUpdateRow(body) {
+function handleUpdateRow(body, who) {
   return withLock(function () {
     var sheetName = body.sheet || 'Transakce';
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) return jsonOut({ error: 'List ' + sheetName + ' neexistuje' });
     var i = findRowById(sheet, idColFor(sheetName), body.id);
     if (i < 0) return rowNotFound(i);
+    if (sheetName === 'Udaje') {
+      var cur = sheet.getRange(i + 1, 1, 1, 5).getValues()[0];
+      if (!who || cur[1] !== who.person || (body.values || [])[1] !== who.person)
+        return jsonOut({ error: 'Bez oprávnění (osobní údaje).' });
+    }
     var row = (body.values || []).map(safeCell);
     ensureCols(sheet, row.length);
     sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
@@ -721,7 +733,9 @@ function handleUploadDocument(body) {
     var mime = body.mimeType || 'application/octet-stream';
     var blob = Utilities.newBlob(Utilities.base64Decode(body.data), mime, body.fileName || 'dokument');
     var file = dokFolder(slozka).createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    // Jen dokumenty pro oba se sdílí odkazem; soukromé (doklady, zdravotní
+    // zprávy) appka otevírá přes getDriveFile, který ověří přihlášení.
+    if (vis === 'Oba') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     var id = 'doc_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     var row = [id, String(body.nazev || body.fileName || 'Dokument').trim(), slozka, vis,
       file.getUrl(), file.getId(), mime === 'application/pdf' ? 'pdf' : 'image',

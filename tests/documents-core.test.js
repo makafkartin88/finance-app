@@ -137,3 +137,13 @@ test('docsFromSheet: chybějící list = prázdno bez chyby, jiná chyba = error
   assert.equal(r.error, false);
   assert.deepEqual(r.docs.map(d => d.id), ['a']);
 });
+
+test('personalRows: jen řádky dané osoby, prázdné hodnoty zůstanou (k doplnění)', async () => {
+  const { personalRows } = await import('../js/documents-core.js');
+  const res = { values: [['id', 'osoba', 'polozka', 'hodnota', 'poznamka'],
+    ['u1', 'Martin', 'Jméno', 'Jan', ''], ['u2', 'Šárka', 'Jméno', 'Eva', ''], ['u3', 'Martin', 'Číslo pasu', '', 'doplň'], ['', '', '', '', '']] };
+  assert.deepEqual(personalRows(res, 'Martin'), [
+    { id: 'u1', osoba: 'Martin', polozka: 'Jméno', hodnota: 'Jan', poznamka: '' },
+    { id: 'u3', osoba: 'Martin', polozka: 'Číslo pasu', hodnota: '', poznamka: 'doplň' }]);
+  assert.deepEqual(personalRows({ error: 'x' }, 'Martin'), []);
+});
