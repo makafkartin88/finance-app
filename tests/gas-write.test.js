@@ -257,11 +257,11 @@ test('append/updateRow: delší řádek než list → list si přidá sloupce', 
 const udaje = () => [['id', 'osoba', 'polozka', 'hodnota', 'poznamka'],
   ['u1', 'Martin', 'Číslo OP', '111', ''], ['u2', 'Šárka', 'Číslo OP', '222', ''], ['u3', 'Martin', 'Číslo pasu', '', '']];
 
-test('Udaje: každý dostane jen své řádky, bez ověření nikdo nic', () => {
+test('Udaje: oba přihlášení vidí údaje obou (kdyby je ten druhý potřeboval), bez ověření nikdo nic', () => {
   const s1 = makeGas({ Udaje: udaje() }, { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'besarka@gmail.com' });
-  assert.deepEqual(post(s1.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u2']);
+  assert.deepEqual(post(s1.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u1', 'u2', 'u3']);
   const s2 = makeGas({ Udaje: udaje() }, { props: { AUTH_ENFORCE: '1' }, lookupEmail: 'martinkafka9@gmail.com' });
-  assert.deepEqual(post(s2.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u1', 'u3']);
+  assert.deepEqual(post(s2.ctx, { action: 'read', sheets: ['Udaje'], idToken: tok }).sheets.Udaje.values.map(r => r[0]), ['id', 'u1', 'u2', 'u3']);
   const s3 = makeGas({ Udaje: udaje() });
   assert.deepEqual(post(s3.ctx, { action: 'read', sheets: ['Udaje'] }).sheets.Udaje.values.map(r => r[0]), ['id']);
 });

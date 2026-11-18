@@ -11,11 +11,11 @@ let _folder = null; // null = všechny složky, '' = bez složky
 let _loadError = false;
 
 // `pre` = odpověď listu Dokumenty z dávkového fetchSheets v app.js,
-// `udaje` = list Udaje (osobní údaje přihlášeného, server posílá jen jeho).
+// `udaje` = list Udaje (osobní údaje obou; upravit jde jen ty své).
 export function loadDocuments(pre, udaje) {
   const { docs, error } = docsFromSheet(pre);
   state.docs = docs;
-  state.udaje = personalRows(udaje, getCurrentPerson());
+  state.udaje = personalRows(udaje);
   _loadError = error;
   state._docsLoaded = true;
   renderDocs();
@@ -44,23 +44,27 @@ export function renderDocs() {
   }
   const mine = visibleDocs(state.docs, getCurrentPerson());
   const folders = folderCounts(mine);
+  // Složka osoby s osobními údaji se ukáže i bez dokumentů, které vidíš
+  // (Šárka tak najde Martinovy údaje, i když jeho doklady jsou soukromé).
+  for (const p of new Set((state.udaje || []).map(u => u.osoba)))
+    if (!folders.some(f => f.name === p)) folders.push({ name: p, count: 0 });
   if (_folder !== null && !folders.some(f => f.name === _folder)) _folder = null;
 
   chips.innerHTML = [`<button class="chip${_folder === null ? ' active' : ''}" onclick="docPickFolder(null)">Vše ${mine.length}</button>`]
     .concat(folders.map(f => `<button class="chip${_folder === f.name ? ' active' : ''}" onclick="docPickFolder(${jsArg(f.name)})">${escHtml(folderLabel(f.name))} ${f.count}</button>`))
     .join('');
 
-  if (!mine.length) {
+  // Složka se jménem osoby (např. „Martin") ukáže nahoře její základní
+  // údaje ke zkopírování — číslo OP, rodné číslo, pojišťovna…
+  const card = _folder && (state.udaje || []).some(u => u.osoba === _folder) ? udajeCard(_folder) : '';
+  if (!mine.length && !card) {
     list.innerHTML = '<div class="empty">Zatím žádné dokumenty. Nahraj první přes „+ Nahrát".</div>';
     return;
   }
-  // Složka se jménem přihlášeného (např. „Martin") ukáže nahoře jeho
-  // základní údaje ke zkopírování — číslo OP, rodné číslo, pojišťovna…
-  const card = (_folder && _folder === getCurrentPerson() && (state.udaje || []).length) ? udajeCard() : '';
   const shown = filterDocs(mine, _query, _folder)
     .sort((a, b) => b.datum.localeCompare(a.datum) || a.nazev.localeCompare(b.nazev, 'cs'));
   if (!shown.length) {
-    list.innerHTML = card + '<div class="empty">Nic nenalezeno.</div>';
+    list.innerHTML = card || '<div class="empty">Nic nenalezeno.</div>';
     return;
   }
   list.innerHTML = card + shown.map(d => {
@@ -80,16 +84,18 @@ export function renderDocs() {
   }).join('');
 }
 
-function udajeCard() {
-  const rows = state.udaje.map(u => `<div class="udaj-row">
+function udajeCard(osoba) {
+  const mineRows = osoba === getCurrentPerson();
+  const rows = state.udaje.filter(u => u.osoba === osoba).map(u => `<div class="udaj-row">
       <div class="udaj-label">${escHtml(u.polozka)}${u.poznamka ? `<span>${escHtml(u.poznamka)}</span>` : ''}</div>
-      <div class="udaj-val${u.hodnota ? '' : ' empty'}">${u.hodnota ? escHtml(u.hodnota) : 'doplň'}</div>
+      <div class="udaj-val${u.hodnota ? '' : ' empty'}">${u.hodnota ? escHtml(u.hodnota) : (mineRows ? 'doplň' : '—')}</div>
       <div class="udaj-actions">
         ${u.hodnota ? `<button class="btn btnsm" onclick="udajCopy(${jsArg(u.id)})" title="Zkopírovat">Kopírovat</button>` : ''}
-        <button class="btn btnsm" onclick="udajEdit(${jsArg(u.id)})" title="Upravit">✎</button>
+        ${mineRows ? `<button class="btn btnsm" onclick="udajEdit(${jsArg(u.id)})" title="Upravit">✎</button>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="udaje-card"><div class="udaje-hdr">Moje údaje <span>vidíš je jen ty</span></div>${rows}</div>`;
+  const hdr = mineRows ? 'Moje údaje <span>vidíte je oba, upravit je můžeš jen ty</span>' : `Údaje — ${escHtml(osoba)} <span>jen ke čtení</span>`;
+  return `<div class="udaje-card"><div class="udaje-hdr">${hdr}</div>${rows}</div>`;
 }
 
 export async function udajCopy(id) {

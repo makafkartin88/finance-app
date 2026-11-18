@@ -100,11 +100,11 @@ export function validateUpload(file) {
   return null;
 }
 
-// List Udaje (osobní údaje: číslo OP, rodné číslo…) → řádky dané osoby.
-// Server posílá jen vlastní řádky, filtr tady je druhá pojistka.
+// List Udaje (osobní údaje: číslo OP, rodné číslo…) → řádky dané osoby
+// (bez `person` všechny).
 export function personalRows(res, person) {
   if (!res || !Array.isArray(res.values)) return [];
   return res.values.slice(1)
-    .filter(r => r[0] && r[1] === person)
+    .filter(r => r[0] && r[1] && (person === undefined || r[1] === person))
     .map(r => ({ id: String(r[0]), osoba: r[1], polozka: String(r[2] || ''), hodnota: String(r[3] ?? ''), poznamka: String(r[4] || '') }));
 }

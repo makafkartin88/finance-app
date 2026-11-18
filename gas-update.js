@@ -306,11 +306,10 @@ function readSheetsFor(who, names) {
     if (nm === 'Dokumenty' && who) values = values.filter(function (r, i) {
       return i === 0 || !r[3] || r[3] === 'Oba' || r[3] === who.person;
     });
-    // Osobní údaje (číslo OP, rodné číslo…): každý jen své řádky; bez
+    // Osobní údaje (číslo OP, rodné číslo…): vidí je oba (kdyby je ten druhý
+    // potřeboval vyplnit), měnit jen vlastník (handleUpdateRow). Bez
     // ověřeného přihlášení nic, ani když vynucení není zapnuté.
-    if (nm === 'Udaje') values = values.filter(function (r, i) {
-      return i === 0 || (who && r[1] === who.person);
-    });
+    if (nm === 'Udaje') values = values.filter(function (r, i) { return i === 0 || !!who; });
     out[nm] = { values: values };
   });
   return out;
