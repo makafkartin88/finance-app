@@ -194,6 +194,7 @@ export function renderInv() {
   renderProviderView('codya', 'CODYA');
   renderProviderView('conseq', 'CONSEQ');
   renderProviderView('unicredit', 'UNICREDIT');
+  renderProviderView('patria', 'PATRIA');
   renderT212View();
 }
 
@@ -616,7 +617,9 @@ function renderProviderView(tabId, provider) {
 
   if (!funds.length) {
     el.innerHTML = state._invLoaded
-      ? `<div class="empty" style="padding:48px 0">Zatím žádná data z ${provider}. Nahraj výpis přes „📥 Nahrát výpis".</div>`
+      ? `<div class="empty" style="padding:48px 0">${provider === 'PATRIA'
+        ? 'Zatím žádné nákupy. Načtou se z e-mailů od Patrie (Oznámení o provedení pokynu) — každou noc, nebo hned po kliknutí na „🔄 Aktualizovat kurzy".'
+        : `Zatím žádná data z ${escHtml(provider)}. Nahraj výpis přes „📥 Nahrát výpis".`}</div>`
       : loadingHtml(provider);
     return;
   }

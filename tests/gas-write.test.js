@@ -276,3 +276,84 @@ test('Udaje: upravit jde jen vlastní řádek, přidat ani smazat nic', () => {
   assert.match(post(ctx, { sheet: 'Udaje', values: [['u9', 'Šárka', 'x', 'y', '']], idToken: tok }).error, /oprávnění/);
   assert.match(post(ctx, { action: 'deleteRow', sheet: 'Udaje', txId: 'u2', idToken: tok }).error, /oprávnění/);
 });
+
+// Text e-mailu „Oznámení o provedení pokynu" od Patrie (vymyšlená čísla).
+const PATRIA_MAIL = `Patria Finance - konfirmace obchodů
+17.11.2026
+Dobrý den,
+dovolujeme si Vás informovat, že jsme pro Vás ... připravili elektronické potvrzení.
+Datum obchodu
+Počet kusů
+Směr
+Název cenného papíru
+Provize
+Typ pokynu
+Trh
+Protistrana
+Datum vypořádání
+Cena za kus
+AUV
+ISIN
+Poplatek trhu
+Celková cena
+Měna
+16.11.2026 00:00:00
+0,2000
+Nákup
+iShares Core MSCI World
+0,10
+Limit
+XAMS
+18.11.2026
+100,00
+0,00
+IE00B4L5Y983
+0,00
+20,10
+EUR`;
+
+test('parsePatriaMail: obchod z e-mailu (počet, cena, poplatek, celkem, ISIN) bez ohledu na pořadí sloupců', () => {
+  const { ctx } = makeGas({});
+  ctx.__t = PATRIA_MAIL;
+  const r = JSON.parse(vm.runInContext('JSON.stringify(parsePatriaMail(__t))', ctx));
+  assert.deepEqual(r, [{ datum: '2026-11-16', smer: 'Nákup', nazev: 'iShares Core MSCI World', isin: 'IE00B4L5Y983',
+    kusy: 0.2, cena: 100, poplatek: 0.1, celkem: 20.1, mena: 'EUR' }]);
+});
+
+test('parsePatriaMail: dva obchody v jednom e-mailu, prodej se pozná', () => {
+  const { ctx } = makeGas({});
+  ctx.__t = PATRIA_MAIL + `
+17.11.2026 00:00:00
+0,1000
+Prodej
+iShares Core MSCI World
+0,05
+Limit
+XAMS
+19.11.2026
+110,00
+0,00
+IE00B4L5Y983
+0,00
+10,95
+EUR`;
+  const r = JSON.parse(vm.runInContext('JSON.stringify(parsePatriaMail(__t))', ctx));
+  assert.equal(r.length, 2);
+  assert.equal(r[1].smer, 'Prodej');
+  assert.equal(r[1].kusy, 0.1);
+  assert.equal(r[1].cena, 110);
+  assert.equal(r[1].celkem, 10.95);
+});
+
+test('patriaPosition: nákupy a prodeje → kusy, nákupní cena, investováno v Kč', () => {
+  const { ctx } = makeGas({});
+  ctx.__o = [
+    ['2026-10-16', 'Nákup', 'X', 'IE00B4L5Y983', 0.2, 100, 0.1, 20.1, 'EUR', 25],
+    ['2026-11-16', 'Nákup', 'X', 'IE00B4L5Y983', 0.2, 110, 0.1, 22.1, 'EUR', 24],
+  ];
+  const p = JSON.parse(vm.runInContext('JSON.stringify(patriaPosition(__o, "IE00B4L5Y983"))', ctx));
+  assert.equal(Math.round(p.kusy * 1e4) / 1e4, 0.4);
+  assert.equal(p.investovanoCZK, Math.round(20.1 * 25 + 22.1 * 24));
+  assert.equal(Math.round(p.nakupNAV * 100) / 100, 105.5);    // (20,1 + 22,1) / 0,4 včetně poplatků
+  assert.equal(p.prvni, '2026-10-16');
+});

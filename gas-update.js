@@ -269,7 +269,7 @@ function verifyCaller(token) {
 }
 
 var SALARY_SHEETS = { Mzdy: 1, MzdyImport: 1 };
-var INVEST_SHEETS = { Fondy: 1, Trh: 1, FondyHist: 1, TrhHist: 1, UcpImport: 1 };
+var INVEST_SHEETS = { Fondy: 1, Trh: 1, FondyHist: 1, TrhHist: 1, UcpImport: 1, PatriaObchody: 1 };
 var SALARY_ACTIONS = { markPayslipImported: 1, checkPayslipEmail: 1 };
 var INVEST_ACTIONS = { upsertFund: 1, refreshNav: 1, refreshT212: 1, checkInvestEmail: 1, checkUnicreditEmail: 1, markUcpImported: 1 };
 
@@ -1037,10 +1037,15 @@ function refreshNav(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Fondy');
     if (!sheet) return jsonOut({ error: 'List Fondy neexistuje — nejdřív naimportuj výpis.' });
+    // Patria (DIP): obchody z e-mailů + dnešní cena ETF. Před čtením listu,
+    // ať se nová pozice dostane i do historie (FondyHist) téhož běhu.
+    var patriaLog = '';
+    try { patriaLog = syncPatria(); } catch (ep) { patriaLog = 'Patria: ' + ep.message; }
     var data = sheet.getDataRange().getValues();
     var eurR = fetchCnbEur(); // { v, err }
     var eur = eurR.v;
     var updated = 0, log = [], failed = [];
+    if (patriaLog) log.push(patriaLog);
     if (!eur) log.push('ČNB EUR: ' + (eurR.err || 'nenačteno'));
     // Scrape (dlouhý, běží BEZ zámku) → výsledky se odkládají do mapy dle
     // ISIN. Zápis se pak provede pod zámkem nad ČERSTVĚ načteným listem a
@@ -1792,4 +1797,143 @@ function handleMarkUcpImported(body) {
     }
     return jsonOut({ success: true });
   } catch (err) { return jsonOut({ error: err.message }); }
+}
+
+
+// ============================================================
+// PATRIA (DIP) — obchody z e-mailů „Oznámení o provedení pokynu"
+// Patria posílá z confirmation@patria.cz e-mail s tabulkou obchodu (datum,
+// kusy, cena, poplatek, celkem, ISIN). Každou noc se nové e-maily přečtou
+// (i z koše — uživatel je maže), obchody se uloží do listu PatriaObchody
+// a z nich se spočítá pozice v listu Fondy (provider PATRIA). Cena ETF se
+// bere z Yahoo podle PATRIA_YAHOO, jinak cena posledního obchodu.
+// ============================================================
+var PATRIA_YAHOO = { 'IE00B4L5Y983': 'IWDA.AS' }; // iShares Core MSCI World, Euronext Amsterdam (EUR)
+var PATRIA_HEADER = ['datum', 'smer', 'nazev', 'isin', 'kusy', 'cena', 'poplatek', 'celkem', 'mena', 'kurzCZK', 'msgId'];
+
+// HTML e-mailu → řádky textu (buňka tabulky = řádek).
+function htmlToLines(html) {
+  return String(html || '')
+    .replace(/<\s*(br|\/td|\/th|\/tr|\/p|\/div|\/li)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .split(/[\r\n\t]+/).map(function (x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean).join('\n');
+}
+
+// Text e-mailu → obchody. Pořadí sloupců se nespoléhá: počet kusů je první
+// číslo za datem obchodu, cena/poplatek/celkem se najdou tak, aby
+// kusy × cena ± poplatek = celkem (nákup +, prodej −).
+function parsePatriaMail(text) {
+  var lines = String(text || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+  var DT = /^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+\d{1,2}:\d{2}(:\d{2})?$/;
+  var NUM = /^-?\d{1,3}(?:[ \u00a0]?\d{3})*(?:,\d+)?$/;
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(DT);
+    if (!m) continue;
+    var seg = [];
+    for (var j = i + 1; j < lines.length && !DT.test(lines[j]); j++) seg.push(lines[j]);
+    var smerIdx = -1;
+    for (var k = 0; k < seg.length; k++) if (/^(Nákup|Prodej)$/i.test(seg[k])) { smerIdx = k; break; }
+    var isin = '', mena = '', nazev = '';
+    seg.forEach(function (x) {
+      if (/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(x)) isin = x;
+      if (/^(EUR|USD|CZK|GBP|CHF)$/.test(x)) mena = x;
+    });
+    if (smerIdx >= 0 && seg[smerIdx + 1] && !NUM.test(seg[smerIdx + 1])) nazev = seg[smerIdx + 1];
+    var nums = seg.filter(function (x) { return NUM.test(x); }).map(numCz);
+    if (smerIdx < 0 || !isin || nums.length < 3) continue;
+    var sell = /prodej/i.test(seg[smerIdx]);
+    var kusy = nums[0], rest = nums.slice(1), hit = null;
+    for (var a = 0; a < rest.length && !hit; a++) {
+      for (var b = 0; b < rest.length && !hit; b++) {
+        if (a === b || !(rest[a] > 0) || !(rest[b] > 0)) continue;
+        var fees = [];
+        // poplatek je zlomek objemu obchodu (jinak by u prodeje „poplatek"
+        // mohla vyjít celá částka a celkem jen zbytek)
+        for (var c = 0; c < rest.length; c++) if (c !== a && c !== b && rest[c] > 0 && rest[c] < 0.2 * kusy * rest[a]) fees.push(rest[c]);
+        fees.push(0);
+        for (var f = 0; f < fees.length && !hit; f++) {
+          var calc = kusy * rest[a] + (sell ? -fees[f] : fees[f]);
+          if (Math.abs(calc - rest[b]) <= 0.011) hit = { cena: rest[a], celkem: rest[b], poplatek: fees[f] };
+        }
+      }
+    }
+    if (!hit) continue;
+    out.push({ datum: m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2),
+      smer: sell ? 'Prodej' : 'Nákup', nazev: nazev, isin: isin, kusy: kusy,
+      cena: hit.cena, poplatek: hit.poplatek, celkem: hit.celkem, mena: mena || 'EUR' });
+  }
+  return out;
+}
+
+// Řádky PatriaObchody → pozice v jednom ISINu. Investováno v Kč kurzem ČNB
+// ze dne zachycení obchodu; prodej sníží investováno průměrnou cenou.
+function patriaPosition(rows, isin) {
+  var kusy = 0, invNative = 0, invCzk = 0, prvni = '', nazev = '', mena = '';
+  rows.filter(function (r) { return r[3] === isin; })
+    .sort(function (x, y) { return String(x[0]) < String(y[0]) ? -1 : 1; })
+    .forEach(function (r) {
+      var q = numCz(r[4]), tot = numCz(r[7]), fx = numCz(r[9]) || 1;
+      nazev = nazev || r[2]; mena = mena || r[8];
+      if (String(r[1]) === 'Prodej') {
+        if (kusy > 0) { var share = Math.min(q / kusy, 1); invNative -= invNative * share; invCzk -= invCzk * share; }
+        kusy -= q;
+      } else {
+        if (!prvni) prvni = String(r[0]).slice(0, 10);
+        kusy += q; invNative += tot; invCzk += tot * fx;
+      }
+    });
+  return { kusy: kusy, nakupNAV: kusy > 0 ? invNative / kusy : 0, investovanoCZK: Math.round(invCzk), prvni: prvni, nazev: nazev, mena: mena };
+}
+
+function syncPatria() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('PatriaObchody');
+  if (!sh) { sh = ss.insertSheet('PatriaObchody'); sh.appendRow(PATRIA_HEADER); }
+  var have = sh.getDataRange().getValues();
+  var seen = {};
+  for (var i = 1; i < have.length; i++) seen[String(have[i][10]).split('#')[0]] = true;
+  var rateCache = {};
+  var rate = function (ccy) { if (!(ccy in rateCache)) rateCache[ccy] = ccy === 'CZK' ? 1 : fetchCnbRate(ccy).v; return rateCache[ccy]; };
+  var add = [];
+  GmailApp.search('from:confirmation@patria.cz in:anywhere newer_than:400d', 0, 100).forEach(function (th) {
+    th.getMessages().forEach(function (msg) {
+      var id = msg.getId();
+      if (seen[id]) return;
+      parsePatriaMail(htmlToLines(msg.getBody())).forEach(function (t, k) {
+        add.push([t.datum, t.smer, t.nazev, t.isin, t.kusy, t.cena, t.poplatek, t.celkem, t.mena, rate(t.mena) || '', id + '#' + k]);
+      });
+    });
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, PATRIA_HEADER.length).setValues(add);
+  var rows = sh.getDataRange().getValues().slice(1);
+  var isins = {};
+  rows.forEach(function (r) { if (r[3]) isins[r[3]] = true; });
+  var fond = [];
+  var today = Utilities.formatDate(new Date(), 'Europe/Prague', 'd.M.yyyy');
+  Object.keys(isins).forEach(function (isin) {
+    var p = patriaPosition(rows, isin);
+    if (!(p.kusy > 0)) return;
+    var y = PATRIA_YAHOO[isin] ? fetchYahoo(PATRIA_YAHOO[isin], '5d') : null;
+    var last = rows.filter(function (r) { return r[3] === isin; }).sort(function (a, b) { return String(a[0]) < String(b[0]) ? -1 : 1; }).pop();
+    var price = (y && y.current) || numCz(last[5]);
+    var fx = rate(p.mena) || numCz(last[9]) || 1;
+    fond.push(fondRow({ provider: 'PATRIA', isin: isin, nazev: p.nazev, mena: p.mena,
+      pocetCP: Math.round(p.kusy * 1e6) / 1e6, nakupNAV: Math.round(p.nakupNAV * 1e4) / 1e4,
+      nakupDatum: p.prvni ? Utilities.formatDate(new Date(p.prvni + 'T12:00:00'), 'Europe/Prague', 'd.M.yyyy') : '',
+      investovanoCZK: p.investovanoCZK, aktualNAV: price, aktualNAVdatum: today,
+      aktualHodnotaCZK: Math.round(p.kusy * price * fx), kurzEUR: fx, poznamka: 'DIP' }));
+  });
+  if (fond.length) {
+    var lock = LockService.getScriptLock();
+    if (lock.tryLock(60000)) {
+      try {
+        var fs = ss.getSheetByName('Fondy');
+        ensureFondyHeader(fs);
+        upsertFundRows(fs, fond);
+      } finally { lock.releaseLock(); }
+    }
+  }
+  return 'Patria: ' + add.length + ' nových obchodů, ' + fond.length + ' pozic';
 }

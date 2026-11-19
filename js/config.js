@@ -20,7 +20,8 @@ export const INV_PROVIDERS = [
   { key: 'CODYA', label: 'CODYA', color: 'var(--blue)' },
   { key: 'CONSEQ', label: 'CONSEQ', color: 'var(--green)' },
   { key: 'T212', label: 'Trading 212', color: 'var(--purple)' },
-  { key: 'UNICREDIT', label: 'UniCredit', color: 'var(--amber)' }
+  { key: 'UNICREDIT', label: 'UniCredit', color: 'var(--amber)' },
+  { key: 'PATRIA', label: 'Patria (DIP)', color: '#38bdb8' }
 ];
 
 // Zaměření fondů (čeho se týkají) — necitlivé, může být v kódu. Klíč = ISIN.
