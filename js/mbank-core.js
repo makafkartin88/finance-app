@@ -33,7 +33,7 @@ export function guessCategory(popis, protistrana, typ) {
   if (/lékárna|lekarn|doktor|nemocnice|pojišt|zdraví|ockovaci|očkovací/.test(text)) return 'Zdraví';
   // Bydlení před Jídlem: „tescoma" jinak padala na „tesco".
   if (/nájem|nájemné|hypotéka|elektřina|plyn|voda|internet|ikea|obi|hornbach|sconto|action b|jysk|pepco|\btedi\b|m[oö]e?belix|xxx ?lutz|bonami|svet-svitidel|tescoma|datart|westwing|siko|bauhaus/.test(text)) return 'Bydlení';
-  if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny|rossmann|dm drogerie/.test(text)) return 'Jídlo';
+  if (/albert|billa|lidl|kaufland|tesco|penny|globus|rohlík|košík|potraviny|rossmann|dm drogerie|nesnezeno|nesnězeno/.test(text)) return 'Jídlo';
   if (/shell|benzín|čerpací|parkovi|parking|autopark|dpp|pid|lítačka|vlak|bus/.test(text)) return 'Doprava';
   // Zábava = jídlo venku, sport, vstupenky
   if (/kino|cinema|spotify|netflix|steam|xbox|restaura|hospoda|kavárna|pho |sushi|pizz|kfc|mcdonald|burger|kebab|doner|bageterie|asia box|\bcosta\b|qerko|padel|tennis|tenis|florbal|ticketportal|nfctron|getyourguide/.test(text)) return 'Zábava';

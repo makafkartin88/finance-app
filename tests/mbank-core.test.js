@@ -78,3 +78,7 @@ test('guessCategory: benzínky → Doprava (i Globus čerpací stanice, ne Jídl
   assert.equal(guessCategory('GLOBUS ZLICIN', '', 'Výdaj'), 'Jídlo');
   assert.equal(guessCategory('MOLLY BAR', '', 'Výdaj'), 'Ostatní'); // „mol" jen jako celé slovo
 });
+
+test('guessCategory: Nesnězeno (zachráněné jídlo) → Jídlo', () => {
+  assert.equal(guessCategory('NESNEZENO.CZ BRNO', 'NESNEZENO.CZ BRNO', 'Výdaj'), 'Jídlo');
+});

@@ -485,3 +485,16 @@ button.is-busy{cursor:progress;opacity:.75}
 .udaj-val.empty{color:var(--text3);font-weight:400;font-style:italic;user-select:none}
 .udaj-actions{display:flex;gap:6px;flex-shrink:0}
 @media (max-width:600px){.udaj-row{flex-wrap:wrap}.udaj-label{width:100%}}
+
+/* ── Rozpočty: rozbalení kategorie na transakce ── */
+.budrow-click{cursor:pointer;border-radius:var(--rsm)}
+.budrow-click:hover{background:var(--surface2)}
+.budchev{display:inline-block;width:14px;color:var(--text3)}
+.budtx{margin:0 0 10px 14px;padding:4px 10px;border-left:2px solid var(--border2)}
+.budtx-row{display:flex;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+.budtx-row:last-child{border-bottom:none}
+.budtx-d{color:var(--text3);width:78px;flex-shrink:0;white-space:nowrap}
+.budtx-p{flex:1;min-width:0}
+.budtx-p small{display:block;color:var(--text3);font-size:11px}
+.budtx-c{white-space:nowrap}
+.budtx-empty{margin:0 0 10px 24px;font-size:12px;color:var(--text3)}

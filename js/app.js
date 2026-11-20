@@ -4,7 +4,7 @@ import { parseRow, ensureRange, isoDate, rangeLabel, getBounds, scopedTxs, getMo
 import './busy.js'; // odezva na zápis (proužek, zablokované tlačítko)
 import { renderDash, drillM, drillC, clearDrill } from './dashboard.js';
 import { renderTx, openTx, openEdit, openVyrovnani, closeTx, saveTx, searchTx, triggerReceiptUpload, onReceiptFile, onModalReceiptPick, deleteTx, removeReceipt, syncOsobaRow } from './transactions.js';
-import { renderBudgets, renderBudLimForm, saveLimits } from './budgets.js';
+import { renderBudgets, budToggle, renderBudLimForm, saveLimits } from './budgets.js';
 import { renderCharts } from './charts.js';
 import { renderInv, invTab, loadInvestmentData, refreshInvNav } from './investments.js';
 import { openInvImport, closeInvImport, invDov, invDol, invDod, invOnFile, confirmInvImport,
@@ -160,7 +160,11 @@ function populateSels() {
   if (bMonth) {
     const cur = bMonth.value;
     bMonth.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
-    bMonth.value = months.includes(cur) ? cur : (months[months.length-1]||'');
+    // Výchozí = minulý měsíc: ten už má výpis z banky, běžící je neúplný.
+    const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+    const prev = `${MN[d.getMonth()]} ${d.getFullYear()}`;
+    bMonth.value = months.includes(cur) ? cur : months.includes(prev) ? prev : (months[months.length-1]||'');
   }
   const tf = document.getElementById('txfMonth');
   if (tf) tf.innerHTML = '<option value="">Všechny měsíce</option>'+months.map(m => `<option value="${m}">${m}</option>`).join('');
@@ -236,6 +240,7 @@ window.drillC = drillC;
 window.clearDrill = clearDrill;
 window.applyRangeFromInputs = applyRangeFromInputs;
 window.udajCopy = udajCopy;
+window.budToggle = budToggle;
 window.udajEdit = udajEdit;
 window.docOpen = docOpen;
 window.resetRange = resetRange;
