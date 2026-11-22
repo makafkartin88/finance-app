@@ -71,3 +71,16 @@ test('categoryAverages: od prvního výskytu kategorie, bez jednorázových výd
   assert.equal(r.cats[0].cat, 'Pejsek');       // seřazeno podle průměru
   assert.equal(r.overall, (600 + 400) / 3);
 });
+
+test('toggleMonth: na mobilu (multi) klepnutí přidá/ubere měsíc, jinak výběr jednoho', async () => {
+  const { toggleMonth } = await import('../js/tx-core.js');
+  const s = new Set();
+  toggleMonth(s, 'Sep', true); toggleMonth(s, 'Oct', true);
+  assert.deepEqual([...s], ['Sep', 'Oct']);
+  toggleMonth(s, 'Sep', true);
+  assert.deepEqual([...s], ['Oct']);
+  toggleMonth(s, 'Aug', false);              // desktop klik = jen tenhle měsíc
+  assert.deepEqual([...s], ['Aug']);
+  toggleMonth(s, 'Aug', false);              // druhý klik na jediný vybraný = vše
+  assert.deepEqual([...s], []);
+});

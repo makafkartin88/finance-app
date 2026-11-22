@@ -2,7 +2,7 @@ import { escHtml, jsArg, safeUrl } from './html.js';
 import { CATEGORY_COLORS } from './config.js';
 import { state } from './state.js';
 import { fmtD, czk, getMonths, base } from './utils.js';
-import { closedMonths, categoryAverages } from './tx-core.js';
+import { closedMonths, categoryAverages, toggleMonth } from './tx-core.js';
 import { persistCfg } from './settings.js';
 import { toast } from './app.js';
 
@@ -192,15 +192,18 @@ function netChartSVG(monthStats, selected, kFmt, perMonthPx = 64) {
   return `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:auto;display:block" xmlns="http://www.w3.org/2000/svg">${zero}${groups}${years}</svg>`;
 }
 
+// Víc měsíců naráz: na počítači s Ctrl/Cmd, na mobilu (dotyk, bez Ctrl)
+// každé klepnutí měsíc přidá nebo ubere.
+export function isMultiPick(event) {
+  if (event?.ctrlKey || event?.metaKey) return true;
+  if (event?.pointerType) return event.pointerType === 'touch' || event.pointerType === 'pen';
+  return typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
+}
+
 // Voláno z onclick baru v ročním/saldo grafu — lokální drill (NEovlivňuje globální rozsah)
 window.chartDrillMonth = function(m, event) {
-  if (m === null) { _chartMonths.clear(); renderCharts(); return; }
-  if (event?.ctrlKey || event?.metaKey) {
-    if (_chartMonths.has(m)) _chartMonths.delete(m); else _chartMonths.add(m);
-  } else {
-    if (_chartMonths.size === 1 && _chartMonths.has(m)) _chartMonths.clear();
-    else { _chartMonths.clear(); _chartMonths.add(m); }
-  }
+  if (m === null) _chartMonths.clear();
+  else toggleMonth(_chartMonths, m, isMultiPick(event));
   renderCharts();
 };
 
@@ -227,6 +230,7 @@ export function renderCharts() {
   // je doscrollovatelný (mountScrollChart automaticky přiscrolluje na konec).
   mountScrollChart('yrChart', yrChartSVG(monthStats, _chartMonths, kFmt, 'chartDrillMonth', 72));
   mountScrollChart('srChart', netChartSVG(monthStats, _chartMonths, kFmt, 72));
+  for (const id of ['yrAll', 'srAll']) { const b = document.getElementById(id); if (b) b.style.display = _chartMonths.size ? '' : 'none'; }
 
   // Drill label v topbaru — zobrazit vybraný měsíc nebo celý rozsah
   const cTxt = document.getElementById('chRangeTxt');

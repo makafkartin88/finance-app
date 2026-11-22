@@ -3,7 +3,8 @@ import { escHtml, jsArg, safeUrl } from './html.js';
 import { state } from './state.js';
 import { fmtD, czk, rangeLabel, getMonths, base } from './utils.js';
 import { applyColumnFilters, applySort, attachRowInteractions, closePopover, thFilter, thAmount, thSort } from './table-filters.js';
-import { yrChartSVG, mountScrollChart } from './charts.js';
+import { yrChartSVG, mountScrollChart, isMultiPick } from './charts.js';
+import { toggleMonth } from './tx-core.js';
 import { summarize, completedMonths } from './tx-core.js';
 
 const kFmt = n => n >= 10000 ? Math.round(n/1000)+'k' : n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString();
@@ -66,6 +67,7 @@ export function renderDash() {
     };
   });
   mountScrollChart('cfChart', yrChartSVG(monthStats, state.drill.months, kFmt, 'drillM', 85));
+  { const b = document.getElementById('cfAll'); if (b) b.style.display = state.drill.months.size ? '' : 'none'; }
 
   // Cat bars
   const cats = {};
@@ -113,12 +115,7 @@ export function renderDash() {
 
 export function drillM(m, event) {
   const ms = state.drill.months;
-  if (event?.ctrlKey || event?.metaKey) {
-    if (ms.has(m)) ms.delete(m); else ms.add(m);
-  } else {
-    if (ms.size === 1 && ms.has(m)) ms.clear();
-    else { ms.clear(); ms.add(m); }
-  }
+  toggleMonth(ms, m, isMultiPick(event));
   if (ms.size) state.drill.cat = null;
   renderDash();
 }

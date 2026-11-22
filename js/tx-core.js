@@ -91,3 +91,13 @@ export function categoryAverages(expenses, months, closed) {
   }).sort((a, b) => b.avg - a.avg);
   return { cats, overall: closed.length ? overallSum / closed.length : 0, monthsUsed: closed.length };
 }
+
+// Výběr měsíců v grafech. multi (Ctrl/Cmd, nebo klepnutí na mobilu):
+// měsíc se přidá / odebere. Jinak se vybere jen tenhle a druhý klik na
+// jediný vybraný výběr zruší. Prázdná množina = všechny měsíce.
+export function toggleMonth(set, m, multi) {
+  if (multi) { if (set.has(m)) set.delete(m); else set.add(m); }
+  else if (set.size === 1 && set.has(m)) set.clear();
+  else { set.clear(); set.add(m); }
+  return set;
+}
