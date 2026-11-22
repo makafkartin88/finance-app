@@ -194,10 +194,13 @@ function netChartSVG(monthStats, selected, kFmt, perMonthPx = 64) {
 
 // Víc měsíců naráz: na počítači s Ctrl/Cmd, na mobilu (dotyk, bez Ctrl)
 // každé klepnutí měsíc přidá nebo ubere.
+// Telefon se pozná podle zařízení (bez myši = bez hoveru, hrubý ukazatel),
+// ne podle události: Safari na iPhonu hlásí klepnutí jako klik myší
+// (pointerType 'mouse'), takže podle pointerType se mobil poznat nedá.
 export function isMultiPick(event) {
   if (event?.ctrlKey || event?.metaKey) return true;
-  if (event?.pointerType) return event.pointerType === 'touch' || event.pointerType === 'pen';
-  return typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
+  if (typeof matchMedia === 'function' && matchMedia('(hover: none), (pointer: coarse)').matches) return true;
+  return event?.pointerType === 'touch' || event?.pointerType === 'pen';
 }
 
 // Voláno z onclick baru v ročním/saldo grafu — lokální drill (NEovlivňuje globální rozsah)
