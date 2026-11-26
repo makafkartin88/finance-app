@@ -1095,7 +1095,7 @@ function refreshNav(e) {
     var earliest = null;
     for (var ei2 = 1; ei2 < data.length; ei2++) {
       var pd0 = parseCzDate(data[ei2][6]); // nakupDatum
-      if (pd0 && (!earliest || pd0 < earliest)) earliest = pd0;
+      if (pd0 && pd0.getFullYear() >= 2000 && (!earliest || pd0 < earliest)) earliest = pd0;
     }
     var range = yahooRange(earliest, new Date());
     var sp = fetchYahoo('%5ESP500TR', range); // ^SP500TR
@@ -1150,11 +1150,30 @@ function refreshNav(e) {
     // při ručním volání z appky se stav vrací i v JSON logu).
     if (failed.length && plan.alert) sendNavAlert(failed, log);
 
+    // Google zápisy do tabulky dávkuje a provede je až po skončení funkce —
+    // chyba by pak přišla jen jako obecné „server error" bez místa. Takhle
+    // se ukáže tady a skončí v catch i v listu Beh.
+    SpreadsheetApp.flush();
+    logRun(plan, 'OK', log);
     return jsonOut({ success: true, updated: updated, eur: eur, failed: failed, log: log });
   } catch (err) {
+    try { logRun(plan, 'CHYBA: ' + err.message, log || []); } catch (e3) {}
     try { sendNavAlert(['VÝJIMKA'], [err.message]); } catch (e2) {}
     return jsonOut({ error: err.message });
   }
+}
+
+// Stav posledních nočních běhů (list Beh, max 30 řádků) — ať jde zpětně
+// zjistit, co běh udělal a kde případně spadl, bez přístupu do logů Googlu.
+function logRun(plan, status, log) {
+  if (!plan || !plan.scheduled) return;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Beh') || ss.insertSheet('Beh');
+  if (sh.getLastRow() === 0) sh.appendRow(['kdy', 'stav', 'log']);
+  sh.appendRow([Utilities.formatDate(new Date(), 'Europe/Prague', 'yyyy-MM-dd HH:mm'), status, String((log || []).join(' | ')).slice(0, 4000)]);
+  var extra = sh.getLastRow() - 31;
+  if (extra > 0) sh.deleteRows(2, extra);
+  SpreadsheetApp.flush();
 }
 
 // Summary karta → list "Trh" per provider. Sloupce:
@@ -1248,7 +1267,8 @@ function updateHistory(ss, fondyData, sp, fx, fxMore) {
 // Nejkratší rozsah Yahoo, který pokryje nejstarší nákup (+ měsíc rezerva,
 // aby existoval bod NA/PŘED datem nákupu).
 function yahooRange(earliest, now) {
-  if (!earliest) return '2y';
+  // Nákup před rokem 2000 = rozbitý řádek (např. 1. 1. 1970), ne skutečnost.
+  if (!earliest || earliest.getFullYear() < 2000) return '2y';
   var years = (now - earliest) / 864e5 / 365 + 0.1;
   if (years <= 2) return '2y';
   if (years <= 5) return '5y';
@@ -1871,8 +1891,11 @@ function parsePatriaMail(text) {
 // ze dne zachycení obchodu; prodej sníží investováno průměrnou cenou.
 function patriaPosition(rows, isin) {
   var kusy = 0, invNative = 0, invCzk = 0, prvni = '', nazev = '', mena = '';
+  // Sheets převede text „2026-11-16" na datum → String(Date) by dal
+  // „Mon Nov 16…" a první nákup by vyšel 1. 1. 1970. Proto přes histIso.
   rows.filter(function (r) { return r[3] === isin; })
-    .sort(function (x, y) { return String(x[0]) < String(y[0]) ? -1 : 1; })
+    .map(function (r) { var c = r.slice(); c[0] = histIso(r[0]); return c; })
+    .sort(function (x, y) { return x[0] < y[0] ? -1 : 1; })
     .forEach(function (r) {
       var q = numCz(r[4]), tot = numCz(r[7]), fx = numCz(r[9]) || 1;
       nazev = nazev || r[2]; mena = mena || r[8];
@@ -1880,7 +1903,7 @@ function patriaPosition(rows, isin) {
         if (kusy > 0) { var share = Math.min(q / kusy, 1); invNative -= invNative * share; invCzk -= invCzk * share; }
         kusy -= q;
       } else {
-        if (!prvni) prvni = String(r[0]).slice(0, 10);
+        if (!prvni) prvni = r[0];
         kusy += q; invNative += tot; invCzk += tot * fx;
       }
     });
@@ -1906,7 +1929,11 @@ function syncPatria() {
       });
     });
   });
-  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, PATRIA_HEADER.length).setValues(add);
+  if (add.length) {
+    var rg = sh.getRange(sh.getLastRow() + 1, 1, add.length, PATRIA_HEADER.length);
+    rg.setNumberFormat('@');
+    rg.setValues(add);
+  }
   var rows = sh.getDataRange().getValues().slice(1);
   var isins = {};
   rows.forEach(function (r) { if (r[3]) isins[r[3]] = true; });
@@ -1916,7 +1943,7 @@ function syncPatria() {
     var p = patriaPosition(rows, isin);
     if (!(p.kusy > 0)) return;
     var y = PATRIA_YAHOO[isin] ? fetchYahoo(PATRIA_YAHOO[isin], '5d') : null;
-    var last = rows.filter(function (r) { return r[3] === isin; }).sort(function (a, b) { return String(a[0]) < String(b[0]) ? -1 : 1; }).pop();
+    var last = rows.filter(function (r) { return r[3] === isin; }).sort(function (a, b) { return histIso(a[0]) < histIso(b[0]) ? -1 : 1; }).pop();
     var price = (y && y.current) || numCz(last[5]);
     var fx = rate(p.mena) || numCz(last[9]) || 1;
     fond.push(fondRow({ provider: 'PATRIA', isin: isin, nazev: p.nazev, mena: p.mena,

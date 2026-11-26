@@ -357,3 +357,17 @@ test('patriaPosition: nákupy a prodeje → kusy, nákupní cena, investováno v
   assert.equal(Math.round(p.nakupNAV * 100) / 100, 105.5);    // (20,1 + 22,1) / 0,4 včetně poplatků
   assert.equal(p.prvni, '2026-10-16');
 });
+
+test('patriaPosition: datum obchodu jako Date z listu (Sheets text převádí) → správný první nákup, ne 1970', () => {
+  const { ctx } = makeGas({});
+  vm.runInContext(`__o = [[new Date(2026, 10, 16, 12), 'Nákup', 'X', 'IE00B4L5Y983', 0.2, 100, 0.1, 20.1, 'EUR', 25],
+                          [new Date(2026, 9, 2, 12), 'Nákup', 'X', 'IE00B4L5Y983', 0.1, 90, 0.1, 9.1, 'EUR', 25]]`, ctx);
+  // fake formatDate vrací yyyy-MM → stačí ověřit, že se vzal ŘÍJEN (dřívější) a ne nesmysl
+  const p = JSON.parse(vm.runInContext('JSON.stringify(patriaPosition(__o, "IE00B4L5Y983"))', ctx));
+  assert.match(p.prvni, /^2026-10/);
+});
+
+test('yahooRange: nesmyslně staré datum (1970 z rozbitého řádku) nerozšíří historii na „max"', () => {
+  const { ctx } = makeGas({});
+  assert.equal(vm.runInContext(`yahooRange(new Date('1970-01-01'), new Date('2026-11-26'))`, ctx), '2y');
+});
