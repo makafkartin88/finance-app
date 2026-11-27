@@ -23,9 +23,11 @@ export const sektorCz = s => SEKTORY[s] || s || 'Neznámé';
 export const zemeCz = z => ZEME[z] || z || 'Neznámé';
 
 const SUFFIX = new Set(['INC', 'CORP', 'CORPORATION', 'CO', 'COMPANY', 'LTD', 'LIMITED', 'PLC', 'AG', 'SA', 'NV', 'SE',
-  'AB', 'ASA', 'SPA', 'OYJ', 'AS', 'HOLDINGS', 'HOLDING', 'GROUP', 'REG', 'ADR', 'SHS', 'THE']);
+  'AB', 'ASA', 'SPA', 'OYJ', 'AS', 'HOLDINGS', 'HOLDING', 'GROUP', 'REG', 'ADR', 'GDR', 'SHS', 'THE',
+  'PAR', 'PS', 'N']);   // „SIEMENS N AG" (akcie na jméno), „ROCHE PS PAR AG"
 const ALIAS = { 'TSMC': 'TAIWAN SEMICONDUCTOR MANUFACTURING', 'GOOGLE': 'ALPHABET', 'FACEBOOK': 'META PLATFORMS',
-  'META': 'META PLATFORMS', 'AMAZONCOM': 'AMAZON' };
+  'META': 'META PLATFORMS', 'AMAZONCOM': 'AMAZON', 'MUENCHENER RUECKVERSICHERUNGS GESE': 'MUNICH RE',
+  'MUENCHENER RUECKVERSICHERUNGS GESELLSCHAFT': 'MUNICH RE' };
 
 // Jméno firmy → klíč pro sčítání napříč zdroji („ALPHABET INC CLASS C",
 // „Alphabet Inc. Class A" i „Alphabet" = ALPHABET).
@@ -38,9 +40,14 @@ export function normFirm(name) {
   const k = t.join(' ');
   return ALIAS[k] || ALIAS[k.replace(/ /g, '')] || k;
 }
-// Klíč → zobrazované jméno (krátká slova typu SK, AMD nechá velkými).
-function displayFirm(key) {
-  return key.split(' ').map(w => w.length <= 3 && !/[AEIOUY]/.test(w.slice(1)) ? w : w[0] + w.slice(1).toLowerCase()).join(' ');
+// Zobrazované jméno: přednost má zápis z factsheetu/profilu („ASML Holding NV",
+// „AstraZeneca PLC") bez právní přípony; čistě VELKÁ jména od iShares se
+// převedou na „Apple" (krátká slova typu SK, AMD zůstanou velkými).
+const SUFFIX_RE = /(\s+(Inc\.?|Corp\.?|Corporation|Co\.?|Ltd\.?|Limited|PLC|AG|SA|NV|SE|AB|ASA|SpA|Oyj|Holdings?|Group|GDR|ADR|\(ADR\)|\(GDR\)))+$/i;
+export function displayFirm(names) {
+  const mixed = names.find(n => /[a-z]/.test(n));
+  if (mixed) return mixed.replace(SUFFIX_RE, '').trim() || mixed;
+  return normFirm(names[0]).split(' ').map(w => w.length <= 3 && !/[AEIOUY]/.test(w.slice(1)) ? w : w[0] + w.slice(1).toLowerCase()).join(' ');
 }
 
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; };
@@ -79,8 +86,8 @@ export function allocation(holdings, cash, profily, slozeni, limity = { fond: 0.
   const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
   const addFirm = (name, v, pres) => {
     const key = normFirm(name);
-    const f = firmy.get(key) || { name: displayFirm(key), czk: 0, pres: new Set() };
-    f.czk += v; f.pres.add(pres); firmy.set(key, f);
+    const f = firmy.get(key) || { names: [], czk: 0, pres: new Set() };
+    f.names.push(name); f.czk += v; f.pres.add(pres); firmy.set(key, f);
   };
   let total = 0, rozepsano = 0, akcie = 0;
   const varovani = [];
@@ -112,7 +119,7 @@ export function allocation(holdings, cash, profily, slozeni, limity = { fond: 0.
   if (cash > 0) { total += cash; add(trida, 'Hotovost', cash); add(sektory, 'Hotovost', cash); add(zeme, 'Hotovost', cash); }
 
   const list = m => [...m.entries()].map(([name, czk]) => ({ name, czk, pct: total ? czk / total : 0 })).sort((a, b) => b.czk - a.czk);
-  const firmList = [...firmy.values()].map(f => ({ name: f.name, czk: f.czk, pct: total ? f.czk / total : 0, pres: [...f.pres] }))
+  const firmList = [...firmy.values()].map(f => ({ name: displayFirm(f.names), czk: f.czk, pct: total ? f.czk / total : 0, pres: [...f.pres] }))
     .sort((a, b) => b.czk - a.czk);
 
   for (const h of holdings) if (total && h.czk / total > limity.fond)

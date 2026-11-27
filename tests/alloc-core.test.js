@@ -81,3 +81,11 @@ test('parseSlozeni / parseProfily: listy → mapy', () => {
   const p = parseProfily({ values: [['isin', 'trida', 'klic', 'firma', 'sektor', 'zeme', 'poznamka'], ['ETF1', 'Akcie', 'IDX', '', '', '', '']] });
   assert.deepEqual(p.ETF1, { trida: 'Akcie', klic: 'IDX', firma: '', sektor: '', zeme: '', poznamka: '' });
 });
+
+test('normFirm: názvy z iShares a z factsheetů se potkají (Siemens, Roche, Munich Re, GDR)', () => {
+  assert.equal(normFirm('SIEMENS N AG'), normFirm('Siemens AG'));
+  assert.equal(normFirm('ROCHE PS PAR AG'), normFirm('Roche Holding AG'));
+  assert.equal(normFirm('MUENCHENER RUECKVERSICHERUNGS-GESE'), normFirm('Munich Re AG'));
+  assert.equal(normFirm('Samsung Electronics GDR'), normFirm('SAMSUNG ELECTRONICS LTD'));
+  assert.equal(normFirm('AMAZON.COM INC'), normFirm('Amazon.com'));
+});
