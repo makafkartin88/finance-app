@@ -269,7 +269,7 @@ function verifyCaller(token) {
 }
 
 var SALARY_SHEETS = { Mzdy: 1, MzdyImport: 1 };
-var INVEST_SHEETS = { Fondy: 1, Trh: 1, FondyHist: 1, TrhHist: 1, UcpImport: 1, PatriaObchody: 1 };
+var INVEST_SHEETS = { Fondy: 1, Trh: 1, FondyHist: 1, TrhHist: 1, UcpImport: 1, PatriaObchody: 1, Slozeni: 1, Profily: 1 };
 var SALARY_ACTIONS = { markPayslipImported: 1, checkPayslipEmail: 1 };
 var INVEST_ACTIONS = { upsertFund: 1, refreshNav: 1, refreshT212: 1, checkInvestEmail: 1, checkUnicreditEmail: 1, markUcpImported: 1 };
 
@@ -1129,6 +1129,11 @@ function refreshNav(e) {
       } catch (et) { failed.push('T212'); log.push('T212: ' + et.message); }
     }
 
+    // Složení indexů (rozložení portfolia): když chybí nebo je starší než
+    // týden — jinak by se 5 velkých CSV stahovalo zbytečně každou noc.
+    try { if (slozeniStale(new Date())) log.push(syncSlozeni()); }
+    catch (es) { log.push('Složení indexů: ' + es.message); }
+
     if (plan.weekly) {
       try { log.push(syncInflation()); }
       catch (ei) { failed.push('INFLACE'); log.push('Inflace z ČSÚ: ' + ei.message); }
@@ -1963,4 +1968,124 @@ function syncPatria() {
     }
   }
   return 'Patria: ' + add.length + ' nových obchodů, ' + fond.length + ' pozic';
+}
+
+
+// ============================================================
+// SLOŽENÍ INDEXŮ (rozložení portfolia podle firem, odvětví a zemí)
+// iShares zveřejňuje kompletní seznam držeb svých ETF. Švýcarská verze webu
+// ho dává jako CSV (britská po redesignu vrací chybu). ETF jiných správců
+// se počítají přes iShares ETF na stejný index (S&P 500, Nasdaq-100…).
+// Obnovuje se v pondělí; aktivní fondy (UniCredit) mají v listu Slozeni
+// ručně doplněné řádky z factsheetů — ty se tady nepřepisují.
+// ============================================================
+var ISHARES_CH = 'https://www.ishares.com/ch/individual/en/products/';
+var INDEX_SOURCES = {
+  MSCI_WORLD:  '251882/ishares-msci-world-ucits-etf-acc-fund/1495092304805.ajax?fileType=csv&fileName=SWDA_holdings&dataType=fund',
+  MSCI_EM_IMI: '264659/ishares-core-msci-emerging-markets-imi-ucits-etf/1495092304805.ajax?fileType=csv&fileName=EIMI_holdings&dataType=fund',
+  SP500:       '253743/ishares-sp-500-b-ucits-etf-acc-fund/1495092304805.ajax?fileType=csv&fileName=CSPX_holdings&dataType=fund',
+  NASDAQ100:   '253741/ishares-nasdaq-100-ucits-etf/1495092304805.ajax?fileType=csv&fileName=CNDX_holdings&dataType=fund',
+  MSCI_ACWI:   '251850/ishares-msci-acwi-ucits-etf/1495092304805.ajax?fileType=csv&fileName=SSAC_holdings&dataType=fund'
+};
+var SLOZENI_HEADER = ['klic', 'typ', 'nazev', 'vaha', 'sektor', 'zeme', 'datum', 'zdroj'];
+var MONTHS_EN = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+
+function csvSplit(line) {
+  var out = [], cur = '', q = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+// CSV držeb iShares → firmy (akcie) + součty po sektorech a zemích.
+// Váhy jako zlomek, přepočtené na součet všech řádků (100 %).
+function parseIsharesCsv(text) {
+  var lines = String(text || '').replace(/^\ufeff/, '').split(/\r?\n/);
+  var asOf = '', hi = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/Fund Holdings as of,"?(\d{1,2})\/([A-Za-z]{3})\/(\d{4})/);
+    if (m) asOf = m[3] + '-' + (MONTHS_EN[m[2]] || '01') + '-' + ('0' + m[1]).slice(-2);
+    if (/^Ticker,/.test(lines[i])) { hi = i; break; }
+  }
+  if (hi < 0) throw new Error('v CSV chybí hlavička Ticker');
+  var h = csvSplit(lines[hi]);
+  var col = function (n) { return h.indexOf(n); };
+  var cN = col('Name'), cS = col('Sector'), cA = col('Asset Class'), cW = col('Weight (%)'), cL = col('Location');
+  var rows = [], total = 0;
+  for (var j = hi + 1; j < lines.length; j++) {
+    var c = csvSplit(lines[j]);
+    if (c.length < h.length) continue;
+    var w = parseFloat(String(c[cW]).replace(/[’',\s]/g, ''));
+    if (!(w > 0) || !String(c[cN]).trim()) continue;
+    rows.push({ nazev: c[cN].trim(), w: w, sektor: c[cS].trim(), trida: c[cA].trim(), zeme: c[cL].trim() });
+    total += w;
+  }
+  var firmy = [], sektory = {}, zeme = {};
+  rows.forEach(function (r) {
+    var v = r.w / total;
+    sektory[r.sektor] = (sektory[r.sektor] || 0) + v;
+    zeme[r.zeme] = (zeme[r.zeme] || 0) + v;
+    if (r.trida === 'Equity') firmy.push({ nazev: r.nazev, vaha: v, sektor: r.sektor, zeme: r.zeme });
+  });
+  firmy.sort(function (a, b) { return b.vaha - a.vaha; });
+  return { asOf: asOf, firmy: firmy, sektory: sektory, zeme: zeme };
+}
+
+// Řádky listu Slozeni pro jeden klíč: všechny sektory a země, firmy jen
+// prvních `limit` (zbytek jsou desetiny promile a list by byl zbytečně velký).
+function slozeniRows(klic, p, limit, zdroj) {
+  var out = [];
+  p.firmy.slice(0, limit).forEach(function (f) { out.push([klic, 'firma', f.nazev, f.vaha, f.sektor, f.zeme, p.asOf, zdroj]); });
+  Object.keys(p.sektory).forEach(function (k) { out.push([klic, 'sektor', k, p.sektory[k], '', '', p.asOf, zdroj]); });
+  Object.keys(p.zeme).forEach(function (k) { out.push([klic, 'zeme', k, p.zeme[k], '', '', p.asOf, zdroj]); });
+  return out;
+}
+
+function syncSlozeni() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Slozeni');
+  if (!sh) { sh = ss.insertSheet('Slozeni'); sh.appendRow(SLOZENI_HEADER); }
+  var fresh = [], done = [], bad = [];
+  Object.keys(INDEX_SOURCES).forEach(function (k) {
+    try {
+      var r = UrlFetchApp.fetch(ISHARES_CH + INDEX_SOURCES[k], { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (r.getResponseCode() !== 200) throw new Error('HTTP ' + r.getResponseCode());
+      fresh = fresh.concat(slozeniRows(k, parseIsharesCsv(r.getContentText()), 300, 'iShares'));
+      done.push(k);
+    } catch (e) { bad.push(k + ' (' + e.message + ')'); }
+  });
+  if (done.length) {
+    // ponechat ruční řádky (aktivní fondy) a indexy, které se teď nestáhly
+    var keep = sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0] && done.indexOf(String(r[0])) < 0; });
+    var all = keep.concat(fresh);
+    sh.clearContents();
+    sh.getRange(1, 1, 1, SLOZENI_HEADER.length).setValues([SLOZENI_HEADER]);
+    if (all.length) { ensureRows(sh, all.length + 1); sh.getRange(2, 1, all.length, SLOZENI_HEADER.length).setValues(all); }
+  }
+  return 'Složení indexů: ' + done.length + '/' + Object.keys(INDEX_SOURCES).length + (bad.length ? ' — chyba: ' + bad.join(', ') : '');
+}
+
+// true = některý index v listu Slozeni chybí nebo je starší než 7 dní.
+function slozeniStale(now) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Slozeni');
+  if (!sh) return true;
+  var newest = {};
+  sh.getDataRange().getValues().slice(1).forEach(function (r) {
+    var d = histIso(r[6]);
+    if (r[0] && (!newest[r[0]] || d > newest[r[0]])) newest[r[0]] = d;
+  });
+  var limit = new Date(now.getTime() - 7 * 864e5).toISOString().slice(0, 10);
+  return Object.keys(INDEX_SOURCES).some(function (k) { return !newest[k] || newest[k] < limit; });
+}
+
+function ensureRows(sheet, n) {
+  if (!sheet.getMaxRows) return;
+  var have = sheet.getMaxRows();
+  if (n > have) sheet.insertRowsAfter(have, n - have);
 }

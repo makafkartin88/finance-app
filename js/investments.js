@@ -5,6 +5,7 @@ import { czk, fetchSheet, fetchSheets, postJson } from './utils.js';
 import { toast } from './app.js';
 import { isInvestmentsAllowed } from './auth.js';
 import { invCZK, curCZK, providerTotals, annualPct, xirr, providerFlows, navAge, providerTwr } from './inv-core.js';
+import { allocation, parseSlozeni, parseProfily } from './alloc-core.js';
 
 /* ============================================================
    Stránka Investice — pohledy CODYA, CONSEQ (fondy, klíč ISIN) a
@@ -94,7 +95,9 @@ function saveInvCache(payload) {
 }
 
 // Naplní state z {fR,tR,fhR,thR} — stejný tvar, ať přijde ze sítě, nebo z cache.
-function applySheets(fR, tR, fhR, thR) {
+function applySheets(fR, tR, fhR, thR, slR, prR) {
+  state.slozeni = parseSlozeni(slR);
+  state.profily = parseProfily(prR);
   // Standardní ISIN (CZ… u CODYA/CONSEQ, LU… u UniCredit) nebo T212 ticker
   state.investments = (fR.values || []).map(parseFundRow)
     .filter(f => /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(f.isin) || f.provider === 'T212');
@@ -116,20 +119,22 @@ export async function loadInvestmentData(pre) {
   if (!isInvestmentsAllowed()) { state.investments = []; state._invLoaded = true; renderInv(); return; }
 
   const cached = loadInvCache();
-  if (cached) { applySheets(cached.fR, cached.tR, cached.fhR, cached.thR); renderInv(); }
+  if (cached) { applySheets(cached.fR, cached.tR, cached.fhR, cached.thR, cached.slR, cached.prR); renderInv(); }
 
   try {
     // Vsechny ctyri listy jednim pozadavkem (viz fetchSheets) — driv to byly
     // ctyri samostatne, sekvencni fetche a kazdy cekal na start Apps Scriptu.
     // `pre` = uz nactena data z davky v app.js (pak se nefetchuje vubec).
-    const s = pre || await fetchSheets(['Fondy', 'Trh', 'FondyHist', 'TrhHist']);
+    const s = pre || await fetchSheets(['Fondy', 'Trh', 'FondyHist', 'TrhHist', 'Slozeni', 'Profily']);
     const fR = s.Fondy || { error: 1 };
     const tR = s.Trh || { values: [] };
     const fhR = s.FondyHist || { values: [] };
     const thR = s.TrhHist || { values: [] };
+    const slR = s.Slozeni || { values: [] };
+    const prR = s.Profily || { values: [] };
     if (fR.error) { if (!cached) { state.investments = []; state.market = []; state._invLoaded = true; renderInv(); } return; }
-    applySheets(fR, tR, fhR, thR);
-    saveInvCache({ fR, tR, fhR, thR });
+    applySheets(fR, tR, fhR, thR, slR, prR);
+    saveInvCache({ fR, tR, fhR, thR, slR, prR });
     state._invLoaded = true;
     // Jen nad čerstvými daty ze sítě smí běžet automatický import výpisů —
     // nad cache nebo prázdnem po výpadku by pojistky neměly s čím porovnávat.
@@ -201,12 +206,14 @@ export function renderInv() {
 /* ── PŘEHLED: alokace + graf vývoje vs S&P ── */
 let _chartSel = 'all';
 let _allocView = 'provider';   // 'provider' | 'funds'
+let _rozView = 'trida';         // karta Rozložení: 'trida' | 'sektory' | 'zeme' | 'firmy'
 let _allocSel = null;          // vybraný výsek koláče (klíč: 'CODYA'|'CONSEQ'|'Volná hotovost'|'isin:...')
 let _lineCtx = null;           // kontext grafu pro hover
 let _cmpFrom = '';             // ISO datum, od kterého se poměřuje výkonnost ('' = celá historie)
 let _cmpPreset = 'all';        // vybraná volba v rozbalovátku srovnání
 window.invChartSel = function (v) { _chartSel = v; _allocSel = (v === 'all') ? null : v; renderOverview(); };
 window.invAllocView = function (v) { _allocView = v; renderOverview(); };
+window.invRozView = function (v) { _rozView = v; renderOverview(); };
 // Přepínač období srovnání — presety počítané k dnešku, nebo vlastní datum.
 window.invCmpPreset = function (v) {
   const d = new Date();
@@ -293,7 +300,7 @@ function renderOverview() {
 
   // --- Srovnání výkonnosti za společné období + graf vývoje vs S&P ---
   const cmpCard = comparisonCard();
-  el.innerHTML = fb + allocCard + cmpCard + `<div class="card" style="margin-top:16px">
+  el.innerHTML = fb + allocCard + rozlozeniCard() + cmpCard + `<div class="card" style="margin-top:16px">
     <div class="card-hdr"><div class="ct">Vývoj vs. S&amp;P 500 (rebasováno na 100${_cmpFrom ? ' k datu srovnání' : ''}, v CZK)</div>
       <select class="sel" onchange="invChartSel(this.value)">${chartSelOptions()}</select></div>
     <div id="invChart"></div>
@@ -367,6 +374,43 @@ function spSeries(startISO) {
   for (const r of th) { if (r.datum <= startISO) base = r.spCzk; }
   if (!base) base = th[0].spCzk;
   return th.filter(r => r.datum >= startISO).map(r => ({ t: r.datum, v: r.spCzk / base * 100, raw: r.spCzk }));
+}
+
+/* ── ROZLOŽENÍ PORTFOLIA: typ aktiv, odvětví, země, firmy ──
+   Fondy a ETF se rozbalí podle složení (list Slozeni — indexy od iShares
+   každé pondělí, aktivní fondy z factsheetů), přímé akcie a nemovitostní
+   fondy podle profilu (list Profily). Počítá se z jednotlivých pozic včetně
+   Tradingu 212 a volné hotovosti. */
+function rozlozeniCard() {
+  const rows = (state.investments || []).filter(f => f.isin !== 'T212_CASH');
+  const holdings = rows.map(f => ({ isin: f.isin, nazev: f.nazev || f.isin, czk: curCZK(f) })).filter(h => h.czk > 0);
+  const cash = (state.investments || []).reduce((s, f) => s + (f.hotovostCZK || 0), 0);
+  if (!holdings.length) return '';
+  const a = allocation(holdings, cash, state.profily || {}, state.slozeni || {});
+  const tabs = [['trida', 'Typ aktiv'], ['sektory', 'Odvětví'], ['zeme', 'Země'], ['firmy', 'Firmy']];
+  const list = _rozView === 'firmy' ? a.firmy.slice(0, 20) : a[_rozView].slice(0, 15);
+  const max = Math.max(...list.map(x => x.pct), 0.0001);
+  const pctTxt1 = p => (p * 100).toFixed(p < 0.01 ? 2 : 1).replace('.', ',') + ' %';
+  const body = list.map(x => `<div class="roz-row">
+      <div class="roz-name">${escHtml(x.name)}${x.pres ? `<small>přes ${escHtml(x.pres.join(', '))}</small>` : ''}</div>
+      <div class="roz-track"><div class="roz-fill" style="width:${(x.pct / max * 100).toFixed(1)}%"></div></div>
+      <div class="roz-val"><strong>${pctTxt1(x.pct)}</strong><small>${czk(Math.round(x.czk))}</small></div>
+    </div>`).join('') || '<div class="empty">Žádná data</div>';
+  const nez = a.trida.find(t => t.name === 'Nezařazeno');
+  const dates = Object.values(state.slozeni || {}).map(s => s.asOf).filter(Boolean).sort();
+  const note = _rozView === 'firmy'
+    ? `Do jednotlivých firem je rozepsáno ${Math.round(a.pokryti * 100)} % akciové části. U ETF se počítá ~300 největších firem indexu, u aktivních fondů jen top 10 z factsheetu — zbytek jsou malé podíly, které tu nejsou. Nemovitostní fondy firmy neobsahují.`
+    : _rozView === 'trida' ? 'Fondy CODYA a CONSEQ jsou nemovitostní a infrastrukturní, ETF a fondy UniCreditu akciové.'
+    : 'Fondy a ETF jsou rozložené podle svého složení; „Neznámé" je část aktivních fondů, u které správce rozpad nezveřejňuje.';
+  return `<div class="card" style="margin-top:16px">
+    <div class="card-hdr"><div class="ct">Rozložení portfolia</div>
+      <div class="inv-tabs" style="margin:0">${tabs.map(([k, l]) => `<button class="inv-tab${_rozView === k ? ' active' : ''}" onclick="invRozView('${k}')">${l}</button>`).join('')}</div>
+    </div>
+    ${a.varovani.length ? `<div class="roz-warn">${a.varovani.map(v => `<div>⚠ ${escHtml(v)}</div>`).join('')}</div>` : ''}
+    ${body}
+    ${nez ? `<div class="roz-note">Nezařazeno ${czk(Math.round(nez.czk))}: nová pozice bez profilu — doplním ji do listu Profily.</div>` : ''}
+    <div class="roz-note">${note}${dates.length ? ` Složení k ${czFromIso(dates[dates.length - 1])}.` : ''} Celkem ${czk(Math.round(a.total))} včetně volné hotovosti.</div>
+  </div>`;
 }
 
 /* ── SROVNÁNÍ VÝKONNOSTI ZA SPOLEČNÉ OBDOBÍ ──

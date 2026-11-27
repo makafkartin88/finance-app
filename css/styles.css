@@ -501,3 +501,16 @@ button.is-busy{cursor:progress;opacity:.75}
 
 /* Zrušit výběr měsíců v grafech */
 .sel-all{margin-left:auto;margin-right:8px;white-space:nowrap}
+
+/* ── Rozložení portfolia (Investice → Přehled) ── */
+.roz-row{display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border)}
+.roz-row:last-of-type{border-bottom:none}
+.roz-name{width:240px;flex-shrink:0;font-size:13px;font-weight:600}
+.roz-name small{display:block;font-weight:400;font-size:11px;color:var(--text3)}
+.roz-track{flex:1;height:8px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.roz-fill{height:100%;background:var(--blue);border-radius:4px}
+.roz-val{width:110px;flex-shrink:0;text-align:right;font-size:13px}
+.roz-val small{display:block;font-size:11px;color:var(--text3)}
+.roz-warn{background:var(--amber-bg);color:var(--amber-text);border-radius:var(--rsm);padding:8px 12px;font-size:12px;margin-bottom:10px;line-height:1.6}
+.roz-note{font-size:11px;color:var(--text3);margin-top:10px}
+@media (max-width:600px){.roz-name{width:120px}.roz-val{width:84px}}

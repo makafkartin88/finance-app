@@ -371,3 +371,47 @@ test('yahooRange: nesmyslně staré datum (1970 z rozbitého řádku) nerozší�
   const { ctx } = makeGas({});
   assert.equal(vm.runInContext(`yahooRange(new Date('1970-01-01'), new Date('2026-11-26'))`, ctx), '2y');
 });
+
+// Výřez tabulky držeb ve formátu iShares (CH web, vymyšlená čísla).
+const ISHARES_CSV = '﻿Fund Holdings as of,"25/Nov/2026"\n \nTicker,Name,Sector,Asset Class,Market Value,Weight (%),Notional Value,Shares,Price,Location,Exchange,Market Currency\n' +
+  '"AAA","ALPHA INC","Information Technology","Equity","1’000.00","6.00","1’000.00","10.00","100.00","United States","NASDAQ","USD"\n' +
+  '"BBB","BETA CORP CLASS A","Financials","Equity","500.00","3.00","500.00","5.00","100.00","Japan","Tokyo","JPY"\n' +
+  '"BBB2","BETA CORP CLASS C","Financials","Equity","500.00","1.00","500.00","5.00","100.00","Japan","Tokyo","JPY"\n' +
+  '"USD","USD CASH","Cash and/or Derivatives","Cash","10.00","0.50","10.00","10.00","1.00","United States","-","USD"\n' +
+  '" "," "," "," "," "," "," "," "," "," "," "," "\n' +
+  '"The content contained herein is owned or licensed by BlackRock"\n';
+
+test('parseIsharesCsv: firmy, sektory a země z tabulky držeb (váhy jako zlomek, normalizované)', () => {
+  const { ctx } = makeGas({});
+  ctx.__c = ISHARES_CSV;
+  const r = JSON.parse(vm.runInContext('JSON.stringify(parseIsharesCsv(__c))', ctx));
+  assert.equal(r.asOf, '2026-11-25');
+  assert.equal(r.firmy.length, 3);
+  assert.equal(r.firmy[0].nazev, 'ALPHA INC');
+  assert.equal(Math.round(r.firmy[0].vaha * 1e4) / 1e4, 0.5714);            // 6 / 10,5
+  assert.equal(r.firmy[0].sektor, 'Information Technology');
+  assert.equal(r.firmy[0].zeme, 'United States');
+  assert.equal(Math.round(r.sektory['Financials'] * 1000) / 1000, 0.381);   // 4 / 10,5
+  assert.equal(Math.round(r.sektory['Cash and/or Derivatives'] * 1000) / 1000, 0.048);
+  assert.equal(Math.round(r.zeme['Japan'] * 1000) / 1000, 0.381);
+});
+
+test('slozeniRows: uloží sektory a země celé, firmy jen největší (limit)', () => {
+  const { ctx } = makeGas({});
+  ctx.__c = ISHARES_CSV;
+  const rows = JSON.parse(vm.runInContext('JSON.stringify(slozeniRows("IDX", parseIsharesCsv(__c), 2, "src"))', ctx));
+  assert.equal(rows.filter(r => r[1] === 'firma').length, 2);
+  assert.equal(rows.filter(r => r[1] === 'sektor').length, 3);
+  assert.equal(rows.filter(r => r[1] === 'zeme').length, 2);
+  assert.deepEqual(rows[0].slice(0, 2), ['IDX', 'firma']);
+});
+
+test('slozeniStale: chybějící nebo týden starý index → obnovit, čerstvé ne', () => {
+  const fresh = (d) => Object.keys({ MSCI_WORLD: 1, MSCI_EM_IMI: 1, SP500: 1, NASDAQ100: 1, MSCI_ACWI: 1 }).map(k => [k, 'sektor', 'X', 1, '', '', d, 'iShares']);
+  const s1 = makeGas({});
+  assert.equal(vm.runInContext(`slozeniStale(new Date('2026-11-27'))`, s1.ctx), true);              // list chybí
+  const s2 = makeGas({ Slozeni: [['klic'], ...fresh('2026-11-25')] });
+  assert.equal(vm.runInContext(`slozeniStale(new Date('2026-11-27'))`, s2.ctx), false);
+  const s3 = makeGas({ Slozeni: [['klic'], ...fresh('2026-11-10')] });
+  assert.equal(vm.runInContext(`slozeniStale(new Date('2026-11-27'))`, s3.ctx), true);
+});

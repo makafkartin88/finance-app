@@ -71,7 +71,7 @@ export async function loadSheets() {
     // 3) Zbytek na pozadí, jedním požadavkem. Listy pro skryté sekce se
     //    ani nestahují (gating stejný jako v samotných loaderech).
     const names = ['Recurring', 'MbankImport', 'Nastaveni', 'Dokumenty', 'Udaje'];
-    if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist');
+    if (isInvestmentsAllowed()) names.push('Fondy', 'Trh', 'FondyHist', 'TrhHist', 'Slozeni', 'Profily');
     if (isSalaryAllowed()) names.push('Mzdy', 'MzdyImport', 'Inflace');
     fetchSheets(names).then(s => {
       loadInvestmentData(isInvestmentsAllowed() ? s : undefined);
